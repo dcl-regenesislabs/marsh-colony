@@ -89,6 +89,7 @@ export interface LeaderboardEntry {
   address: string // to mark "you" on the client
   name: string // player display name (from getPlayer().name at requestState)
   coins: number
+  creatures: number // how many pets the player has raised (from persisted storage)
 }
 
 /** Snapshot sent to the owning client to drive the HUD. */

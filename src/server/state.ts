@@ -43,7 +43,7 @@ function shortAddress(address: string): string {
 }
 
 /** Top players by coins, highest first (capped at `limit`). */
-export function leaderboard(limit = 10): { address: string; name: string; coins: number }[] {
+export function leaderboard(limit = 10): { address: string; name: string; coins: number; creatures: number }[] {
   return allCached()
     .slice()
     .sort((a, b) => b.currency - a.currency)
@@ -51,7 +51,8 @@ export function leaderboard(limit = 10): { address: string; name: string; coins:
     .map((p) => ({
       address: p.address,
       name: playerNames.get(p.address.toLowerCase()) ?? shortAddress(p.address),
-      coins: Math.floor(p.currency)
+      coins: Math.floor(p.currency),
+      creatures: p.pets.length
     }))
 }
 
