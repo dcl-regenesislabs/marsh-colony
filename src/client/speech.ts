@@ -27,10 +27,10 @@ import {
 } from '@dcl/sdk/ecs'
 import { Vector3, Color4 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
-import { scaleForSpecies, stageScaleFor } from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
 import { getLocalPet, isBusy, petIsPresent, suppressPetTags } from './pet'
+import { petOverheadTuning } from './petOverheadCalibration'
 import { mobile } from './ui/theme'
 
 // ---------------------------------------------------------------------------
@@ -279,12 +279,11 @@ export function isPetSpeaking(): boolean {
 /** Which pet the bubble hangs over, and how big it is. Null whenever there is
  *  nothing to speak from — no active pet, or one that's carried / still inside
  *  its egg, which is exactly when petIsPresent() goes false. */
-function anchor(): { pos: Vector3; size: number; hasTag: boolean } | null {
+function anchor(): { pos: Vector3; size: number; species: string; hasTag: boolean } | null {
   const pet = getLocalPet()
   const data = clientState.activePet
   if (pet === null || !data || !petIsPresent()) return null
-  const size = stageScaleFor(data.size) * scaleForSpecies(data.species)
-  return { pos: Transform.get(pet).position, size, hasTag: true }
+  return { pos: Transform.get(pet).position, size: data.size, species: data.species, hasTag: true }
 }
 
 function cameraDistance(pos: Vector3): number {
@@ -356,8 +355,9 @@ function update(dt: number): void {
 
   // The tail tip (baked into the PNG's bottom edge) clears the pet's head — plus
   // its name tag, when that's still showing.
-  const tailTip =
-    a.pos.y + HEAD_CLEAR + HEAD_SIZE_MULT * a.size + (a.hasTag && !HIDE_TAG_WHILE_SPEAKING ? TAG_CLEAR : 0)
+  const tune = petOverheadTuning(a.species, a.size)
+  const tagClear = a.hasTag && !HIDE_TAG_WHILE_SPEAKING ? Math.max(0, TAG_CLEAR + tune.moodLift) : 0
+  const tailTip = a.pos.y + HEAD_CLEAR + HEAD_SIZE_MULT * a.size + tune.nameLift + tagClear + tune.bubbleLift
   const t = Transform.getMutable(b.root)
   // Root sits exactly over the pet; the tail is centered under it by the local-X
   // slide in reapplyX(), so it points at the pet from any camera angle.

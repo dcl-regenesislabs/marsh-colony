@@ -53,6 +53,7 @@ import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
 import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
+import { petOverheadTuning } from './petOverheadCalibration'
 
 type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 
@@ -101,7 +102,8 @@ const remoteSpecies = new Map<string, string>()
 // name, so `makeTag(showStats)` skips creating the icon entities entirely for
 // tags that belong to other players' pets.
 // Tag height above the pet = a small base clearance + a term that scales with the
-// pet's size, so it hugs a JUNIOR (small) pet instead of floating way overhead.
+// pet's underlying growth size. Keep this tied to the persisted size, not the
+// chunkier stage display scale, so Adult labels stay close to the head.
 const TAG_HEIGHT = 1.0 // initial placeholder (updateTag recomputes per-frame)
 const TAG_MIN = 0.35
 const TAG_SIZE_MULT = 1.85
@@ -168,7 +170,7 @@ function moodCol(v: number): number {
 /** A pet's floating indicators: the name label plus (for owned pets) the row of
  *  4 mood icons. `hidden` is the tag's CURRENT on-screen state — updateTag skips
  *  rewriting text/icons while it's true, so a hidden tag stays hidden. */
-type HealthTag = { root: Entity; label: Entity; icons: Entity[]; name: string; iconCol: number[]; hidden: boolean }
+type HealthTag = { root: Entity; label: Entity; icons: Entity[]; name: string; iconCol: number[]; iconY: number; hidden: boolean }
 
 // The player's NON-active stored pets roam the care area on their own.
 type Roamer = { entity: Entity; species: string; tag: HealthTag; home: Vector3; target: Vector3 | null; pause: number }
@@ -256,12 +258,18 @@ function makeTag(showStats: boolean): HealthTag {
     }
   }
 
-  return { root, label, icons, name: '', iconCol, hidden: false }
+  return { root, label, icons, name: '', iconCol, iconY: MOOD_ICON_Y, hidden: false }
 }
 
 /** Reposition the tag over the pet, refresh its name, and (if owned) its mood icons. */
-function updateTag(tag: HealthTag, pos: Vector3, size: number, name: string, stats: PetData | null): void {
-  Transform.getMutable(tag.root).position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * size, pos.z)
+function updateTag(tag: HealthTag, pos: Vector3, species: string, growthSize: number, name: string, stats: PetData | null): void {
+  const tune = petOverheadTuning(species, growthSize)
+  Transform.getMutable(tag.root).position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * growthSize + tune.nameLift, pos.z)
+  const iconY = MOOD_ICON_Y + tune.moodLift
+  if (tag.icons.length > 0 && tag.iconY !== iconY) {
+    for (let i = 0; i < tag.icons.length; i++) Transform.getMutable(tag.icons[i]).position = Vector3.create((i - 1.5) * MOOD_ICON_STEP, iconY, 0)
+    tag.iconY = iconY
+  }
   // Keep following the pet while hidden (so it reappears in the right place),
   // but don't rewrite the label — setTagVisible cleared it on purpose and this
   // runs every frame, which would put the name straight back on screen.
@@ -380,6 +388,7 @@ function flat(v: Vector3): Vector3 {
 function petScale(species: string, size: number): Vector3 {
   return Vector3.scale(Vector3.One(), size * scaleForSpecies(species))
 }
+
 function distFlat(a: Vector3, b: Vector3): number {
   return Vector3.distance(flat(a), flat(b))
 }
@@ -527,6 +536,8 @@ function ensureLocalPet(): void {
   }
   if (!localPet) {
     localPet = engine.addEntity()
+    const visualSpecies = pet.species
+    const visualGrowthSize = pet.size
     // Reconnecting while the pet was left sleeping: resume it AT the bed,
     // already asleep — otherwise it spawns at the generic home point in
     // 'follow' mode and walks over to fall asleep right next to the player
@@ -536,7 +547,7 @@ function ensureLocalPet(): void {
       spawnPos = sleepRestPos(pet, spawnPos)
       mode = 'asleep'
     }
-    Transform.create(localPet, { position: spawnPos, scale: petScale(pet.species, stageScaleFor(pet.size)) })
+    Transform.create(localPet, { position: spawnPos, scale: petScale(visualSpecies, stageScaleFor(visualGrowthSize)) })
     pointerEventsSystem.onPointerDown(
       { entity: localPet, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
       () => {
@@ -572,14 +583,16 @@ function ensureLocalPet(): void {
     reanchorLocalPet(pet)
   }
   localPetId = pet.id
-  if (localSpecies !== pet.species) {
-    localSpecies = pet.species
-    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
-    ensureAnimator(localPet, pet.species)
+  const visualSpecies = pet.species
+  const visualGrowthSize = pet.size
+  if (localSpecies !== visualSpecies) {
+    localSpecies = visualSpecies
+    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(visualSpecies), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+    ensureAnimator(localPet, visualSpecies)
   }
   // Keep visual scale synced to growth.
   const t = Transform.getMutable(localPet)
-  const s = petScale(pet.species, stageScaleFor(pet.size))
+  const s = petScale(visualSpecies, stageScaleFor(visualGrowthSize))
   if (t.scale.x !== s.x) t.scale = s
 }
 
@@ -1262,7 +1275,7 @@ function updateLocalPet(dt: number): void {
     const idx = activePetSlotIndex()
     const moved = idx >= 0 ? stepToward(localPet, slotHome(idx), dt, yawOffsetForSpecies(petP.species)) : 0
     setClip(localPet, moved > 0.003 ? 'walk' : 'idle')
-    if (localTag) updateTag(localTag, Transform.get(localPet).position, stageScaleFor(petP.size), petP.name, petP)
+    if (localTag) updateTag(localTag, Transform.get(localPet).position, petP.species, petP.size, petP.name, petP)
     return
   }
 
@@ -1282,7 +1295,7 @@ function updateLocalPet(dt: number): void {
     if (hatchRevealPos) t.position = flat(hatchRevealPos)
     setClip(localPet, 'idle')
     // Camera stays locked on hatchFocus (the egg's spot) — no retarget needed.
-    if (localTag) updateTag(localTag, t.position, stageScaleFor(petH.size), petH.name, petH)
+    if (localTag) updateTag(localTag, t.position, petH.species, petH.size, petH.name, petH)
     return
   }
 
@@ -1307,7 +1320,8 @@ function updateLocalPet(dt: number): void {
       updateTag(
         localTag,
         Transform.get(localPet).position,
-        petT ? stageScaleFor(petT.size) : 0.55,
+        petT ? petT.species : C.crossSpecies(C.FAMILIES[0], C.FAMILIES[0]),
+        petT ? petT.size : C.SIZE_BASE,
         petT ? petT.name : '',
         petT
       )
@@ -1440,7 +1454,8 @@ function updateLocalPet(dt: number): void {
     updateTag(
       localTag,
       Transform.get(localPet).position,
-      pet2 ? stageScaleFor(pet2.size) : 0.55,
+      pet2 ? pet2.species : C.crossSpecies(C.FAMILIES[0], C.FAMILIES[0]),
+      pet2 ? pet2.size : C.SIZE_BASE,
       pet2 ? pet2.name : '',
       pet2
     )
@@ -1502,7 +1517,7 @@ function updateRemotePets(dt: number): void {
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
     const tag = remoteTags.get(addr)
-    if (tag) updateTag(tag, t.position, stageScaleFor(entry.size), entry.name, null)
+    if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
   }
 
   for (const [addr, ent] of remotePets) {
@@ -1583,7 +1598,7 @@ function updateInactivePets(dt: number): void {
       const t = Transform.getMutable(st.entity)
       const s = petScale(pet.species, stageScaleFor(pet.size))
       if (t.scale.x !== s.x) t.scale = s
-      updateTag(st.tag, t.position, stageScaleFor(pet.size), pet.name, pet)
+      updateTag(st.tag, t.position, pet.species, pet.size, pet.name, pet)
     }
   }
 
@@ -1636,8 +1651,10 @@ function updateSleepCountdown(): void {
     return
   }
   const pos = Transform.get(localPet).position
-  const size = stageScaleFor(pet.size)
-  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * size + SLEEP_LABEL_LIFT, pos.z)
+  const species = pet.species
+  const size = pet.size
+  const tune = petOverheadTuning(species, size)
+  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * size + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
   t.scale = Vector3.One()
   ts.text = C.formatLockCountdown(left)
 }
@@ -1655,4 +1672,3 @@ export function setupPetSystems(): void {
     updateHints()
   })
 }
-
