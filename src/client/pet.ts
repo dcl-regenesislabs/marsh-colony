@@ -51,13 +51,16 @@ import { applyCareLocal } from './sim'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
+import { applyCreatureSkin } from './creatureSkins'
 import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
+import { petOverheadTuning } from './petOverheadCalibration'
 
 type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 
 let localPet: Entity | null = null
 let localSpecies = ''
+let localSkinKey = '' // species|rarity of the skin currently applied to localPet
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
 // pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
@@ -95,6 +98,7 @@ let wanderPause = 0
 
 const remotePets = new Map<string, Entity>()
 const remoteSpecies = new Map<string, string>()
+const remoteSkinKey = new Map<string, string>() // addr -> species|rarity of the applied skin
 
 // Floating tag above each pet: just its name. A billboard root faces the
 // camera. The pet's OWNER additionally sees a row of 4 mood icons (hunger /
@@ -102,7 +106,8 @@ const remoteSpecies = new Map<string, string>()
 // name, so `makeTag(showStats)` skips creating the icon entities entirely for
 // tags that belong to other players' pets.
 // Tag height above the pet = a small base clearance + a term that scales with the
-// pet's size, so it hugs a JUNIOR (small) pet instead of floating way overhead.
+// fixed display size of its growth stage. The model only changes at stage
+// thresholds, so the tag must do the same.
 const TAG_HEIGHT = 1.0 // initial placeholder (updateTag recomputes per-frame)
 const TAG_MIN = 0.35
 const TAG_SIZE_MULT = 1.85
@@ -261,8 +266,9 @@ function makeTag(showStats: boolean): HealthTag {
 }
 
 /** Reposition the tag over the pet, refresh its name, and (if owned) its mood icons. */
-function updateTag(tag: HealthTag, pos: Vector3, size: number, name: string, stats: PetData | null): void {
-  Transform.getMutable(tag.root).position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * size, pos.z)
+function updateTag(tag: HealthTag, pos: Vector3, species: string | null, growthSize: number, name: string, stats: PetData | null): void {
+  const tune = species ? petOverheadTuning(species, growthSize) : { nameLift: 0 }
+  Transform.getMutable(tag.root).position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(growthSize) + tune.nameLift, pos.z)
   // Keep following the pet while hidden (so it reappears in the right place),
   // but don't rewrite the label — setTagVisible cleared it on purpose and this
   // runs every frame, which would put the name straight back on screen.
@@ -391,6 +397,7 @@ function flat(v: Vector3): Vector3 {
 function petScale(species: string, size: number): Vector3 {
   return Vector3.scale(Vector3.One(), size * scaleForSpecies(species))
 }
+
 function distFlat(a: Vector3, b: Vector3): number {
   return Vector3.distance(flat(a), flat(b))
 }
@@ -528,6 +535,7 @@ function ensureLocalPet(): void {
       forgetAnimator(localPet)
       localPet = null
       localSpecies = ''
+      localSkinKey = ''
       localPetId = ''
     }
     if (localTag) {
@@ -586,6 +594,13 @@ function ensureLocalPet(): void {
     localSpecies = pet.species
     GltfContainer.createOrReplace(localPet, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
     ensureAnimator(localPet, pet.species)
+  }
+  // Re-skin on species OR rarity change (a same-species roster switch reuses the
+  // entity but may need a different rarity skin).
+  const skinKey = `${pet.species}|${pet.rarity}`
+  if (localSkinKey !== skinKey) {
+    localSkinKey = skinKey
+    applyCreatureSkin(localPet, pet.species, pet.rarity)
   }
   // Keep visual scale synced to growth.
   const t = Transform.getMutable(localPet)
@@ -1275,7 +1290,7 @@ function updateLocalPet(dt: number): void {
     const idx = activePetSlotIndex()
     const moved = idx >= 0 ? stepToward(localPet, slotHome(idx), dt, yawOffsetForSpecies(petP.species)) : 0
     setClip(localPet, moved > 0.003 ? 'walk' : 'idle')
-    if (localTag) updateTag(localTag, Transform.get(localPet).position, stageScaleFor(petP.size), petP.name, petP)
+    if (localTag) updateTag(localTag, Transform.get(localPet).position, petP.species, petP.size, petP.name, petP)
     return
   }
 
@@ -1295,7 +1310,7 @@ function updateLocalPet(dt: number): void {
     if (hatchRevealPos) t.position = flat(hatchRevealPos)
     setClip(localPet, 'idle')
     // Camera stays locked on hatchFocus (the egg's spot) — no retarget needed.
-    if (localTag) updateTag(localTag, t.position, stageScaleFor(petH.size), petH.name, petH)
+    if (localTag) updateTag(localTag, t.position, petH.species, petH.size, petH.name, petH)
     return
   }
 
@@ -1320,7 +1335,8 @@ function updateLocalPet(dt: number): void {
       updateTag(
         localTag,
         Transform.get(localPet).position,
-        petT ? stageScaleFor(petT.size) : 0.55,
+        petT?.species ?? null,
+        petT ? petT.size : C.SIZE_BASE,
         petT ? petT.name : '',
         petT
       )
@@ -1453,7 +1469,8 @@ function updateLocalPet(dt: number): void {
     updateTag(
       localTag,
       Transform.get(localPet).position,
-      pet2 ? stageScaleFor(pet2.size) : 0.55,
+      pet2?.species ?? null,
+      pet2 ? pet2.size : C.SIZE_BASE,
       pet2 ? pet2.name : '',
       pet2
     )
@@ -1501,6 +1518,13 @@ function updateRemotePets(dt: number): void {
       GltfContainer.createOrReplace(ent, { src: modelForSpecies(entry.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
       ensureAnimator(ent, entry.species)
     }
+    // Re-skin on species OR rarity change (an owner swapping to a same-species pet
+    // of a different rarity keeps the entity but needs a new skin).
+    const rskin = `${entry.species}|${entry.rarity}`
+    if (remoteSkinKey.get(addr) !== rskin) {
+      remoteSkinKey.set(addr, rskin)
+      applyCreatureSkin(ent, entry.species, entry.rarity)
+    }
     const t = Transform.getMutable(ent)
     const s = petScale(entry.species, stageScaleFor(entry.size))
     if (t.scale.x !== s.x) t.scale = s
@@ -1515,7 +1539,7 @@ function updateRemotePets(dt: number): void {
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
     const tag = remoteTags.get(addr)
-    if (tag) updateTag(tag, t.position, stageScaleFor(entry.size), entry.name, null)
+    if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
   }
 
   for (const [addr, ent] of remotePets) {
@@ -1523,6 +1547,7 @@ function updateRemotePets(dt: number): void {
       engine.removeEntity(ent)
       remotePets.delete(addr)
       remoteSpecies.delete(addr)
+      remoteSkinKey.delete(addr)
       forgetAnimator(ent)
       const tag = remoteTags.get(addr)
       if (tag) {
@@ -1560,6 +1585,7 @@ function updateInactivePets(dt: number): void {
         Transform.create(e, { position: home, scale: petScale(pet.species, stageScaleFor(pet.size)) })
         GltfContainer.createOrReplace(e, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
         ensureAnimator(e, pet.species)
+        applyCreatureSkin(e, pet.species, pet.rarity)
         const petId = pet.id
         pointerEventsSystem.onPointerDown(
           { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${pet.name}`, maxDistance: 8 } },
@@ -1573,6 +1599,7 @@ function updateInactivePets(dt: number): void {
         st.species = pet.species
         GltfContainer.createOrReplace(st.entity, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
         ensureAnimator(st.entity, pet.species)
+        applyCreatureSkin(st.entity, pet.species, pet.rarity)
       }
 
       // Wander in a SMALL radius around its slot, so it stays in its own spot.
@@ -1596,7 +1623,7 @@ function updateInactivePets(dt: number): void {
       const t = Transform.getMutable(st.entity)
       const s = petScale(pet.species, stageScaleFor(pet.size))
       if (t.scale.x !== s.x) t.scale = s
-      updateTag(st.tag, t.position, stageScaleFor(pet.size), pet.name, pet)
+      updateTag(st.tag, t.position, pet.species, pet.size, pet.name, pet)
     }
   }
 
@@ -1640,8 +1667,8 @@ function updateSleepCountdown(): void {
     return
   }
   const pos = Transform.get(localPet).position
-  const size = stageScaleFor(pet.size)
-  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * size + SLEEP_LABEL_LIFT, pos.z)
+  const tune = petOverheadTuning(pet.species, pet.size)
+  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(pet.size) + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
   t.scale = Vector3.One()
   ts.text = C.formatLockCountdown(left)
 }
@@ -1658,4 +1685,3 @@ export function setupPetSystems(): void {
     updateRemotePets(dt)
   })
 }
-
