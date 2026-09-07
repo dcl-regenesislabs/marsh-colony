@@ -1,31 +1,34 @@
 import { FAMILIES, petStage, speciesParts, type Family, type PetStage } from '../shared/config'
 
-export type PetOverheadTuning = { nameLift: number; moodLift: number; bubbleLift: number }
+export type PetOverheadTuning = { nameLift: number; bubbleLift: number }
 
 type CalibrationGrid = Record<Family, Record<PetStage, PetOverheadTuning>>
 
-const ZERO_TUNING: PetOverheadTuning = { nameLift: 0, moodLift: 0, bubbleLift: 0 }
+const ZERO_TUNING: PetOverheadTuning = { nameLift: 0, bubbleLift: 0 }
 
+// These lifts are rebased for the fixed stage display scales (0.7 / 0.9 / 1.4)
+// used by pet.ts. The original calibration preview used the continuous growth
+// value, which would make overhead UI drift within each stage.
 const PET_OVERHEAD_CALIBRATION: CalibrationGrid = {
   sprout: {
-    JUNIOR: { nameLift: -0.25, moodLift: 0, bubbleLift: 0.55 },
-    TEENAGER: { nameLift: -0.5, moodLift: 0, bubbleLift: 0.9 },
-    ADULT: { nameLift: -0.25, moodLift: 0, bubbleLift: 0.85 }
+    JUNIOR: { nameLift: -0.5275, bubbleLift: -0.227 },
+    TEENAGER: { nameLift: -0.63875, bubbleLift: -0.099 },
+    ADULT: { nameLift: -0.805, bubbleLift: -0.704 }
   },
   pepito: {
-    JUNIOR: { nameLift: -0.25, moodLift: 0, bubbleLift: 0.25 },
-    TEENAGER: { nameLift: -0.45, moodLift: 0, bubbleLift: 0.55 },
-    ADULT: { nameLift: -0.3, moodLift: 0, bubbleLift: 0.3 }
+    JUNIOR: { nameLift: -0.5275, bubbleLift: -0.527 },
+    TEENAGER: { nameLift: -0.58875, bubbleLift: -0.449 },
+    ADULT: { nameLift: -0.855, bubbleLift: -1.254 }
   },
   amebita: {
-    JUNIOR: { nameLift: -0.3, moodLift: 0, bubbleLift: 0.75 },
-    TEENAGER: { nameLift: -0.55, moodLift: 0, bubbleLift: 0.8 },
-    ADULT: { nameLift: -0.3, moodLift: 0, bubbleLift: 0.7 }
+    JUNIOR: { nameLift: -0.5775, bubbleLift: -0.027 },
+    TEENAGER: { nameLift: -0.68875, bubbleLift: -0.199 },
+    ADULT: { nameLift: -0.855, bubbleLift: -0.854 }
   },
   fluflito: {
-    JUNIOR: { nameLift: -0.25, moodLift: 0, bubbleLift: 0.4 },
-    TEENAGER: { nameLift: -0.45, moodLift: 0, bubbleLift: 0.3 },
-    ADULT: { nameLift: -0.15, moodLift: 0, bubbleLift: 0.4 }
+    JUNIOR: { nameLift: -0.5275, bubbleLift: -0.377 },
+    TEENAGER: { nameLift: -0.58875, bubbleLift: -0.699 },
+    ADULT: { nameLift: -0.705, bubbleLift: -1.154 }
   }
 }
 

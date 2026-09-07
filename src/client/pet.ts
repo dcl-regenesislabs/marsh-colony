@@ -102,8 +102,8 @@ const remoteSpecies = new Map<string, string>()
 // name, so `makeTag(showStats)` skips creating the icon entities entirely for
 // tags that belong to other players' pets.
 // Tag height above the pet = a small base clearance + a term that scales with the
-// pet's underlying growth size. Keep this tied to the persisted size, not the
-// chunkier stage display scale, so Adult labels stay close to the head.
+// fixed display size of its growth stage. The model only changes at stage
+// thresholds, so the tag must do the same.
 const TAG_HEIGHT = 1.0 // initial placeholder (updateTag recomputes per-frame)
 const TAG_MIN = 0.35
 const TAG_SIZE_MULT = 1.85
@@ -170,7 +170,7 @@ function moodCol(v: number): number {
 /** A pet's floating indicators: the name label plus (for owned pets) the row of
  *  4 mood icons. `hidden` is the tag's CURRENT on-screen state — updateTag skips
  *  rewriting text/icons while it's true, so a hidden tag stays hidden. */
-type HealthTag = { root: Entity; label: Entity; icons: Entity[]; name: string; iconCol: number[]; iconY: number; hidden: boolean }
+type HealthTag = { root: Entity; label: Entity; icons: Entity[]; name: string; iconCol: number[]; hidden: boolean }
 
 // The player's NON-active stored pets roam the care area on their own.
 type Roamer = { entity: Entity; species: string; tag: HealthTag; home: Vector3; target: Vector3 | null; pause: number }
@@ -258,18 +258,13 @@ function makeTag(showStats: boolean): HealthTag {
     }
   }
 
-  return { root, label, icons, name: '', iconCol, iconY: MOOD_ICON_Y, hidden: false }
+  return { root, label, icons, name: '', iconCol, hidden: false }
 }
 
 /** Reposition the tag over the pet, refresh its name, and (if owned) its mood icons. */
-function updateTag(tag: HealthTag, pos: Vector3, species: string, growthSize: number, name: string, stats: PetData | null): void {
-  const tune = petOverheadTuning(species, growthSize)
-  Transform.getMutable(tag.root).position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * growthSize + tune.nameLift, pos.z)
-  const iconY = MOOD_ICON_Y + tune.moodLift
-  if (tag.icons.length > 0 && tag.iconY !== iconY) {
-    for (let i = 0; i < tag.icons.length; i++) Transform.getMutable(tag.icons[i]).position = Vector3.create((i - 1.5) * MOOD_ICON_STEP, iconY, 0)
-    tag.iconY = iconY
-  }
+function updateTag(tag: HealthTag, pos: Vector3, species: string | null, growthSize: number, name: string, stats: PetData | null): void {
+  const tune = species ? petOverheadTuning(species, growthSize) : { nameLift: 0 }
+  Transform.getMutable(tag.root).position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(growthSize) + tune.nameLift, pos.z)
   // Keep following the pet while hidden (so it reappears in the right place),
   // but don't rewrite the label — setTagVisible cleared it on purpose and this
   // runs every frame, which would put the name straight back on screen.
@@ -536,8 +531,6 @@ function ensureLocalPet(): void {
   }
   if (!localPet) {
     localPet = engine.addEntity()
-    const visualSpecies = pet.species
-    const visualGrowthSize = pet.size
     // Reconnecting while the pet was left sleeping: resume it AT the bed,
     // already asleep — otherwise it spawns at the generic home point in
     // 'follow' mode and walks over to fall asleep right next to the player
@@ -547,7 +540,7 @@ function ensureLocalPet(): void {
       spawnPos = sleepRestPos(pet, spawnPos)
       mode = 'asleep'
     }
-    Transform.create(localPet, { position: spawnPos, scale: petScale(visualSpecies, stageScaleFor(visualGrowthSize)) })
+    Transform.create(localPet, { position: spawnPos, scale: petScale(pet.species, stageScaleFor(pet.size)) })
     pointerEventsSystem.onPointerDown(
       { entity: localPet, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
       () => {
@@ -583,16 +576,14 @@ function ensureLocalPet(): void {
     reanchorLocalPet(pet)
   }
   localPetId = pet.id
-  const visualSpecies = pet.species
-  const visualGrowthSize = pet.size
-  if (localSpecies !== visualSpecies) {
-    localSpecies = visualSpecies
-    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(visualSpecies), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
-    ensureAnimator(localPet, visualSpecies)
+  if (localSpecies !== pet.species) {
+    localSpecies = pet.species
+    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+    ensureAnimator(localPet, pet.species)
   }
   // Keep visual scale synced to growth.
   const t = Transform.getMutable(localPet)
-  const s = petScale(visualSpecies, stageScaleFor(visualGrowthSize))
+  const s = petScale(pet.species, stageScaleFor(pet.size))
   if (t.scale.x !== s.x) t.scale = s
 }
 
@@ -1320,7 +1311,7 @@ function updateLocalPet(dt: number): void {
       updateTag(
         localTag,
         Transform.get(localPet).position,
-        petT ? petT.species : C.crossSpecies(C.FAMILIES[0], C.FAMILIES[0]),
+        petT?.species ?? null,
         petT ? petT.size : C.SIZE_BASE,
         petT ? petT.name : '',
         petT
@@ -1454,7 +1445,7 @@ function updateLocalPet(dt: number): void {
     updateTag(
       localTag,
       Transform.get(localPet).position,
-      pet2 ? pet2.species : C.crossSpecies(C.FAMILIES[0], C.FAMILIES[0]),
+      pet2?.species ?? null,
       pet2 ? pet2.size : C.SIZE_BASE,
       pet2 ? pet2.name : '',
       pet2
@@ -1651,10 +1642,8 @@ function updateSleepCountdown(): void {
     return
   }
   const pos = Transform.get(localPet).position
-  const species = pet.species
-  const size = pet.size
-  const tune = petOverheadTuning(species, size)
-  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * size + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
+  const tune = petOverheadTuning(pet.species, pet.size)
+  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(pet.size) + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
   t.scale = Vector3.One()
   ts.text = C.formatLockCountdown(left)
 }
