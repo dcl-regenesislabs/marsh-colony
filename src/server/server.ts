@@ -43,9 +43,10 @@ export function server(): void {
   console.log('[Server] MyDearPet authoritative server starting')
 
   // -- Message handlers -----------------------------------------------------
-  room.onMessage('requestState', async (_data, ctx) => {
+  room.onMessage('requestState', async (data, ctx) => {
     if (!ctx) return
     console.log('[Server] requestState from', ctx.from)
+    S.setPlayerName(ctx.from, data.guestName) // remember the name for the leaderboard
     // requestState repeats every ~2s; the first one this lifetime marks a fresh
     // scene entry -> emit exactly one `session started`. Mark `connected` BEFORE
     // the await so two near-simultaneous first requests don't both fire.
@@ -58,6 +59,19 @@ export function server(): void {
     pushSnapshot(p)
     broadcastPresence()
     broadcastColony() // a player joined -> their pets count toward the colony
+  })
+
+  // Coins leaderboard — computed on demand (when the client opens the panel) and
+  // sent only to the requester, so it's fresh without spamming every client. Rate-
+  // limited per sender so a client can't spam the sort+stringify.
+  const lastLeaderReq = new Map<string, number>()
+  room.onMessage('requestLeaderboard', async (_data, ctx) => {
+    if (!ctx) return
+    const now = Date.now()
+    if (now - (lastLeaderReq.get(ctx.from) ?? 0) < 2000) return
+    lastLeaderReq.set(ctx.from, now)
+    await S.loadPlayer(ctx.from) // cache + tick the requester so their own row is current
+    room.send('leaderboard', { json: JSON.stringify(await S.leaderboard()) }, { to: [ctx.from] })
   })
 
   room.onMessage('adopt', async (data, ctx) => {

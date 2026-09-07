@@ -50,8 +50,12 @@ export const Messages = {
   proposeSwap: Schemas.Map({ targetAddress: Schemas.String, fromName: Schemas.String }),
   // Target's answer to the pending swap offer addressed to them.
   respondSwap: Schemas.Map({ accept: Schemas.Boolean }),
+  // Ask the server for the current coins leaderboard (sent when the panel opens).
+  requestLeaderboard: Schemas.Map({}),
 
   // ---- Server -> Client ----
+  // Coins leaderboard (LeaderboardEntry[] JSON), sent to the requesting client.
+  leaderboard: Schemas.Map({ json: Schemas.String }),
   // Full owner snapshot (PlayerSnapshot JSON) for the requesting client.
   stateSnapshot: Schemas.Map({ json: Schemas.String }),
   // Broadcast of all pet presence entries (PresenceEntry[] JSON) for social rendering.

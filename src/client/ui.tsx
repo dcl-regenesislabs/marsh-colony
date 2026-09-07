@@ -36,7 +36,7 @@ import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './
 import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 
-export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox'
+export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard'
 export type ShopTabId = 'food' | 'slots'
 
 const uiState = {
@@ -90,6 +90,10 @@ export const ui = {
   },
   openJukebox(): void {
     uiState.panel = 'jukebox'
+  },
+  openLeaderboard(): void {
+    uiState.panel = 'leaderboard'
+    actions.requestLeaderboard() // fetch fresh standings each time it opens
   },
   // Auto-open the daily reward only when the screen is idle (no clashing popup).
   tryAutoOpenDaily(): void {
@@ -640,6 +644,100 @@ function MusicButton() {
         onClick={() => ui.openJukebox()}
       />
     </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Leaderboard HUD button (mid-right, just below the Jukebox button) + panel.
+// Same size/gating as MusicButton; a pink circle labelled "TOP 10".
+// ---------------------------------------------------------------------------
+function LeaderboardButton() {
+  if (clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) {
+    return <UiEntity />
+  }
+  const size = Sbtn(52)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: '40%', right: S(16) }, margin: { top: size + S(12) }, width: size, height: size, pointerFilter: 'none' }}
+    >
+      {/* Pink circle like the music button, labelled "TOP 10" (two lines so it
+          fits the circle). */}
+      <TactileButton
+        id="hud_leaderboard"
+        label={'TOP\n10'}
+        bg={C.pink}
+        textColor={LOC.white}
+        fontSize={Math.round(size * 0.3)}
+        width={size}
+        height={size}
+        radius={Math.round(size / 2)}
+        onClick={() => ui.openLeaderboard()}
+      />
+    </UiEntity>
+  )
+}
+
+// Column widths shared by the header + rows so they line up. name is fixed (not
+// flex) so Creatures sits centered in the middle and Coins on the right, evenly
+// spread across the row instead of both bunching up at the right edge.
+const LB_ROW_W = S(556)
+const LB_RANK_W = S(44)
+const LB_NAME_W = S(196)
+const LB_COINS_W = S(150)
+
+function LeaderboardRow(props: { key?: string; rank: number; name: string; coins: number; creatures: number; isMe: boolean }) {
+  const ink = props.isMe ? LOC.white : PET_UI.ink
+  const iconS = S(22)
+  return (
+    <UiEntity
+      uiTransform={{ width: LB_ROW_W, height: S(36), flexDirection: 'row', alignItems: 'center', margin: { bottom: S(3) }, padding: { left: S(12), right: S(14) }, borderRadius: S(12) }}
+      uiBackground={{ color: props.isMe ? LOC.blue : LOC.tile }}
+    >
+      <Label value={`${props.rank}`} fontSize={S(17)} color={ink} textAlign="middle-center" uiTransform={{ width: LB_RANK_W, height: S(24) }} />
+      <Label value={props.name} fontSize={S(16)} color={ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: LB_NAME_W, height: S(24) }} />
+      {/* Creatures: paw icon + count, centered in the middle. */}
+      <UiEntity uiTransform={{ flex: 1, height: S(26), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        <UiEntity uiTransform={{ width: iconS, height: iconS }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: NAV_PAW_UVS }} />
+        <Label value={`${props.creatures}`} fontSize={S(16)} color={ink} textAlign="middle-left" uiTransform={{ width: S(40), height: S(24), margin: { left: S(6) } }} />
+      </UiEntity>
+      {/* Coins: transparent golden coin icon (cut from the top-HUD coin) + amount,
+          right-anchored under the Coins header. The number label is sized to its
+          digits so the group stays tight (no gap) and never clips a big amount. */}
+      <UiEntity uiTransform={{ width: LB_COINS_W, height: S(26), flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <UiEntity uiTransform={{ width: iconS, height: iconS }} uiBackground={{ texture: { src: 'assets/images/coin_icon.png' }, textureMode: 'stretch' }} />
+        <Label value={`${props.coins}`} fontSize={S(16)} color={ink} textAlign="middle-left" uiTransform={{ width: S(10 + `${props.coins}`.length * 10), height: S(24), margin: { left: S(6) } }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function LeaderboardHeader() {
+  return (
+    <UiEntity uiTransform={{ width: LB_ROW_W, height: S(24), flexDirection: 'row', alignItems: 'center', margin: { bottom: S(6) }, padding: { left: S(12), right: S(14) } }}>
+      <UiEntity uiTransform={{ width: LB_RANK_W, height: S(20) }} />
+      <Label value="Player" fontSize={S(13)} color={LOC.dim} textAlign="middle-left" uiTransform={{ width: LB_NAME_W, height: S(20) }} />
+      <Label value="Creatures" fontSize={S(13)} color={LOC.dim} textAlign="middle-center" uiTransform={{ flex: 1, height: S(20) }} />
+      <Label value="Coins" fontSize={S(13)} color={LOC.dim} textAlign="middle-right" uiTransform={{ width: LB_COINS_W, height: S(20) }} />
+    </UiEntity>
+  )
+}
+
+function LeaderboardPanel() {
+  const rows = clientState.leaderboard
+  const me = clientState.myAddress.toLowerCase()
+  return (
+    <PetHudModal title="Leaderboard" subtitle="Top settlers by coins across the colony." width={S(640)} height={S(560)} onClose={() => ui.close()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+        {rows.length === 0 ? (
+          <Label value="Loading standings…" fontSize={S(18)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(20) } }} />
+        ) : (
+          <LeaderboardHeader />
+        )}
+        {rows.map((e, i) => (
+          <LeaderboardRow key={e.address} rank={i + 1} name={e.name} coins={e.coins} creatures={e.creatures} isMe={e.address.toLowerCase() === me} />
+        ))}
+      </UiEntity>
+    </PetHudModal>
   )
 }
 
@@ -2467,6 +2565,7 @@ const Root = () => {
         <SwapOfferPanel />
         <SideButtons />
         <MusicButton />
+        <LeaderboardButton />
         <BottomNav />
         <FetchOverlay />
         <CarryHatchButton />
@@ -2485,6 +2584,7 @@ const Root = () => {
         {uiState.panel === 'goals' && <GoalsPanel />}
         {uiState.panel === 'daily' && <DailyRewardPanel />}
         {uiState.panel === 'jukebox' && <JukeboxPanel />}
+        {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
         <DialogBox />
         {/* Hints + reward + toasts render LAST so they sit on top of any panel/modal. */}
         <HintBanner />

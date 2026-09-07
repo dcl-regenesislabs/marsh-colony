@@ -12,7 +12,7 @@
 
 import { engine, InputModifier } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
-import type { PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
+import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
 import { actions, applyPresence, applySnapshot, clientState, markServerAlive, pushToast, resolveMyAddress } from './state'
 import { evaluateStreak, seedLocalPlayer, simTick } from './sim'
@@ -97,6 +97,16 @@ function registerHandlers(): void {
   room.onMessage('colony', (data) => {
     markServerAlive()
     clientState.colonyPopulation = data.population
+  })
+
+  // Coins leaderboard — the response to our requestLeaderboard (panel open).
+  room.onMessage('leaderboard', (data) => {
+    markServerAlive()
+    try {
+      clientState.leaderboard = JSON.parse(data.json) as LeaderboardEntry[]
+    } catch (e) {
+      console.log('[Client] bad leaderboard', e)
+    }
   })
 
   room.onMessage('notify', (data) => {

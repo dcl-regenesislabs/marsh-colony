@@ -3,7 +3,7 @@
 
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
-import type { CareAction, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
+import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 export type DialogState = {
@@ -107,6 +107,8 @@ export const clientState: {
   serverReady: boolean
   // Shared Mars colony population, broadcast by the server (same for everyone).
   colonyPopulation: number
+  // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
+  leaderboard: LeaderboardEntry[]
   // DEBUG: fruit game camera calibration panel (fruitGame.ts's debugCam*),
   // toggled by a debug hotkey while the minigame is active.
   debugCamPanelOpen: boolean
@@ -140,6 +142,7 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
+  leaderboard: [],
   debugCamPanelOpen: false
 }
 
@@ -347,6 +350,9 @@ export const actions = {
     const p = getPlayer()
     console.log('[Client] -> requestState')
     room.send('requestState', { guestName: p?.name ?? 'Guest' })
+  },
+  requestLeaderboard(): void {
+    room.send('requestLeaderboard', {})
   },
   adopt(species: string, name: string): void {
     console.log('[Client] -> adopt', species, name)

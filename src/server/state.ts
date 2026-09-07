@@ -28,6 +28,77 @@ export function setFollowState(address: string, following: boolean): void {
   followState.set(address.toLowerCase(), following)
 }
 
+// Player display names (from getPlayer().name, reported on requestState). Client-
+// supplied, so it is trimmed, stripped of line breaks, and length-capped before it
+// ever labels the leaderboard (rendered on other players' screens).
+const playerNames = new Map<string, string>()
+const NAME_MAX = 20
+
+/** Remember a player's display name for the leaderboard (sanitized). */
+export function setPlayerName(address: string, name: string): void {
+  const n = (name ?? '').replace(/[\r\n\t]/g, ' ').trim().slice(0, NAME_MAX)
+  if (n) playerNames.set(address.toLowerCase(), n)
+}
+
+function shortAddress(address: string): string {
+  return address.length > 10 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
+}
+
+// Persisted, scene-scoped leaderboard index (Storage.world) — NOT the in-memory
+// player cache. This is what makes the board "across the colony": every player who
+// has ever saved has a row here, ranked even after the headless server restarts and
+// the cache is empty. Kept in memory, hydrated once from storage, and re-persisted
+// on each savePlayer (see upsertLeaderIndex).
+type LeaderRow = { name: string; coins: number; creatures: number }
+const LEADER_KEY = 'leaderboard-v1'
+const LEADER_MAX = 200 // cap the persisted set so the record can't grow unbounded
+let leaderIndex: Map<string, LeaderRow> | null = null
+
+type LeaderStored = { address: string } & LeaderRow
+
+async function ensureLeaderIndex(): Promise<Map<string, LeaderRow>> {
+  if (leaderIndex) return leaderIndex
+  const idx = new Map<string, LeaderRow>()
+  try {
+    const arr = await Storage.get<LeaderStored[]>(LEADER_KEY)
+    if (arr) for (const e of arr) idx.set(e.address.toLowerCase(), { name: e.name, coins: e.coins, creatures: e.creatures })
+  } catch (e) {
+    console.log('[Server] leaderboard index load failed', e)
+  }
+  leaderIndex = idx
+  return idx
+}
+
+/** Upsert a player's row into the persisted leaderboard index. Called from
+ *  savePlayer, so the board reflects each player's latest saved coins/creatures.
+ *  skipIfUnchanged avoids a network write when nothing actually moved. */
+async function upsertLeaderIndex(p: PlayerData): Promise<void> {
+  const idx = await ensureLeaderIndex()
+  idx.set(p.address.toLowerCase(), {
+    name: playerNames.get(p.address.toLowerCase()) ?? shortAddress(p.address),
+    coins: Math.floor(p.currency),
+    creatures: p.pets.length
+  })
+  try {
+    const arr: LeaderStored[] = [...idx.entries()]
+      .map(([address, r]) => ({ address, ...r }))
+      .sort((a, b) => b.coins - a.coins)
+      .slice(0, LEADER_MAX)
+    await Storage.set(LEADER_KEY, arr, { skipIfUnchanged: true })
+  } catch (e) {
+    console.log('[Server] leaderboard index save failed', e)
+  }
+}
+
+/** Top players by coins across the colony, highest first (from the persisted index). */
+export async function leaderboard(limit = 10): Promise<{ address: string; name: string; coins: number; creatures: number }[]> {
+  const idx = await ensureLeaderIndex()
+  return [...idx.entries()]
+    .map(([address, r]) => ({ address, name: r.name, coins: r.coins, creatures: r.creatures }))
+    .sort((a, b) => b.coins - a.coins)
+    .slice(0, limit)
+}
+
 /** True if this wallet had no saved state when first loaded (a new user). */
 export function isFreshPlayer(address: string): boolean {
   return freshPlayers.has(address)
@@ -220,6 +291,8 @@ export async function savePlayer(address: string): Promise<void> {
   } catch (e) {
     console.log('[Server] Storage save failed for', address, e)
   }
+  // Keep the cross-colony leaderboard index in step with this player's save.
+  await upsertLeaderIndex(p)
 }
 
 export function getCached(address: string): PlayerData | undefined {
