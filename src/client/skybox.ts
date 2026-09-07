@@ -10,9 +10,8 @@
 // The gameplay area (Bowl/Bed/Ball/Pond/Caretaker/Shop) was moved in
 // `main.composite` to sit around the "here" anchor below — see `shared/config.ts`.
 
-import { engine, Transform, MeshCollider, ColliderLayer, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
+import { engine, Transform, MeshCollider, ColliderLayer } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
-import { movePlayerTo } from '~system/RestrictedActions'
 
 // --- Configuration (positions copied verbatim from skybox-test's main.composite —
 // My Dear Pet now uses the same 30x30 parcel layout, so no translation is needed). ---
@@ -38,21 +37,6 @@ const BOUNDARY_PLANES: PlaneDef[] = [
 export function setupSkybox() {
   createHereMarker()
   createBoundaryPlanes()
-
-  engine.addSystem(heightTeleportSystem, 1, 'HeightTeleportSystem')
-}
-
-// Key "1" (InputAction.IA_ACTION_3) -> teleport to 5m height, at the same X/Z
-// you're standing on. Dev shortcut to quickly get above the scene.
-const TELEPORT_HEIGHT = 5
-
-function heightTeleportSystem() {
-  if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)) {
-    const currentPosition = Transform.get(engine.PlayerEntity).position
-    movePlayerTo({
-      newRelativePosition: Vector3.create(currentPosition.x, TELEPORT_HEIGHT, currentPosition.z)
-    })
-  }
 }
 
 // Just a reference point for the play area's center — no visual, no collider,

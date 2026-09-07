@@ -10,7 +10,19 @@ import { engine, InputAction } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, serverConnected, switchActivePet, hasPendingHatchling } from './state'
-import { setFollow, startPetting, cancelPetting, petTap, hatchTap, startCarryEgg, beginHatchFromCarry, startCarryPet, placePetAtStation, cancelCarryPet, canStartPetInteraction } from './pet'
+import {
+  setFollow,
+  startPetting,
+  cancelPetting,
+  petTap,
+  hatchTap,
+  startCarryEgg,
+  beginHatchFromCarry,
+  startCarryPet,
+  placePetAtStation,
+  cancelCarryPet,
+  canStartPetInteraction
+} from './pet'
 import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
