@@ -120,7 +120,12 @@ function skinMaterial(src: string): PBMaterial {
  */
 export function applyCreatureSkin(entity: Entity, species: string, rarity: Rarity): void {
   const nodes = SKIN_NODES[species]
-  if (!nodes) return
+  if (!nodes) {
+    // No skin for this species (e.g. an alien). Clear any override the entity
+    // carried from a previous species so a stale one doesn't linger on a reuse.
+    GltfNodeModifiers.deleteFrom(entity)
+    return
+  }
   GltfNodeModifiers.createOrReplace(entity, {
     modifiers: nodes.map((n) => ({ path: n.path, material: skinMaterial(textureSrc(n.family, rarity)) }))
   })

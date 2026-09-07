@@ -97,6 +97,7 @@ let wanderPause = 0
 
 const remotePets = new Map<string, Entity>()
 const remoteSpecies = new Map<string, string>()
+const remoteSkinKey = new Map<string, string>() // addr -> species|rarity of the applied skin
 
 // Floating tag above each pet: just its name. A billboard root faces the
 // camera. The pet's OWNER additionally sees a row of 4 mood icons (hunger /
@@ -1508,6 +1509,12 @@ function updateRemotePets(dt: number): void {
       remoteSpecies.set(addr, entry.species)
       GltfContainer.createOrReplace(ent, { src: modelForSpecies(entry.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
       ensureAnimator(ent, entry.species)
+    }
+    // Re-skin on species OR rarity change (an owner swapping to a same-species pet
+    // of a different rarity keeps the entity but needs a new skin).
+    const rskin = `${entry.species}|${entry.rarity}`
+    if (remoteSkinKey.get(addr) !== rskin) {
+      remoteSkinKey.set(addr, rskin)
       applyCreatureSkin(ent, entry.species, entry.rarity)
     }
     const t = Transform.getMutable(ent)
@@ -1532,6 +1539,7 @@ function updateRemotePets(dt: number): void {
       engine.removeEntity(ent)
       remotePets.delete(addr)
       remoteSpecies.delete(addr)
+      remoteSkinKey.delete(addr)
       forgetAnimator(ent)
       const tag = remoteTags.get(addr)
       if (tag) {
