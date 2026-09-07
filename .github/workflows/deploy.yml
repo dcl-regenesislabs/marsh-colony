@@ -8,11 +8,6 @@ on:
     paths-ignore:
       - '**.md'
       - 'dev-docs/**'
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'dev-docs/**'
   workflow_dispatch:
 
 env:
@@ -40,7 +35,6 @@ jobs:
       - name: Build scene
         run: npm run build
       - name: Deploy scene
-        if: github.event_name != 'pull_request'
         run: npm run deploy:${{ env.DEPLOY_ENV }}
         env:
           DCL_PRIVATE_KEY: ${{ secrets.DCL_WORLDS_PRIVATE_KEY }}
