@@ -51,6 +51,7 @@ import { applyCareLocal } from './sim'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
+import { applyCreatureSkin } from './creatureSkins'
 import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 
@@ -58,6 +59,7 @@ type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 
 let localPet: Entity | null = null
 let localSpecies = ''
+let localSkinKey = '' // species|rarity of the skin currently applied to localPet
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
 // pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
@@ -528,6 +530,7 @@ function ensureLocalPet(): void {
       forgetAnimator(localPet)
       localPet = null
       localSpecies = ''
+      localSkinKey = ''
       localPetId = ''
     }
     if (localTag) {
@@ -587,6 +590,13 @@ function ensureLocalPet(): void {
     localSpecies = pet.species
     GltfContainer.createOrReplace(localPet, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
     ensureAnimator(localPet, pet.species)
+  }
+  // Re-skin on species OR rarity change (a same-species roster switch reuses the
+  // entity but may need a different rarity skin).
+  const skinKey = `${pet.species}|${pet.rarity}`
+  if (localSkinKey !== skinKey) {
+    localSkinKey = skinKey
+    applyCreatureSkin(localPet, pet.species, pet.rarity)
   }
   // Keep visual scale synced to growth.
   const t = Transform.getMutable(localPet)
@@ -1498,6 +1508,7 @@ function updateRemotePets(dt: number): void {
       remoteSpecies.set(addr, entry.species)
       GltfContainer.createOrReplace(ent, { src: modelForSpecies(entry.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
       ensureAnimator(ent, entry.species)
+      applyCreatureSkin(ent, entry.species, entry.rarity)
     }
     const t = Transform.getMutable(ent)
     const s = petScale(entry.species, stageScaleFor(entry.size))
@@ -1558,6 +1569,7 @@ function updateInactivePets(dt: number): void {
         Transform.create(e, { position: home, scale: petScale(pet.species, stageScaleFor(pet.size)) })
         GltfContainer.createOrReplace(e, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
         ensureAnimator(e, pet.species)
+        applyCreatureSkin(e, pet.species, pet.rarity)
         const petId = pet.id
         pointerEventsSystem.onPointerDown(
           { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${pet.name}`, maxDistance: 8 } },
@@ -1571,6 +1583,7 @@ function updateInactivePets(dt: number): void {
         st.species = pet.species
         GltfContainer.createOrReplace(st.entity, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
         ensureAnimator(st.entity, pet.species)
+        applyCreatureSkin(st.entity, pet.species, pet.rarity)
       }
 
       // Wander in a SMALL radius around its slot, so it stays in its own spot.
