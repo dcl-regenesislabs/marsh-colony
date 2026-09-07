@@ -62,11 +62,16 @@ export function server(): void {
   })
 
   // Coins leaderboard — computed on demand (when the client opens the panel) and
-  // sent only to the requester, so it's fresh without spamming every client.
+  // sent only to the requester, so it's fresh without spamming every client. Rate-
+  // limited per sender so a client can't spam the sort+stringify.
+  const lastLeaderReq = new Map<string, number>()
   room.onMessage('requestLeaderboard', async (_data, ctx) => {
     if (!ctx) return
-    await S.loadPlayer(ctx.from) // make sure the requester is cached + ticked
-    room.send('leaderboard', { json: JSON.stringify(S.leaderboard()) }, { to: [ctx.from] })
+    const now = Date.now()
+    if (now - (lastLeaderReq.get(ctx.from) ?? 0) < 2000) return
+    lastLeaderReq.set(ctx.from, now)
+    await S.loadPlayer(ctx.from) // cache + tick the requester so their own row is current
+    room.send('leaderboard', { json: JSON.stringify(await S.leaderboard()) }, { to: [ctx.from] })
   })
 
   room.onMessage('adopt', async (data, ctx) => {

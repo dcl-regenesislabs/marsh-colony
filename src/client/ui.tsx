@@ -649,7 +649,7 @@ function MusicButton() {
 
 // ---------------------------------------------------------------------------
 // Leaderboard HUD button (mid-right, just below the Jukebox button) + panel.
-// Same size/gating as MusicButton; uses the leaderboard_sing sign art.
+// Same size/gating as MusicButton; a pink circle labelled "TOP 10".
 // ---------------------------------------------------------------------------
 function LeaderboardButton() {
   if (clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) {
