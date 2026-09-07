@@ -112,6 +112,9 @@ export const clientState: {
   // DEBUG: fruit game camera calibration panel (fruitGame.ts's debugCam*),
   // toggled by a debug hotkey while the minigame is active.
   debugCamPanelOpen: boolean
+  // DEBUG: carried-egg hand offset/rotation/scale calibration panel (pet.ts's
+  // debugEgg*), toggled by the same hotkey while an egg is being carried.
+  eggCalibPanelOpen: boolean
 } = {
   myAddress: '',
   player: null,
@@ -143,7 +146,8 @@ export const clientState: {
   serverReady: false,
   colonyPopulation: 0,
   leaderboard: [],
-  debugCamPanelOpen: false
+  debugCamPanelOpen: false,
+  eggCalibPanelOpen: false
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */

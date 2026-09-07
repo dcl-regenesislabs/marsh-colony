@@ -108,6 +108,14 @@ function setupCareQueue(): void {
 // there is no key "5".
 function setupDebugHotkeys(): void {
   engine.addSystem(() => {
+    // "1": toggle the carried-egg hand calibration panel (pet.ts's debugEgg*,
+    // issue #178) — only actually shows while an egg is being carried. Used
+    // to be the skybox height-teleport shortcut; that's gone now, freeing the
+    // key up.
+    if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)) {
+      clientState.eggCalibPanelOpen = !clientState.eggCalibPanelOpen
+      pushToast(clientState.eggCalibPanelOpen ? 'DEBUG: egg calib panel ON' : 'DEBUG: egg calib panel OFF')
+    }
     // "2": jump straight into the Feed tree minigame, skipping the walk-to-tree
     // errand — for iterating on the minigame itself without the walk each time.
     if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) {

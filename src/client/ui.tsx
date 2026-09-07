@@ -10,7 +10,25 @@ import { engine, InputAction } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, serverConnected, switchActivePet, hasPendingHatchling } from './state'
-import { setFollow, startPetting, cancelPetting, petTap, hatchTap, startCarryEgg, beginHatchFromCarry, startCarryPet, placePetAtStation, cancelCarryPet, canStartPetInteraction } from './pet'
+import {
+  setFollow,
+  startPetting,
+  cancelPetting,
+  petTap,
+  hatchTap,
+  startCarryEgg,
+  beginHatchFromCarry,
+  startCarryPet,
+  placePetAtStation,
+  cancelCarryPet,
+  canStartPetInteraction,
+  DebugEggKey,
+  debugEggAvailableKeys,
+  debugEggLabel,
+  debugEggValue,
+  debugEggAdjust,
+  debugEggPrint
+} from './pet'
 import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
@@ -2449,6 +2467,68 @@ function PriceDot(props: { size?: number }) {
   )
 }
 
+// DEBUG: live carried-egg hand calibration panel (pet.ts's debugEgg*, issue
+// #178) — toggled by the "1" hotkey (input.ts), shows while an egg is being
+// carried. +/- nudges the egg's local offset/rotation/scale on the hand
+// anchor and re-applies it straight to the carried egg — "Print values" logs
+// the final numbers to hardcode back into pet.ts's EGG_HAND_* constants.
+const DEBUG_EGG_POS_STEP = 0.01
+const DEBUG_EGG_ROT_STEP = 1
+const DEBUG_EGG_SCALE_STEP = 0.02
+function eggDebugStep(key: DebugEggKey): number {
+  if (key === 'scale') return DEBUG_EGG_SCALE_STEP
+  if (key === 'rotX' || key === 'rotY' || key === 'rotZ') return DEBUG_EGG_ROT_STEP
+  return DEBUG_EGG_POS_STEP
+}
+function EggCalibPanel() {
+  if (!clientState.carryEgg.active || !clientState.eggCalibPanelOpen) return <UiEntity />
+  const keys: DebugEggKey[] = debugEggAvailableKeys()
+  const panelW = S(340)
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: S(300), left: S(24) },
+        width: panelW,
+        flexDirection: 'column',
+        alignItems: 'center',
+        borderRadius: S(16),
+        padding: S(14),
+        pointerFilter: 'block'
+      }}
+      uiBackground={{ color: C.panelBg }}
+    >
+      <Label value="Egg calib" fontSize={S(18)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(26), margin: { bottom: S(6) } }} />
+      {keys.map((k) => {
+        const step = eggDebugStep(k)
+        return (
+          <UiEntity key={k} uiTransform={{ width: '100%', height: S(40), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Label
+              value={`${debugEggLabel(k)}: ${debugEggValue(k).toFixed(k === 'scale' ? 3 : 2)}`}
+              fontSize={S(15)}
+              color={C.text}
+              textAlign="middle-left"
+              uiTransform={{ width: S(190), height: S(30) }}
+            />
+            <TactileButton id={`debugegg_${k}_minus`} label="-" width={S(40)} height={S(34)} bg={C.card} onClick={() => debugEggAdjust(k, -step)} />
+            <TactileButton id={`debugegg_${k}_plus`} label="+" width={S(40)} height={S(34)} bg={C.card} margin={{ left: S(6) }} onClick={() => debugEggAdjust(k, step)} />
+          </UiEntity>
+        )
+      })}
+      <TactileButton
+        id="debugegg_print"
+        label="Print values"
+        width={panelW - S(28)}
+        height={S(38)}
+        bg={C.green}
+        textColor={C.outline}
+        margin={{ top: S(8) }}
+        onClick={() => debugEggPrint()}
+      />
+    </UiEntity>
+  )
+}
+
 function CarryHatchButton() {
   const st = clientState.carryEgg
   if (!st.active) return <UiEntity />
@@ -2589,6 +2669,7 @@ const Root = () => {
         <BottomNav />
         <FetchOverlay />
         <CarryHatchButton />
+        <EggCalibPanel />
         <BathButton />
         <FeedErrandOverlay />
         {/* Rendered after the HUD chrome (side buttons, bottom nav) so it paints
