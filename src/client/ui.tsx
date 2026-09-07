@@ -1678,22 +1678,34 @@ function RewardPopup() {
   )
 }
 
-// Shared BACK button for full-screen action overlays (Petting / Fetch / Bath).
-// Top-left, inset from the corner, pushed further in on mobile so the app's own
-// corner UI doesn't cover it. One place so every action's BACK matches.
-function BackButton(props: { onClick: () => void; disabled?: boolean; position?: { top?: number; left?: number; right?: number } }) {
+// Arrow icon (source art is 500x500; exported at 256x256 — plenty of headroom
+// over this button's ~90-unit logical size on the highest-density mobile
+// screens, at well under half the file size) for the shared BACK button below.
+const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
+
+// Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
+// game / Bath / Feed errand). Top-left, inset from the corner, pushed further
+// in on mobile so the app's own corner UI doesn't cover it, and sat a quarter
+// of the way down the screen (halfway between the top edge and
+// screen-center). One place so every action's BACK matches.
+function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const isM = mobile()
-  const pos = props.position ?? { top: isM ? S(120) : S(96), left: isM ? S(210) : S(130) }
+  const pos = { top: '25%' as const, left: isM ? S(210) : S(130) }
+  const d = S(90)
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: pos, width: S(150), height: S(56), alignItems: 'center', justifyContent: 'center', borderRadius: S(28), pointerFilter: 'block' }}
-      uiBackground={{ color: props.disabled ? C.cardAlt : C.pink }}
+      uiTransform={{ positionType: 'absolute', position: pos, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{
+        texture: { src: BACK_ARROW_ICON },
+        textureMode: 'stretch',
+        // Disabled reads as greyed-out (not just faded) so it doesn't look like a
+        // live button that's simply ignoring taps.
+        color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
+      }}
       onMouseDown={() => {
         if (!props.disabled) props.onClick()
       }}
-    >
-      <OutlineLabel value="BACK" fontSize={S(24)} color={props.disabled ? C.dim : C.text} width={'100%'} height={S(30)} textAlign="middle-center" />
-    </UiEntity>
+    />
   )
 }
 
@@ -2135,9 +2147,17 @@ function FeedGameOverlay() {
   const countdownNum = Math.max(1, Math.min(COUNTDOWN_S, Math.ceil(COUNTDOWN_S - (Date.now() - st.countdownAt) / 1000)))
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      {/* BACK sits outside ScreenInsetArea, unwrapped like every other
+          BACK-button overlay (Petting/Fetch/Bath/FeedErrand) — its own inset
+          already clears the corner comfortably. Everything else here stays
+          wrapped: this minigame owns the whole screen (cinematic camera, edge-
+          anchored counter/timer panel, move arrows, debug panel) and needs the
+          safe-area protection ScreenInsetArea provides on mobile (fixes #134;
+          the renderer's own screenInset:'none' opts out of automatic inset
+          scene-wide, so this wrapper is the only safe-area handling here). */}
+      <BackButton onClick={() => cancelFruitGame()} />
       <ScreenInsetArea>
         <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-          <BackButton onClick={() => cancelFruitGame()} position={{ top: S(96), right: S(24) }} />
           <UiEntity
             uiTransform={
               catching
