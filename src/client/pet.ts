@@ -763,9 +763,9 @@ let carriedEggAnchor: Entity | null = null // empty attached to the hand bone
 // see the debugEgg* live calibration panel below (issue #178): press "1"
 // while carrying an egg to nudge these in-world and debugEggPrint() the final
 // numbers to hardcode back here.
-let EGG_HAND_OFFSET_X = 0.14
+let EGG_HAND_OFFSET_X = 0.16
 let EGG_HAND_OFFSET_Y = 0.1
-let EGG_HAND_OFFSET_Z = 0.03
+let EGG_HAND_OFFSET_Z = -0.09
 let EGG_HAND_ROT_X = 90
 let EGG_HAND_ROT_Y = 0
 let EGG_HAND_ROT_Z = 0
