@@ -603,7 +603,9 @@ function ensureLocalPet(): void {
     localSkinKey = skinKey
     applyCreatureSkin(localPet, pet.species, pet.rarity)
   }
-  // Keep visual scale synced to growth.
+  // Keep visual scale synced to growth. This runs before updateLocalPet's
+  // interaction branches every frame, so carry behavior must only change the
+  // parent/pose and must never write a competing carry-specific scale.
   const t = Transform.getMutable(localPet)
   const s = petScale(pet.species, stageScaleFor(pet.size))
   if (t.scale.x !== s.x) t.scale = s
@@ -799,16 +801,30 @@ function playHoldPetEmote(): void {
   triggerHoldEmote(HOLD_PET_EMOTE)
 }
 
+/** The carry offset tracks the pet's rendered growth/species scale, so a large
+ * pet stays clear of the avatar instead of using the old baby-sized pose. */
+function petHoldOffset(pet: PetData): Vector3 {
+  return Vector3.scale(PET_HOLD_OFFSET, petScale(pet.species, stageScaleFor(pet.size)).x)
+}
+
+/** The held pet is directly in front of the camera. Disable its pointer collider
+ * so it cannot block clicks on the bath or other world interactions. */
+function setHeldPetPointerCollider(enabled: boolean): void {
+  if (!localPet || !GltfContainer.has(localPet)) return
+  GltfContainer.getMutable(localPet).visibleMeshesCollisionMask = enabled ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
+}
+
 /** Parent the pet to the player's spine bone, offset out in front (carrying pose); hide its tag. */
-function attachPetToHands(species: string): void {
+function attachPetToHands(pet: PetData): void {
   if (!localPet) return
   if (!carriedPetAnchor) carriedPetAnchor = engine.addEntity()
   Transform.createOrReplace(carriedPetAnchor, {})
   AvatarAttach.createOrReplace(carriedPetAnchor, { anchorPointId: AvatarAnchorPointType.AAPT_SPINE })
   const t = Transform.getMutable(localPet)
   t.parent = carriedPetAnchor
-  t.position = PET_HOLD_OFFSET
-  t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(species) + PET_HOLD_YAW, 0)
+  t.position = petHoldOffset(pet)
+  t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(pet.species) + PET_HOLD_YAW, 0)
+  setHeldPetPointerCollider(false)
   setLocalTagVisible(false)
 }
 
@@ -828,6 +844,7 @@ function detachPetFromHands(): void {
     t.position = drop
     t.rotation = yawToward(drop, playerPos())
   }
+  setHeldPetPointerCollider(true)
   setLocalTagVisible(true)
   if (carriedPetAnchor) AvatarAttach.deleteFrom(carriedPetAnchor) // stop riding the player's bone between baths
 }
@@ -840,7 +857,7 @@ export function startCarryPet(): void {
     return
   }
   clientState.carryPet = { active: true, atStation: false }
-  attachPetToHands(clientState.activePet.species)
+  attachPetToHands(clientState.activePet)
   playHoldPetEmote()
   showArrowTo(objectPosition(EntityNames.PetPool_glb), 'carryPet')
 }
@@ -1312,7 +1329,8 @@ function updateLocalPet(dt: number): void {
   // Carrying the pet to the bath: it's attached to the player's spine bone (see
   // attachPetToHands), so its pose is handled by the renderer. Its tag is hidden
   // for the duration (attachPetToHands/detachPetFromHands) — here we just flag
-  // proximity to the tub.
+  // proximity to the tub. ensureLocalPet has already applied this frame's
+  // authoritative growth-stage scale; carry must not override it here.
   if (clientState.carryPet.active && clientState.activePet) {
     setClip(localPet, 'idle')
     const pp = playerPos()
