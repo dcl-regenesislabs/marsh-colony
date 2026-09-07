@@ -1681,15 +1681,14 @@ function RewardPopup() {
 // Arrow icon (source art is a 500x500 square) for the shared BACK button below.
 const BACK_ARROW_ICON = 'assets/images/revamp/backbutton500.png'
 
-// Shared BACK button for full-screen action overlays (Petting / Fetch / Bath).
-// Top-left, inset from the corner, pushed further in on mobile so the app's own
-// corner UI doesn't cover it, and sat a quarter of the way down the screen
-// (halfway between the top edge and screen-center). One place so every
-// action's BACK matches.
-type PosUnit = number | `${number}%`
-function BackButton(props: { onClick: () => void; disabled?: boolean; position?: { top?: PosUnit; left?: PosUnit; right?: PosUnit } }) {
+// Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
+// game / Bath / Feed errand). Top-left, inset from the corner, pushed further
+// in on mobile so the app's own corner UI doesn't cover it, and sat a quarter
+// of the way down the screen (halfway between the top edge and
+// screen-center). One place so every action's BACK matches.
+function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const isM = mobile()
-  const pos = props.position ?? { top: '25%', left: isM ? S(210) : S(130) }
+  const pos = { top: '25%' as const, left: isM ? S(210) : S(130) }
   const d = S(90)
   return (
     <UiEntity
@@ -2142,7 +2141,7 @@ function FeedGameOverlay() {
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <ScreenInsetArea>
         <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-          <BackButton onClick={() => cancelFruitGame()} position={{ top: '25%', right: S(24) }} />
+          <BackButton onClick={() => cancelFruitGame()} />
           <UiEntity
             uiTransform={
               catching
