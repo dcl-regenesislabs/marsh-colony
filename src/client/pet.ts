@@ -791,7 +791,6 @@ function playHoldEmote(): void {
 const HOLD_PET_EMOTE = 'models/hold_pet_emote.glb'
 const PET_HOLD_OFFSET = Vector3.create(0, -0.15, 0.22) // local offset from the spine bone, out in front and down toward the belly
 const PET_HOLD_YAW = 0 // extra yaw if the model faces the wrong way (0/90/180/270)
-const PET_HAND_SCALE = 0.4
 const BATH_RADIUS = 3 // how close to the tub before the Bath button appears
 
 let carriedPetAnchor: Entity | null = null
@@ -810,8 +809,6 @@ function attachPetToHands(species: string): void {
   t.parent = carriedPetAnchor
   t.position = PET_HOLD_OFFSET
   t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(species) + PET_HOLD_YAW, 0)
-  // Scale is re-applied every frame in the carryPet branch below — ensureLocalPet()
-  // runs first each tick and would otherwise snap it back to the grown size.
   setLocalTagVisible(false)
 }
 
@@ -1317,7 +1314,6 @@ function updateLocalPet(dt: number): void {
   // for the duration (attachPetToHands/detachPetFromHands) — here we just flag
   // proximity to the tub.
   if (clientState.carryPet.active && clientState.activePet) {
-    Transform.getMutable(localPet).scale = Vector3.scale(Vector3.One(), PET_HAND_SCALE)
     setClip(localPet, 'idle')
     const pp = playerPos()
     clientState.carryPet.atStation = distFlat(pp, objectPosition(EntityNames.PetPool_glb)) <= BATH_RADIUS
