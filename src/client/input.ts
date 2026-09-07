@@ -6,9 +6,9 @@
 import { engine, pointerEventsSystem, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
 import { EntityNames } from '../../assets/scene/entity-names'
 import type { CareAction } from '../shared/types'
-import { formatLockCountdown, SPECIES, type PetClip } from '../shared/config'
+import { formatLockCountdown, type PetClip } from '../shared/config'
 import { actionObjectPosition } from './objects'
-import { isBusy, sendPetTo, canQueueCareAction, startCarryEgg } from './pet'
+import { isBusy, sendPetTo, canQueueCareAction } from './pet'
 import { applyCareLocal, canPlayNow, sleepLockLeft } from './sim'
 import { startFeedTask } from './feed'
 import { startFruitGame } from './fruitGame'
@@ -105,25 +105,11 @@ function setupCareQueue(): void {
 }
 
 // DEBUG hotkeys. NOTE: DCL exposes only number keys 1-4 (IA_ACTION_3..6);
-// there is no key "5".
+// there is no key "5". Key "1" (IA_ACTION_3) is currently unbound — it used
+// to drive the skybox height-teleport shortcut and, after that, the carried-
+// egg hand calibration panel (issue #178), neither of which are needed now.
 function setupDebugHotkeys(): void {
   engine.addSystem(() => {
-    // "1": jump straight into carrying an egg (skipping the whole adopt flow)
-    // and open its hand calibration panel (pet.ts's debugEgg*, issue #178) —
-    // one tap after entering the scene puts the egg in-hand, emote and all,
-    // ready to nudge live. Pressing again once it's already active just
-    // re-toggles the panel. Used to be the skybox height-teleport shortcut;
-    // that's gone now, freeing the key up.
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)) {
-      if (!clientState.carryEgg.active) {
-        startCarryEgg(SPECIES[0], 'Debug Egg')
-        clientState.eggCalibPanelOpen = true
-        pushToast('DEBUG: egg in hand — calib panel ON')
-      } else {
-        clientState.eggCalibPanelOpen = !clientState.eggCalibPanelOpen
-        pushToast(clientState.eggCalibPanelOpen ? 'DEBUG: egg calib panel ON' : 'DEBUG: egg calib panel OFF')
-      }
-    }
     // "2": jump straight into the Feed tree minigame, skipping the walk-to-tree
     // errand — for iterating on the minigame itself without the walk each time.
     if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) {

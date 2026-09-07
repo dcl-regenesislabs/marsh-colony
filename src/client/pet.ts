@@ -758,18 +758,12 @@ let hatchFocus: Entity | null = null // invisible, fixed point at the egg's spot
 // where a Hatch button starts the rub-to-hatch flow below.
 let carriedEgg: Entity | null = null // the egg mesh (child)
 let carriedEggAnchor: Entity | null = null // empty attached to the hand bone
-// Offset of the egg from the hand bone origin, its rotation (euler degrees —
-// tune to point the tip up (^)), and its scale in hand. `let`s, not `const`s —
-// see the debugEgg* live calibration panel below (issue #178): press "1"
-// while carrying an egg to nudge these in-world and debugEggPrint() the final
-// numbers to hardcode back here.
-let EGG_HAND_OFFSET_X = 0.16
-let EGG_HAND_OFFSET_Y = 0.1
-let EGG_HAND_OFFSET_Z = -0.09
-let EGG_HAND_ROT_X = 90
-let EGG_HAND_ROT_Y = 0
-let EGG_HAND_ROT_Z = 0
-let EGG_HAND_SCALE = 0.6 // back to the previous size (looks big in hand, that's fine)
+// Offset of the egg from the hand bone origin, and its scale in hand.
+// Calibrated in-world on desktop/Unity (issue #178).
+const EGG_HAND_OFFSET = Vector3.create(0.16, 0.1, -0.09)
+const EGG_HAND_SCALE = 0.6 // back to the previous size (looks big in hand, that's fine)
+// Rotation of the egg in hand (euler degrees). Points the tip up (^).
+const EGG_HAND_ROTATION = Quaternion.fromEulerDegrees(90, 0, 0)
 // Looping "hold" emote played while carrying (poses the arms as if cradling the
 // egg). Masked to the upper body so the legs keep using normal walk/run
 // locomotion — the client auto-replays a looping masked emote on its own if
@@ -1012,16 +1006,6 @@ function updateArrow(): void {
   if (!vis.visible) vis.visible = true
 }
 
-/** Applies the current EGG_HAND_* tunables to the carried egg's local Transform —
- *  called on pickup and, live, by the debugEgg* calibration panel below. */
-function applyEggHandTransform(): void {
-  if (!carriedEgg || !Transform.has(carriedEgg)) return
-  const t = Transform.getMutable(carriedEgg)
-  t.position = Vector3.create(EGG_HAND_OFFSET_X, EGG_HAND_OFFSET_Y, EGG_HAND_OFFSET_Z)
-  t.rotation = Quaternion.fromEulerDegrees(EGG_HAND_ROT_X, EGG_HAND_ROT_Y, EGG_HAND_ROT_Z)
-  t.scale = Vector3.scale(Vector3.One(), EGG_HAND_SCALE)
-}
-
 /** Adopt handoff: give the player an egg to carry home (held in the hand). */
 export function startCarryEgg(species: string, name: string, isBreed = false): void {
   carryIsBreed = isBreed
@@ -1033,79 +1017,13 @@ export function startCarryEgg(species: string, name: string, isBreed = false): v
   AvatarAttach.createOrReplace(carriedEggAnchor, { anchorPointId: AvatarAnchorPointType.AAPT_RIGHT_HAND })
 
   if (!carriedEgg) carriedEgg = engine.addEntity()
-  Transform.createOrReplace(carriedEgg, { parent: carriedEggAnchor })
-  applyEggHandTransform()
+  Transform.createOrReplace(carriedEgg, { parent: carriedEggAnchor, position: EGG_HAND_OFFSET, rotation: EGG_HAND_ROTATION, scale: Vector3.scale(Vector3.One(), EGG_HAND_SCALE) })
   GltfContainer.createOrReplace(carriedEgg, { src: EGG_MODEL })
   Animator.createOrReplace(carriedEgg, { states: [{ clip: 'Idle', playing: true, loop: true }] })
 
   playHoldEmote() // pose the arms as if holding the egg
 
   openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!')
-}
-
-// ---------------------------------------------------------------------------
-// DEBUG: live carried-egg hand calibration panel (issue #178 — align the egg
-// with the avatar's hand). While an egg is being carried, nudges the
-// EGG_HAND_* constants above and re-applies them straight to the carried
-// egg's Transform so the effect is visible immediately. Once it looks right,
-// call debugEggPrint() (logs to console) and hardcode the numbers back above.
-// ---------------------------------------------------------------------------
-export type DebugEggKey = 'offsetX' | 'offsetY' | 'offsetZ' | 'rotX' | 'rotY' | 'rotZ' | 'scale'
-
-export function debugEggAvailableKeys(): DebugEggKey[] {
-  return ['offsetX', 'offsetY', 'offsetZ', 'rotX', 'rotY', 'rotZ', 'scale']
-}
-
-export function debugEggLabel(key: DebugEggKey): string {
-  switch (key) {
-    case 'offsetX': return 'Offset X'
-    case 'offsetY': return 'Offset Y'
-    case 'offsetZ': return 'Offset Z'
-    case 'rotX': return 'Rotate X'
-    case 'rotY': return 'Rotate Y'
-    case 'rotZ': return 'Rotate Z'
-    case 'scale': return 'Scale'
-  }
-}
-
-export function debugEggValue(key: DebugEggKey): number {
-  switch (key) {
-    case 'offsetX': return EGG_HAND_OFFSET_X
-    case 'offsetY': return EGG_HAND_OFFSET_Y
-    case 'offsetZ': return EGG_HAND_OFFSET_Z
-    case 'rotX': return EGG_HAND_ROT_X
-    case 'rotY': return EGG_HAND_ROT_Y
-    case 'rotZ': return EGG_HAND_ROT_Z
-    case 'scale': return EGG_HAND_SCALE
-  }
-}
-
-/** Position/rotation nudge by 0.01/1° per step; scale (its own, smaller step) by 0.02. */
-export function debugEggAdjust(key: DebugEggKey, delta: number): void {
-  switch (key) {
-    case 'offsetX': EGG_HAND_OFFSET_X += delta; break
-    case 'offsetY': EGG_HAND_OFFSET_Y += delta; break
-    case 'offsetZ': EGG_HAND_OFFSET_Z += delta; break
-    case 'rotX': EGG_HAND_ROT_X += delta; break
-    case 'rotY': EGG_HAND_ROT_Y += delta; break
-    case 'rotZ': EGG_HAND_ROT_Z += delta; break
-    case 'scale': EGG_HAND_SCALE += delta; break
-  }
-  applyEggHandTransform()
-}
-
-export function debugEggPrint(): void {
-  const lines = [
-    `EGG_HAND_OFFSET_X = ${EGG_HAND_OFFSET_X.toFixed(3)}`,
-    `EGG_HAND_OFFSET_Y = ${EGG_HAND_OFFSET_Y.toFixed(3)}`,
-    `EGG_HAND_OFFSET_Z = ${EGG_HAND_OFFSET_Z.toFixed(3)}`,
-    `EGG_HAND_ROT_X = ${EGG_HAND_ROT_X.toFixed(1)}`,
-    `EGG_HAND_ROT_Y = ${EGG_HAND_ROT_Y.toFixed(1)}`,
-    `EGG_HAND_ROT_Z = ${EGG_HAND_ROT_Z.toFixed(1)}`,
-    `EGG_HAND_SCALE = ${EGG_HAND_SCALE.toFixed(3)}`
-  ]
-  console.log('[EggCalib]', lines.join(' | '))
-  pushToast(lines.join(' | '))
 }
 
 /** Per-frame while carrying: flag whether the player is home (drives the Hatch button). */
