@@ -1678,8 +1678,10 @@ function RewardPopup() {
   )
 }
 
-// Arrow icon (source art is a 500x500 square) for the shared BACK button below.
-const BACK_ARROW_ICON = 'assets/images/revamp/backbutton500.png'
+// Arrow icon (source art is 500x500; exported at 256x256 — plenty of headroom
+// over this button's ~90-unit logical size on the highest-density mobile
+// screens, at well under half the file size) for the shared BACK button below.
+const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
 // game / Bath / Feed errand). Top-left, inset from the corner, pushed further
@@ -1693,7 +1695,13 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: pos, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
-      uiBackground={{ texture: { src: BACK_ARROW_ICON }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: props.disabled ? 0.4 : 1 } }}
+      uiBackground={{
+        texture: { src: BACK_ARROW_ICON },
+        textureMode: 'stretch',
+        // Disabled reads as greyed-out (not just faded) so it doesn't look like a
+        // live button that's simply ignoring taps.
+        color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
+      }}
       onMouseDown={() => {
         if (!props.disabled) props.onClick()
       }}
@@ -2139,73 +2147,79 @@ function FeedGameOverlay() {
   const countdownNum = Math.max(1, Math.min(COUNTDOWN_S, Math.ceil(COUNTDOWN_S - (Date.now() - st.countdownAt) / 1000)))
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      {/* No ScreenInsetArea here (unlike Toasts) — every other BACK-button
-          overlay (Petting/Fetch/Bath/FeedErrand) renders unwrapped, and the
-          extra inset it adds shifted this one's BACK arrow further right
-          than the rest the moment the minigame opened. */}
-      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <BackButton onClick={() => cancelFruitGame()} />
-        <UiEntity
-          uiTransform={
-            catching
-              ? {
-                  positionType: 'absolute',
-                  position: { top: S(160), right: S(24) },
-                  width: S(320),
-                  height: S(70),
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: S(20),
-                  pointerFilter: 'none'
-                }
-              : {
-                  positionType: 'absolute',
-                  position: { top: S(90), left: '50%' },
-                  margin: { left: -S(220) },
-                  width: S(440),
-                  height: S(120),
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: S(20),
-                  pointerFilter: 'none'
-                }
-          }
-          uiBackground={{ color: C.panelBg }}
-        >
-          {catching ? (
-            <Label
-              value={`Fruits: ${st.caught}   ${Math.ceil(st.timeLeft)}s`}
-              fontSize={flashing ? S(34) : S(28)}
-              color={flashing ? C.gold : C.hunger}
-              textAlign="middle-center"
-              uiTransform={{ width: '100%', height: S(36) }}
-            />
-          ) : countdown ? (
-            <Label value={`${countdownNum}`} fontSize={S(72)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
-          ) : (
-            <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-              <Label value="◀" fontSize={S(36)} color={C.gold} textAlign="middle-center" uiTransform={{ width: S(50), height: S(50) }} />
+      {/* BACK sits outside ScreenInsetArea, unwrapped like every other
+          BACK-button overlay (Petting/Fetch/Bath/FeedErrand) — its own inset
+          already clears the corner comfortably. Everything else here stays
+          wrapped: this minigame owns the whole screen (cinematic camera, edge-
+          anchored counter/timer panel, move arrows, debug panel) and needs the
+          safe-area protection ScreenInsetArea provides on mobile (fixes #134;
+          the renderer's own screenInset:'none' opts out of automatic inset
+          scene-wide, so this wrapper is the only safe-area handling here). */}
+      <BackButton onClick={() => cancelFruitGame()} />
+      <ScreenInsetArea>
+        <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+          <UiEntity
+            uiTransform={
+              catching
+                ? {
+                    positionType: 'absolute',
+                    position: { top: S(160), right: S(24) },
+                    width: S(320),
+                    height: S(70),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: S(20),
+                    pointerFilter: 'none'
+                  }
+                : {
+                    positionType: 'absolute',
+                    position: { top: S(90), left: '50%' },
+                    margin: { left: -S(220) },
+                    width: S(440),
+                    height: S(120),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: S(20),
+                    pointerFilter: 'none'
+                  }
+            }
+            uiBackground={{ color: C.panelBg }}
+          >
+            {catching ? (
               <Label
-                value="Move left and right to catch the food falling from the tree!"
-                fontSize={S(22)}
-                color={C.text}
+                value={`Fruits: ${st.caught}   ${Math.ceil(st.timeLeft)}s`}
+                fontSize={flashing ? S(34) : S(28)}
+                color={flashing ? C.gold : C.hunger}
                 textAlign="middle-center"
-                textWrap="wrap"
-                uiTransform={{ width: S(320), height: S(100) }}
+                uiTransform={{ width: '100%', height: S(36) }}
               />
-              <Label value="▶" fontSize={S(36)} color={C.gold} textAlign="middle-center" uiTransform={{ width: S(50), height: S(50) }} />
-            </UiEntity>
-          )}
-        </UiEntity>
-        {introPhase ? (
-          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(220), left: '50%' }, margin: { left: -S(110) }, width: S(220), height: S(70), pointerFilter: 'none' }}>
-            <TactileButton id="feed_start" label="Start" width={S(220)} height={S(70)} bg={C.green} textColor={C.outline} fontSize={S(28)} radius={S(24)} pulse onClick={() => startCatchingCountdown()} />
+            ) : countdown ? (
+              <Label value={`${countdownNum}`} fontSize={S(72)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+            ) : (
+              <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Label value="◀" fontSize={S(36)} color={C.gold} textAlign="middle-center" uiTransform={{ width: S(50), height: S(50) }} />
+                <Label
+                  value="Move left and right to catch the food falling from the tree!"
+                  fontSize={S(22)}
+                  color={C.text}
+                  textAlign="middle-center"
+                  textWrap="wrap"
+                  uiTransform={{ width: S(320), height: S(100) }}
+                />
+                <Label value="▶" fontSize={S(36)} color={C.gold} textAlign="middle-center" uiTransform={{ width: S(50), height: S(50) }} />
+              </UiEntity>
+            )}
           </UiEntity>
-        ) : null}
-        {mobile() ? <MoveArrowButton side="left" /> : null}
-        {mobile() ? <MoveArrowButton side="right" /> : null}
-        <DebugCamPanel />
-      </UiEntity>
+          {introPhase ? (
+            <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(220), left: '50%' }, margin: { left: -S(110) }, width: S(220), height: S(70), pointerFilter: 'none' }}>
+              <TactileButton id="feed_start" label="Start" width={S(220)} height={S(70)} bg={C.green} textColor={C.outline} fontSize={S(28)} radius={S(24)} pulse onClick={() => startCatchingCountdown()} />
+            </UiEntity>
+          ) : null}
+          {mobile() ? <MoveArrowButton side="left" /> : null}
+          {mobile() ? <MoveArrowButton side="right" /> : null}
+          <DebugCamPanel />
+        </UiEntity>
+      </ScreenInsetArea>
     </UiEntity>
   )
 }
