@@ -46,7 +46,7 @@ export function applyBallShape(entity: Entity): void {
 // the only version that actually plays.
 const THROW_EMOTE = 'models/throw_ball_emote.glb'
 const THROW_RELEASE_DELAY = 0.2 // seconds from triggering the emote to release
-const HAND_BALL_X = 0.07 // held-ball offset in the hand anchor's local space — same idea as pet.ts's EGG_HAND_OFFSET_*
+const HAND_BALL_X = 0.07 // held-ball offset in the hand anchor's local space — same idea as pet.ts's EGG_HAND_OFFSET
 const HAND_BALL_Y = 0.07
 const HAND_BALL_Z = -0.01
 // Launch point approximation: forward + to the RIGHT of center (a real right
