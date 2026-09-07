@@ -4,8 +4,9 @@
 export type CareAction = 'feed' | 'clean' | 'sleep' | 'play'
 export type StatKey = 'hunger' | 'hygiene' | 'energy' | 'happiness'
 
-/** Offspring cosmetic rarity tiers, common -> legendary (à la Adopt Me). */
-export type Rarity = 'common' | 'uncommon' | 'rare' | 'ultraRare' | 'legendary'
+/** Offspring cosmetic rarity tiers, common -> legendary. Three tiers, one per
+ *  creature skin: common (base), rare (alt), legendary (gold). */
+export type Rarity = 'common' | 'rare' | 'legendary'
 
 /** Per-pet state. Every pet (active or stored) carries its own stats & XP. */
 export interface PetData {

@@ -269,6 +269,15 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
   return data
 }
 
+/** Collapse legacy 5-tier rarities into the current 3 tiers: uncommon -> common,
+ *  ultraRare -> rare. Common/rare/legendary (and anything unexpected) pass through
+ *  to their nearest valid tier so old saves never carry a dead rarity value. */
+function normalizeRarity(r: unknown): Rarity {
+  if (r === 'legendary') return 'legendary'
+  if (r === 'rare' || r === 'ultraRare') return 'rare'
+  return 'common'
+}
+
 function sanitize(address: string, d: PlayerData): PlayerData {
   const base = newPlayer(address)
   return {
@@ -278,8 +287,8 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     inventory: { ...base.inventory, ...(d.inventory ?? {}) },
     counters: d.counters ?? {},
     achievements: d.achievements ?? [],
-    pets: (d.pets ?? []).map((pet) => ({ ...newPet(pet.species, pet.name), ...pet })),
-    hatchling: d.hatchling ? { ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling } : null
+    pets: (d.pets ?? []).map((pet) => ({ ...newPet(pet.species, pet.name), ...pet, rarity: normalizeRarity(pet.rarity) })),
+    hatchling: d.hatchling ? { ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling, rarity: normalizeRarity(d.hatchling.rarity) } : null
   }
 }
 
@@ -480,7 +489,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   bump(p, 'breedCount')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
-  return { notes: [{ kind: 'breed', message: `You bred a ${rarity} egg${potionNote} — carry it home to hatch!` }], rarity, species: child.species, name: child.name }
+  return { notes: [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!` }], rarity, species: child.species, name: child.name }
 }
 
 /** DEBUG/testing: grow the active pet straight to Adult + level 5 so breeding

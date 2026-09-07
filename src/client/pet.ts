@@ -46,7 +46,7 @@ import {
   type PetClip
 } from '../shared/config'
 import type { PetData } from '../shared/types'
-import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, clearHint, hasPendingHatchling } from './state'
+import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, hasPendingHatchling } from './state'
 import { applyCareLocal } from './sim'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
@@ -562,7 +562,6 @@ function ensureLocalPet(): void {
         // Clicking the pet opens its control panel. (The "pet for happiness"
         // action is suspended for now — was: actions.petSelf() + petReact().)
         clientState.petPanelOpen = true
-        clearHint('firstPet') // they did it
         // Point them at the Breed button until the pet grows up.
         const ap = clientState.activePet
         if (ap && petStage(ap.size) !== 'ADULT') {
@@ -831,6 +830,7 @@ export function startCarryPet(): void {
   attachPetToHands(clientState.activePet.species)
   playHoldPetEmote()
   showArrowTo(objectPosition(EntityNames.PetPool_glb), 'carryPet')
+  pushToast('Carry your pet to the bath!')
 }
 
 /** Cancel the bath carry (BACK): drop the flow, the pet just resumes following. */
@@ -993,7 +993,9 @@ export function startCarryEgg(species: string, name: string, isBreed = false): v
 
   playHoldEmote() // pose the arms as if holding the egg
 
-  openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!')
+  openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!', () =>
+    pushToast('Take your egg home to hatch it!')
+  )
 }
 
 /** Per-frame while carrying: flag whether the player is home (drives the Hatch button). */
@@ -1608,15 +1610,6 @@ function updateInactivePets(dt: number): void {
   }
 }
 
-/** Auto-clear hints whose action is done (the breed hint lives with the panel). */
-function updateHints(): void {
-  const h = clientState.hint
-  if (!h) return
-  if (h.id === 'breed' && !clientState.petPanelOpen) clearHint('breed')
-  // Safety: if the active pet reached Adult, the "grow to Adult" hint is moot.
-  if (h.id === 'breed' && clientState.activePet && petStage(clientState.activePet.size) === 'ADULT') clearHint('breed')
-}
-
 // ---------------------------------------------------------------------------
 // Sleep-lock countdown — a floating "M:SS" over the pet while its exhaustion nap
 // is locked (SLEEP_LOCK_MS). Sits just above the name tag; hidden otherwise.
@@ -1663,7 +1656,6 @@ export function setupPetSystems(): void {
     updateSleepCountdown()
     updateInactivePets(dt)
     updateRemotePets(dt)
-    updateHints()
   })
 }
 

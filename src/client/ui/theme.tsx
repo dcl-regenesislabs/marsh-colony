@@ -29,7 +29,7 @@ export const C = {
   trackBg: { r: 0.12, g: 0.1, b: 0.09, a: 0.9 } as Color,
   pink: { r: 0.85, g: 0.45, b: 0.62, a: 1 } as Color,
   blue: { r: 0.4, g: 0.6, b: 0.9, a: 1 } as Color,
-  potion: { r: 0.62, g: 0.45, b: 0.93, a: 1 } as Color // rarity potion (matches the ultraRare purple)
+  potion: { r: 0.62, g: 0.45, b: 0.93, a: 1 } as Color // rarity potion (purple accent)
 }
 
 export function dimColor(c?: Color): Color {

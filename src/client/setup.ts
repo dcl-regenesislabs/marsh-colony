@@ -111,14 +111,15 @@ function registerHandlers(): void {
 
   room.onMessage('notify', (data) => {
     markServerAlive()
-    pushToast(data.message)
+    pushToast(data.message, data.kind)
   })
 
   // Breeding result — the offspring is an egg (server hatchling). Carry it home
   // and hatch it, just like a fresh adoption; the rarity is the surprise inside.
   room.onMessage('breedResult', (data) => {
     markServerAlive()
-    pushToast(`You bred a ${data.rarity.toUpperCase()} egg — carry it home!`)
+    // No toast here — the server's 'breed' note already announced the rarity;
+    // this message just kicks off the carry-egg-home flow.
     if (data.species) startCarryEgg(data.species, data.name, true)
   })
 

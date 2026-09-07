@@ -573,9 +573,7 @@ export const BREEDING_CARE_BONUS_MAX = 3
  *  entry falls through to 'common'. Tunable. */
 export const BREEDING_RARITY_THRESHOLDS: [Rarity, number][] = [
   ['legendary', 10],
-  ['ultraRare', 8],
-  ['rare', 6],
-  ['uncommon', 4]
+  ['rare', 6]
 ]
 
 // ---------------------------------------------------------------------------
@@ -594,9 +592,7 @@ export const BREEDING_POTION_BONUS = 1.5
 export function rarityLabel(r: Rarity): string {
   const labels: Record<Rarity, string> = {
     common: 'Common',
-    uncommon: 'Uncommon',
     rare: 'Rare',
-    ultraRare: 'Ultra Rare',
     legendary: 'Legendary'
   }
   return labels[r] ?? labels.common
@@ -604,9 +600,7 @@ export function rarityLabel(r: Rarity): string {
 /** Color per rarity tier (RGB 0-1), used for the pet's floating rarity label. */
 export const RARITY_COLOR: Record<Rarity, { r: number; g: number; b: number }> = {
   common: { r: 0.95, g: 0.55, b: 0.72 }, // pink (pastel rose)
-  uncommon: { r: 0.4, g: 0.85, b: 0.45 }, // green
   rare: { r: 0.35, g: 0.62, b: 0.98 }, // blue
-  ultraRare: { r: 0.72, g: 0.42, b: 0.95 }, // purple
   legendary: { r: 1, g: 0.8, b: 0.2 } // gold
 }
 export const CARETAKER_XP_PER_ACTION = 5
