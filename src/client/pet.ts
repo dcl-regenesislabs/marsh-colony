@@ -81,9 +81,13 @@ const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip
 let justBathed = false
 let bathHopT = 0 // seconds remaining in the hop; >0 while mode === 'bathhop'
 let bathHopFrom = Vector3.Zero()
+let bathSplashT = 0
+let bathSplashFrom = Vector3.Zero()
 const BATH_HOP_DURATION = 0.45 // seconds
 const BATH_HOP_DISTANCE = 1.2 // metres covered horizontally while hopping out
 const BATH_HOP_HEIGHT = 0.6 // metres, peak arc height
+const BATH_DURATION = 2.5 // seconds the pet stays in the tub
+const BATH_SPLASH_HEIGHT = 0.08
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -511,6 +515,7 @@ function reanchorLocalPet(pet: PetData): void {
   interactTimer = 0
   justBathed = false
   bathHopT = 0
+  bathSplashT = 0
   followTrail.length = 0
 
   const t = Transform.getMutable(localPet)
@@ -627,6 +632,19 @@ export function petReact(): void {
   mode = 'interact'
   interactClip = 'gesture-positive'
   interactTimer = 0.9
+}
+
+/** Place the pet in a short, in-world eating beat after a successful fruit run. */
+export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: number): void {
+  if (!localPet) return
+  const t = Transform.getMutable(localPet)
+  t.position = flat(position)
+  t.rotation = yawToward(position, lookAt, yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'eat'
+  interactTimer = duration
 }
 
 // ---------------------------------------------------------------------------
@@ -883,6 +901,7 @@ export function placePetAtStation(): void {
     const t = Transform.getMutable(localPet)
     t.position = flat(objectPosition(EntityNames.PetPool_glb))
     t.rotation = Quaternion.Identity()
+    bathSplashFrom = t.position
   }
   // Force the happy-splash pose directly rather than via petReact() — its
   // `mode === 'goto'` guard exists to avoid interrupting an unrelated in-progress
@@ -891,7 +910,8 @@ export function placePetAtStation(): void {
   // is no longer relevant and must not be left to swallow the bathhop transition.
   mode = 'interact'
   interactClip = 'gesture-positive'
-  interactTimer = 0.9
+  interactTimer = BATH_DURATION
+  bathSplashT = 0
   justBathed = true // hop out of the tub instead of walking straight through its rim
   applyCareLocal('clean', false) // optimistic local effect
   actions.care('clean', false) // server is authoritative
@@ -1272,7 +1292,7 @@ function updateLocalPet(dt: number): void {
 
   // Hidden entirely during the Feed tree minigame — it just gets in the way
   // while the player is dodging around to catch fruit.
-  if (clientState.feedGame.active) {
+  if (clientState.feedGame.active && clientState.feedGame.phase !== 'feeding' && clientState.feedGame.phase !== 'results') {
     VisibilityComponent.createOrReplace(localPet, { visible: false })
     if (localTag) setTagVisible(localTag, false)
     return
@@ -1424,12 +1444,22 @@ function updateLocalPet(dt: number): void {
       break
     }
     case 'interact': {
+      if (justBathed) {
+        bathSplashT += dt
+        const splash = Math.abs(Math.sin(bathSplashT * 10)) * BATH_SPLASH_HEIGHT
+        const turn = Math.sin(bathSplashT * 5) * 28
+        const pt = Transform.getMutable(localPet)
+        pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
+        pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
+      }
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {
           justBathed = false
+          const pt = Transform.getMutable(localPet)
+          pt.position = bathSplashFrom
           bathHopT = BATH_HOP_DURATION
-          bathHopFrom = Transform.get(localPet).position
+          bathHopFrom = bathSplashFrom
           mode = 'bathhop'
         } else if (clientState.activePet?.sleeping) {
           // The sleep care action just toggled `sleeping` true (onArrive, above)

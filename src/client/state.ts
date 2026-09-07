@@ -72,14 +72,14 @@ export const clientState: {
   // Feed tree minigame (fruitGame.ts): 'arrival' tracks the zoom-in cinematic,
   // 'intro' is the freeze+emote reveal beat where the player waits (parked)
   // until they tap Start, 'countdown' is the 3-2-1 after Start, 'catching' is
-  // the timed fruit-catching phase the HUD counter/timer reads from, 'results'
-  // is the post-round reveal (count-up + feed bar) before the player taps
-  // Exit. catchFlashUntil (Date.now() ms) briefly pulses the counter each time
-  // a fruit is caught; countdownAt/resultsAt (Date.now() ms) mark when those
-  // phases began, driving their respective animations.
+  // the timed fruit-catching phase the HUD counter/timer reads from, 'feeding'
+  // is the short pet-eating cinematic, and 'results' is the post-round reveal
+  // (count-up + feed bar) before the player taps Exit. catchFlashUntil
+  // (Date.now() ms) briefly pulses the counter each time a fruit is caught;
+  // countdownAt/resultsAt (Date.now() ms) mark the animated phases.
   feedGame: {
     active: boolean
-    phase: 'arrival' | 'intro' | 'countdown' | 'catching' | 'results'
+    phase: 'arrival' | 'intro' | 'countdown' | 'catching' | 'feeding' | 'results'
     caught: number
     timeLeft: number
     catchFlashUntil: number

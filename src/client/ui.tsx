@@ -2016,6 +2016,24 @@ function MoveArrowButton(props: { side: 'left' | 'right' }) {
 // does the actual teardown (fruitGame.ts's finalizeAndClose). No BackButton here
 // — the round is already decided, Exit is the only way out.
 const RESULTS_COUNT_MS = 1500
+const FEED_EATING_MS = 2500
+function FeedEatingPanel() {
+  const st = clientState.feedGame
+  const progress = Math.max(0, Math.min(1, (Date.now() - st.resultsAt) / FEED_EATING_MS))
+  const restored = Math.min(100, st.caught * Cfg.FEED_HUNGER_PER_FRUIT)
+  const barPct = Math.round(progress * restored)
+  const cardW = S(420)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(56), left: '50%' }, margin: { left: -cardW / 2 }, width: cardW, height: S(116), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: S(20), pointerFilter: 'none' }} uiBackground={{ color: C.panelBg }}>
+      <OutlineLabel value="Yum! Your pet is eating" fontSize={S(22)} color={C.gold} width={cardW} height={S(32)} textAlign="middle-center" />
+      <Label value={`Hunger +${restored}`} fontSize={S(16)} color={C.text} textAlign="middle-center" uiTransform={{ width: cardW, height: S(24) }} />
+      <UiEntity uiTransform={{ width: cardW - S(48), height: S(18), borderRadius: S(9), margin: { top: S(6) } }} uiBackground={{ color: C.trackBg }}>
+        <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: S(9) }} uiBackground={{ color: C.hunger }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FeedResultsPanel() {
   const st = clientState.feedGame
   const elapsed = Date.now() - st.resultsAt
@@ -2149,6 +2167,7 @@ function DebugCamPanel() {
 function FeedGameOverlay() {
   const st = clientState.feedGame
   if (!st.active) return <UiEntity />
+  if (st.phase === 'feeding') return <FeedEatingPanel />
   if (st.phase === 'results') return <FeedResultsPanel />
   const catching = st.phase === 'catching'
   const introPhase = st.phase === 'intro'

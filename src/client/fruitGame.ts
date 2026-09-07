@@ -31,6 +31,7 @@ import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchC
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
+import { playEatCinematic } from './pet'
 
 const FRUIT_MODELS = [
   'assets/Models/Fruit01.glb',
@@ -42,6 +43,7 @@ const FRUIT_MODELS = [
 const NUM_FRUIT_SLOTS = 5
 
 const FRUIT_PICK_SOUND = 'assets/sounds/fruit_pick2.wav'
+const FEED_EAT_CINEMATIC_S = 2.5
 
 // Invisible walls placed in the composite (assets/asset-packs/invisible_wall)
 // penning the player into the catch lane: lane_1/lane_2 are the long front/back
@@ -204,7 +206,7 @@ interface FruitRuntime {
   resolvedAt: number
 }
 
-type Phase = 'idle' | 'arrival' | 'intro' | 'countdown' | 'catching' | 'results'
+type Phase = 'idle' | 'arrival' | 'intro' | 'countdown' | 'catching' | 'feeding' | 'results'
 let phase: Phase = 'idle'
 let phaseAt = 0
 let clock = 0
@@ -484,6 +486,12 @@ function beginCatching(): void {
 /** Round over: stop the catching gameplay and submit the reward, but stay on
  *  screen showing the results (count-up + feed bar) — closing fully happens
  *  separately, once the player taps Exit (see finalizeAndClose). */
+function showResults(): void {
+  phase = 'results'
+  clientState.feedGame.phase = 'results'
+  clientState.feedGame.resultsAt = Date.now()
+}
+
 function applyResults(): void {
   const caught = clientState.feedGame.caught
   stopHoldEmote()
@@ -494,13 +502,38 @@ function applyResults(): void {
     f.phase = 'idle'
   }
   // Ground clutter stays lying around for the results beat — it's just cosmetic debris.
-  phase = 'results'
-  clientState.feedGame.phase = 'results'
-  clientState.feedGame.resultsAt = Date.now()
-  if (caught > 0) {
-    applyFeedMinigameLocal(caught) // optimistic local effect
-    actions.feedResult(caught) // tell the server (it corrects via snapshot)
+  if (caught <= 0) {
+    showResults()
+    return
   }
+
+  applyFeedMinigameLocal(caught) // optimistic local effect
+  actions.feedResult(caught) // tell the server (it corrects via snapshot)
+
+  const player = Transform.getOrNull(engine.PlayerEntity)
+  if (player && cinCam) {
+    // Put the pet between the camera and player so the existing fruit-game
+    // camera has a clean, close view of the eating clip.
+    const petPos = Vector3.create(
+      player.position.x - localForward.x * 1.4,
+      player.position.y,
+      player.position.z - localForward.z * 1.4
+    )
+    const camPos = Vector3.create(
+      petPos.x - localForward.x * 3.2,
+      petPos.y + 1.45,
+      petPos.z - localForward.z * 3.2
+    )
+    Transform.createOrReplace(cinCam, {
+      position: camPos,
+      rotation: Quaternion.fromLookAt(camPos, Vector3.create(petPos.x, petPos.y + 0.45, petPos.z))
+    })
+    playEatCinematic(petPos, player.position, FEED_EAT_CINEMATIC_S)
+  }
+  phase = 'feeding'
+  phaseAt = clock
+  clientState.feedGame.phase = 'feeding'
+  clientState.feedGame.resultsAt = Date.now()
 }
 
 /** Release the camera/movement lock/touch controls and hand the screen back —
@@ -570,6 +603,8 @@ function tick(dt: number): void {
     const st = clientState.feedGame
     st.timeLeft = Math.max(0, st.timeLeft - dt)
     if (st.timeLeft <= 0) applyResults()
+  } else if (phase === 'feeding' && clock - phaseAt >= FEED_EAT_CINEMATIC_S) {
+    showResults()
   }
 }
 
