@@ -238,8 +238,9 @@ function TopBars() {
   const w3 = Math.round(h * BAR_PETS_ASPECT)
   const iconSize = h // music/trophy badges are square (1:1) in the sheet
   const totalW = w1 + gap + w2 + gap + w3 + gap + iconSize + gap + iconSize
+  const rightShift = S(40) // nudged off-center — plenty of clearance either side of this row
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 + rightShift }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
       <NameLevelBar height={h} />
       <UiEntity uiTransform={{ width: gap, height: h }} />
       <CoinsBar height={h} />
