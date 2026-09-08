@@ -10,9 +10,10 @@
 // node -> mesh -> material); the "_head"/"_Head" casing is irregular in the source
 // art, which is exactly why these are listed literally instead of derived.
 
-import { Entity, GltfNodeModifiers, Material, type PBMaterial } from '@dcl/sdk/ecs'
+import { AvatarAnchorPointType, AvatarAttach, Entity, GltfNodeModifiers, Material, MeshRenderer, Transform, engine, type PBMaterial } from '@dcl/sdk/ecs'
+import { Vector3 } from '@dcl/sdk/math'
 import type { Rarity } from '../shared/types'
-import type { Family } from '../shared/config'
+import { FAMILIES, type Family } from '../shared/config'
 
 type SkinNode = { path: string; family: Family }
 
@@ -102,6 +103,41 @@ function variantForRarity(rarity: Rarity): string {
 
 function textureSrc(family: Family, rarity: Rarity): string {
   return `assets/textures/creatures/${FILE_PREFIX[family]}_${variantForRarity(rarity)}.png`
+}
+
+// Every base-color variant a creature can wear (one per rarity tier).
+const TEXTURE_VARIANTS = ['basecolor', 'basecolor2', 'basecolorGold']
+
+/** Every creature texture path (family × variant) — the full set a pet might need. */
+function allTextureSrcs(): string[] {
+  const out: string[] = []
+  for (const fam of FAMILIES) for (const v of TEXTURE_VARIANTS) out.push(`assets/textures/creatures/${FILE_PREFIX[fam]}_${v}.png`)
+  return out
+}
+
+let preloaded = false
+/**
+ * Warm the texture cache up front. The GLBs ship textureless and get their skin
+ * applied at runtime; without this the PNG downloads only WHEN a pet first needs
+ * it, so the pet renders flat/untextured for a beat and then pops in (worst on
+ * mobile). Here we spawn one tiny plane per texture and ATTACH each to the player
+ * avatar: that keeps them in-bounds and right by the camera, so the renderer
+ * actually draws them and uploads the textures to the GPU (a plane parked far
+ * off/out-of-bounds may get culled on mobile and never upload). They're 1 cm, so
+ * they're invisible in practice, and kept alive so the textures stay referenced
+ * (not evicted). applyCreatureSkin then reuses the same src straight from cache.
+ * Call once at client setup.
+ */
+export function preloadCreatureTextures(): void {
+  if (preloaded) return
+  preloaded = true
+  for (const src of allTextureSrcs()) {
+    const e = engine.addEntity()
+    Transform.create(e, { scale: Vector3.create(0.01, 0.01, 0.01) })
+    MeshRenderer.setPlane(e)
+    Material.setBasicMaterial(e, { texture: Material.Texture.Common({ src }) })
+    AvatarAttach.create(e, { anchorPointId: AvatarAnchorPointType.AAPT_POSITION }) // ride the avatar: in-bounds + near camera so it really uploads
+  }
 }
 
 /** An UNLIT material carrying just the base-color texture. Unlit shows the art
