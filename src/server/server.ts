@@ -12,6 +12,9 @@ const SNAPSHOT_INTERVAL = 3 // seconds between owner snapshot pushes
 
 // Track which addresses are currently connected (seen via PlayerIdentityData).
 const connected = new Set<string>()
+// address -> ms timestamp when their session started, so we can report the
+// session's duration in the `session ended` event when they disconnect.
+const sessionStart = new Map<string, number>()
 
 function forwardNotes(address: string, notes: S.Notify[]): void {
   for (const n of notes) {
@@ -54,6 +57,7 @@ export function server(): void {
     connected.add(ctx.from)
     const p = await S.loadPlayer(ctx.from)
     if (firstThisSession) {
+      sessionStart.set(ctx.from, Date.now()) // start the clock for session-duration
       trackEvent('session started', ctx.from, { is_new_user: S.isFreshPlayer(ctx.from) })
     }
     pushSnapshot(p)
@@ -298,6 +302,25 @@ export function server(): void {
       }
       broadcastPresence()
       broadcastColony()
+
+      // Departures: anyone we marked `connected` who no longer has a
+      // PlayerIdentityData entity has left the scene -> emit `session ended`
+      // with how long they stayed, keyed by the SAME wallet as `session started`
+      // so PostHog can pair them and chart session duration. Detected within one
+      // TICK_INTERVAL of the actual disconnect.
+      const present = new Set<string>()
+      for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+        void entity
+        present.add(identity.address)
+      }
+      for (const addr of [...connected]) {
+        if (present.has(addr)) continue
+        const start = sessionStart.get(addr)
+        const durationSeconds = start ? Math.round((Date.now() - start) / 1000) : 0
+        trackEvent('session ended', addr, { duration_seconds: durationSeconds })
+        connected.delete(addr)
+        sessionStart.delete(addr)
+      }
     }
 
     if (snapAcc >= SNAPSHOT_INTERVAL) {
