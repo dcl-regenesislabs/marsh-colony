@@ -1,6 +1,7 @@
-// Runtime creature skins. The GLBs ship with embedded base-color textures; here
-// we OVERRIDE each mesh's material with a fresh per-family base-color PNG
-// (assets/textures/creatures/) via GltfNodeModifiers, picked by the pet's rarity.
+// Runtime creature skins. The GLBs ship TEXTURELESS (mesh only); here we assign
+// each mesh a per-family base-color PNG (assets/textures/creatures/) as an UNLIT
+// material via GltfNodeModifiers, picked by the pet's rarity. Applying the skin at
+// runtime is what lets one mesh serve every rarity (common/rare/legendary skins).
 //
 // Why per-node and not a single global override: a cross model has TWO materials
 // — the body (its armature family) and the head (the other family) — so each mesh

@@ -1648,6 +1648,17 @@ const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 
 function Toasts() {
   const now = Date.now()
+  // Hold the queue while a panel/modal/dialog owns the screen: the toast sits at
+  // screen-center, so it would paint over the open UI — exactly the overlap
+  // complaint in #186 that the old off-to-the-side toast/HintBanner avoided.
+  // Nothing is shifted or shown until they close, then the queue resumes.
+  const overlayOpen =
+    uiState.panel !== 'none' ||
+    clientState.dialog.open ||
+    clientState.petPanelOpen ||
+    clientState.viewingPetAddress !== null ||
+    clientState.incomingSwap !== null
+  if (overlayOpen) return <UiEntity />
   if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
     const next = clientState.toasts.shift()!
     clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }

@@ -278,6 +278,18 @@ function normalizeRarity(r: unknown): Rarity {
   return 'common'
 }
 
+// A species whose head/body aren't real families (the removed alien pets, or any
+// unknown legacy id) would resolve to a deleted GLB and render as an INVISIBLE
+// pet. Remap those saves onto a valid adoptable species so the pet still shows up;
+// family originals and crosses pass through untouched. Also collapses the rarity.
+const FAMILY_SET = new Set<string>(C.FAMILIES)
+function migratePet<T extends PetData>(pet: T): T {
+  const cur = C.speciesParts(pet.species)
+  const species = FAMILY_SET.has(cur.head) && FAMILY_SET.has(cur.body) ? pet.species : 'sprout-original'
+  const parts = C.speciesParts(species)
+  return { ...pet, species, head: parts.head, body: parts.body, rarity: normalizeRarity(pet.rarity) }
+}
+
 function sanitize(address: string, d: PlayerData): PlayerData {
   const base = newPlayer(address)
   return {
@@ -287,8 +299,8 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     inventory: { ...base.inventory, ...(d.inventory ?? {}) },
     counters: d.counters ?? {},
     achievements: d.achievements ?? [],
-    pets: (d.pets ?? []).map((pet) => ({ ...newPet(pet.species, pet.name), ...pet, rarity: normalizeRarity(pet.rarity) })),
-    hatchling: d.hatchling ? { ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling, rarity: normalizeRarity(d.hatchling.rarity) } : null
+    pets: (d.pets ?? []).map((pet) => migratePet({ ...newPet(pet.species, pet.name), ...pet })),
+    hatchling: d.hatchling ? migratePet({ ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling }) : null
   }
 }
 

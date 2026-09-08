@@ -1444,48 +1444,6 @@
             "parent": 0
           }
         },
-        "582": {
-          "json": {
-            "position": {
-              "x": 152.52207946777344,
-              "y": -1.25,
-              "z": 238.45816040039062
-            },
-            "scale": {
-              "x": 3,
-              "y": 3,
-              "z": 3
-            },
-            "rotation": {
-              "x": -0.042606715112924576,
-              "y": 0.8253002166748047,
-              "z": 0.12647347152233124,
-              "w": 0.548697292804718
-            },
-            "parent": 0
-          }
-        },
-        "583": {
-          "json": {
-            "position": {
-              "x": 190.7871551513672,
-              "y": -1.2028793096542358,
-              "z": 299.1498107910156
-            },
-            "scale": {
-              "x": 3.0999999046325684,
-              "y": 3.0999999046325684,
-              "z": 3.0999999046325684
-            },
-            "rotation": {
-              "x": -0.01935294270515442,
-              "y": -0.9826866388320923,
-              "z": -0.13593006134033203,
-              "w": 0.12440021336078644
-            },
-            "parent": 0
-          }
-        },
         "584": {
           "json": {
             "position": {
@@ -1713,27 +1671,6 @@
               "y": -0.3826834261417389,
               "z": 0,
               "w": 0.9238795042037964
-            },
-            "parent": 0
-          }
-        },
-        "66117": {
-          "json": {
-            "position": {
-              "x": 153.5,
-              "y": -0.8670985102653503,
-              "z": 223.75
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 2.5,
-              "z": 2.5
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0.6087614297866821,
-              "z": 0,
-              "w": 0.7933533191680908
             },
             "parent": 0
           }
@@ -2419,20 +2356,6 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "582": {
-          "json": {
-            "src": "assets/Models/creatures/sprout/sprout.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
-        "583": {
-          "json": {
-            "src": "assets/Models/creatures/sprout/sprout.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
         "584": {
           "json": {
             "src": "assets/Models/tree.glb",
@@ -2501,13 +2424,6 @@
             "src": "assets/Models/Mountain02/Mountain02.glb",
             "visibleMeshesCollisionMask": 2,
             "invisibleMeshesCollisionMask": 2
-          }
-        },
-        "66117": {
-          "json": {
-            "src": "assets/Models/creatures/sprout/sprout.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
           }
         }
       }
@@ -2855,16 +2771,6 @@
             "value": "Amebita.glb"
           }
         },
-        "582": {
-          "json": {
-            "value": "Sprout.glb_2"
-          }
-        },
-        "583": {
-          "json": {
-            "value": "Sprout.glb_3"
-          }
-        },
         "584": {
           "json": {
             "value": "tree.glb"
@@ -2918,11 +2824,6 @@
         "66094": {
           "json": {
             "value": "Mountain02.glb"
-          }
-        },
-        "66117": {
-          "json": {
-            "value": "Sprout.glb"
           }
         }
       }
@@ -3096,9 +2997,6 @@
                   574,
                   575,
                   580,
-                  66117,
-                  583,
-                  582,
                   584,
                   585,
                   586,
@@ -3432,18 +3330,6 @@
                 "children": []
               },
               {
-                "entity": 66117,
-                "children": []
-              },
-              {
-                "entity": 582,
-                "children": []
-              },
-              {
-                "entity": 583,
-                "children": []
-              },
-              {
                 "entity": 584,
                 "children": []
               },
@@ -3692,12 +3578,6 @@
         "580": {
           "json": {}
         },
-        "582": {
-          "json": {}
-        },
-        "583": {
-          "json": {}
-        },
         "584": {
           "json": {}
         },
@@ -3732,9 +3612,6 @@
           "json": {}
         },
         "66094": {
-          "json": {}
-        },
-        "66117": {
           "json": {}
         }
       }
