@@ -21,9 +21,13 @@ import {
   InputModifier,
   AvatarAttach,
   AvatarAnchorPointType,
-  AudioSource
+  AudioSource,
+  MeshRenderer,
+  Material,
+  MaterialTransparencyMode,
+  Billboard
 } from '@dcl/sdk/ecs'
-import { Vector3, Quaternion } from '@dcl/sdk/math'
+import { Vector3, Quaternion, Color4 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { actions, clientState, pushToast } from './state'
@@ -40,6 +44,11 @@ const FRUIT_MODELS = [
   'assets/Models/Fruit05.glb'
 ]
 const NUM_FRUIT_SLOTS = 5
+// Visual scale applied to every fruit (falling + fallen clutter). Cosmetic
+// only — catching is a point check against the fruit's pivot vs the player
+// (CATCH_RADIUS / CATCH_MIN_Y / CATCH_MAX_Y below), so the mesh size doesn't
+// change difficulty. Set to 1 for the model's native size.
+const FRUIT_SCALE = 1.2
 
 const FRUIT_PICK_SOUND = 'assets/sounds/fruit_pick2.wav'
 
@@ -77,8 +86,21 @@ const MIN_HANG_S = 1.2
 const MAX_HANG_S = 2.5
 const RESPAWN_DELAY_S = 0.8
 const CATCH_RADIUS = 1.1 // metres, flat XZ
-const CATCH_MIN_Y = 0.2 // above ground
+// Catch window is mid-air only. A fully fallen fruit rests at groundY +
+// FRUIT_GROUND_OFFSET (0.3); CATCH_MIN_Y sits ABOVE that so a fruit that has
+// already landed (or is about to, on the same frame its fall tween completes)
+// is NOT catchable — it reads as a miss / ground clutter instead. Raising it
+// here is what stops "picking fruit off the ground".
+const CATCH_MIN_Y = 0.7 // above ground
 const CATCH_MAX_Y = 2.4
+// On a catch the fruit isn't hidden on the spot — it's reparented ONTO the
+// drawer (same as the catch-burst circle) and tweened, in the drawer's local
+// space, from just above the circle spot down into it, then unparented + hidden
+// (see resolveFruit / the 'caught' phase in fruitTick). Parenting means it
+// tracks the box wherever the player is, instead of a world-space guess that
+// kept landing on the avatar's hips.
+const CATCH_SUCK_MS = 280 // fruit's travel-into-the-box time — long enough to read, not a blink
+const FRUIT_SUCK_START_LOCAL = Vector3.create(0, 0.6, 0.15) // offset ABOVE CATCH_BURST_LOCAL_OFFSET where the tween starts
 // Fruit01-05's pivots all sit well above their base (measured ~0.24-0.36m) —
 // landing them exactly at groundY buries most of the model, leaving only the
 // stem poking out. Lift the resting height so they actually sit ON the ground.
@@ -94,6 +116,42 @@ const GROUND_CLUTTER_COUNT = 8
 const LAND_BOUNCE_HEIGHT = 0.22
 const LAND_BOUNCE_UP_MS = 180
 const LAND_BOUNCE_DOWN_MS = 220
+
+// Catch feedback: a soft glow sprite (circle_01.png on a camera-facing plane)
+// that pops in at the caught fruit's position, expands, fades, and vanishes —
+// a purely local, cosmetic "you got that one" cue on top of the existing
+// counter bump / screen flash / pick sound in resolveFruit. Pooled at the
+// fruit-slot count so several near-simultaneous catches each get their own.
+const CATCH_BURST_TEXTURE = 'assets/images/circle_01.png'
+const CATCH_BURST_COUNT = NUM_FRUIT_SLOTS
+const CATCH_BURST_START_SCALE = 0.2
+const CATCH_BURST_END_SCALE = 1.6
+const CATCH_BURST_GROW_MS = 240 // grow (scale tween) at full opacity
+const CATCH_BURST_FADE_MS = 220 // then lerp alpha/emissive to 0 and hide
+// The pop is PARENTED to `drawerEntity` (the box/crate cradled in both hands),
+// so it rides with the box as the player strafes instead of being placed at a
+// world-space guess near the avatar root (which landed near the hips). This is
+// the local offset from that box's own origin — nudge up/forward to sit it on
+// the lip of the box / in the hands. NOTE: the box is held at scale
+// DRAWER_HOLD_SCALE, so this offset (and the sprite) inherit that scale.
+const CATCH_BURST_LOCAL_OFFSET = Vector3.create(0, 0.6, 0.1)
+const CATCH_BURST_TINT = Color4.create(0.55, 1, 0.7, 1) // light minty green (tints both emissive + albedo)
+const CATCH_BURST_EMISSIVE = 2.4 // emissive glow strength — higher = brighter/lighter bloom
+
+// Miss feedback: a scorch/splat decal (scorch_03.png) laid FLAT on the ground
+// where an uncaught fruit hit — same pop-grow-then-fade idea as the catch
+// burst, but a ground plane (not a billboard), no glow, and it lingers a few
+// seconds. Purely cosmetic; the fallen-fruit ground clutter still drops as
+// before. Pooled at GROUND_CLUTTER_COUNT so a streak of misses each get one.
+const SCORCH_TEXTURE = 'assets/images/scorch_03.png'
+const SCORCH_COUNT = GROUND_CLUTTER_COUNT
+const SCORCH_START_SCALE = 0.6
+const SCORCH_END_SCALE = 1.15 // metres across (plane is 1x1 at scale 1)
+const SCORCH_GROW_MS = 300 // pop out to full size
+const SCORCH_HOLD_MS = 2500 // sit at full opacity
+const SCORCH_FADE_MS = 3000 // then fade away — total lifetime ~5.8s
+const SCORCH_Y_OFFSET = 0.04 // lift off the floor to avoid z-fighting
+const SCORCH_TINT = Color4.create(0.32, 0.2, 0.11, 1) // dark muddy splat — RGB only, alpha is driven by the fade
 
 // Adjustment applied to the composite-placed cinematic_point marker — closer
 // to, and lower than, the raw spot. This is also the "pulled back" game-camera
@@ -196,7 +254,7 @@ const DRAWER_MODEL = 'assets/asset-packs/drawer_2/Drawer 2.glb'
 const DRAWER_HOLD_OFFSET = Vector3.create(0.22, 0, 0.2)
 const DRAWER_HOLD_SCALE = 0.9
 
-type FruitPhase = 'idle' | 'falling' | 'resolved'
+type FruitPhase = 'idle' | 'falling' | 'caught' | 'resolved'
 interface FruitRuntime {
   entity: Entity
   phase: FruitPhase
@@ -214,6 +272,15 @@ let drawerRevealed = false
 const fruits: FruitRuntime[] = []
 const groundClutter: Entity[] = [] // decorative fallen fruit — see GROUND_CLUTTER_COUNT
 let clutterIndex = 0
+const catchBursts: Entity[] = [] // pooled glow sprites — see CATCH_BURST_* / spawnCatchBurst
+let catchBurstIndex = 0
+// entity -> module clock (seconds) it was spawned at; present only while animating
+const catchBurstStartedAt = new Map<Entity, number>()
+let catchBurstTexture: ReturnType<typeof Material.Texture.Common> | null = null
+const scorches: Entity[] = [] // pooled ground splat decals — see SCORCH_* / spawnScorch
+let scorchIndex = 0
+const scorchStartedAt = new Map<Entity, number>()
+let scorchTexture: ReturnType<typeof Material.Texture.Common> | null = null
 let cinCam: Entity | null = null // the one cinematic camera, re-Tweened rather than swapped
 let drawerAnchor: Entity | null = null
 let drawerEntity: Entity | null = null
@@ -348,22 +415,182 @@ function dropGroundClutter(pos: Vector3, model: string): void {
   const entity = groundClutter[clutterIndex]
   clutterIndex = (clutterIndex + 1) % groundClutter.length
   GltfContainer.createOrReplace(entity, { src: model, ...NO_COLLISION })
-  Transform.createOrReplace(entity, { position: pos })
+  Transform.createOrReplace(entity, { position: pos, scale: Vector3.scale(Vector3.One(), FRUIT_SCALE) })
   VisibilityComponent.createOrReplace(entity, { visible: true })
   playLandBounce(entity, pos)
+}
+
+/** Build the shared glow-sprite material at `emissive`/alpha strength `k`
+ *  (1 = full, 0 = gone). Re-applied per frame during the fade so the sprite
+ *  dims out instead of hard-cutting. */
+function applyCatchBurstMaterial(entity: Entity, k: number): void {
+  if (!catchBurstTexture) return
+  Material.setPbrMaterial(entity, {
+    texture: catchBurstTexture,
+    alphaTexture: catchBurstTexture,
+    emissiveTexture: catchBurstTexture,
+    emissiveColor: CATCH_BURST_TINT,
+    emissiveIntensity: CATCH_BURST_EMISSIVE * k,
+    albedoColor: Color4.create(CATCH_BURST_TINT.r, CATCH_BURST_TINT.g, CATCH_BURST_TINT.b, k),
+    roughness: 1,
+    metallic: 0,
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND
+  })
+}
+
+/** Pop a glow sprite ON the box held in both hands (parented to `drawerEntity`
+ *  at CATCH_BURST_LOCAL_OFFSET), NOT at the caught fruit: scale-tween small ->
+ *  large over its lifetime, full opacity for the grow, then alpha fades over
+ *  the tail (see catchBurstTick). Round-robins the pool. */
+function spawnCatchBurst(): void {
+  const e = catchBursts[catchBurstIndex]
+  if (!e || !drawerEntity) return
+  catchBurstIndex = (catchBurstIndex + 1) % catchBursts.length
+  Tween.deleteFrom(e)
+  const t = Transform.getMutable(e)
+  t.parent = drawerEntity
+  t.position = CATCH_BURST_LOCAL_OFFSET
+  t.scale = Vector3.scale(Vector3.One(), CATCH_BURST_START_SCALE)
+  applyCatchBurstMaterial(e, 1)
+  VisibilityComponent.createOrReplace(e, { visible: true })
+  Tween.createOrReplace(e, {
+    mode: Tween.Mode.Scale({
+      start: Vector3.scale(Vector3.One(), CATCH_BURST_START_SCALE),
+      end: Vector3.scale(Vector3.One(), CATCH_BURST_END_SCALE)
+    }),
+    duration: CATCH_BURST_GROW_MS + CATCH_BURST_FADE_MS,
+    easingFunction: EasingFunction.EF_EASEOUTQUAD
+  })
+  catchBurstStartedAt.set(e, clock)
+}
+
+/** Fade + retire any live catch bursts. Runs every frame from tick(), so a
+ *  pop that lands right as the round ends still completes. */
+function catchBurstTick(): void {
+  if (catchBurstStartedAt.size === 0) return
+  for (const [e, startedAt] of catchBurstStartedAt) {
+    const ageMs = (clock - startedAt) * 1000
+    if (ageMs <= CATCH_BURST_GROW_MS) continue // grow phase — full opacity, tween drives scale
+    const fade = (ageMs - CATCH_BURST_GROW_MS) / CATCH_BURST_FADE_MS
+    if (fade >= 1) {
+      Tween.deleteFrom(e)
+      VisibilityComponent.createOrReplace(e, { visible: false })
+      catchBurstStartedAt.delete(e)
+      continue
+    }
+    applyCatchBurstMaterial(e, 1 - fade)
+  }
+}
+
+/** Hide every catch burst and drop their timers — called on close/reset. */
+function clearCatchBursts(): void {
+  for (const e of catchBursts) {
+    Tween.deleteFrom(e)
+    VisibilityComponent.createOrReplace(e, { visible: false })
+  }
+  catchBurstStartedAt.clear()
+}
+
+/** Ground-splat material at alpha strength `k` (1 = full, 0 = gone). No
+ *  emissive — a scorch mark shouldn't glow. */
+function applyScorchMaterial(entity: Entity, k: number): void {
+  if (!scorchTexture) return
+  Material.setPbrMaterial(entity, {
+    texture: scorchTexture,
+    alphaTexture: scorchTexture,
+    albedoColor: Color4.create(SCORCH_TINT.r, SCORCH_TINT.g, SCORCH_TINT.b, k),
+    roughness: 1,
+    metallic: 0,
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND
+  })
+}
+
+/** Lay a scorch decal flat on the ground at `at` (x/z only — it sits at
+ *  groundY): pop-grow to full size, hold, then fade over a few seconds
+ *  (see scorchTick). Round-robins the pool; random spin so repeats don't
+ *  read as tiled. */
+function spawnScorch(at: Vector3): void {
+  const e = scorches[scorchIndex]
+  if (!e) return
+  scorchIndex = (scorchIndex + 1) % scorches.length
+  Tween.deleteFrom(e)
+  const t = Transform.getMutable(e)
+  t.position = Vector3.create(at.x, groundY + SCORCH_Y_OFFSET, at.z)
+  // Plane faces +Z by default; -90° about X tips it face-up, Z roll then spins
+  // it flat around its (now vertical) normal.
+  t.rotation = Quaternion.fromEulerDegrees(-90, 0, Math.random() * 360)
+  t.scale = Vector3.scale(Vector3.One(), SCORCH_START_SCALE)
+  applyScorchMaterial(e, 1)
+  VisibilityComponent.createOrReplace(e, { visible: true })
+  Tween.createOrReplace(e, {
+    mode: Tween.Mode.Scale({
+      start: Vector3.scale(Vector3.One(), SCORCH_START_SCALE),
+      end: Vector3.scale(Vector3.One(), SCORCH_END_SCALE)
+    }),
+    duration: SCORCH_GROW_MS,
+    easingFunction: EasingFunction.EF_EASEOUTQUAD
+  })
+  scorchStartedAt.set(e, clock)
+}
+
+/** Fade + retire any live scorch decals. Runs every frame from tick(). */
+function scorchTick(): void {
+  if (scorchStartedAt.size === 0) return
+  const fadeStartMs = SCORCH_GROW_MS + SCORCH_HOLD_MS
+  for (const [e, startedAt] of scorchStartedAt) {
+    const ageMs = (clock - startedAt) * 1000
+    if (ageMs <= fadeStartMs) continue
+    const fade = (ageMs - fadeStartMs) / SCORCH_FADE_MS
+    if (fade >= 1) {
+      Tween.deleteFrom(e)
+      VisibilityComponent.createOrReplace(e, { visible: false })
+      scorchStartedAt.delete(e)
+      continue
+    }
+    applyScorchMaterial(e, 1 - fade)
+  }
+}
+
+/** Hide every scorch decal and drop their timers — called on close/reset. */
+function clearScorches(): void {
+  for (const e of scorches) {
+    Tween.deleteFrom(e)
+    VisibilityComponent.createOrReplace(e, { visible: false })
+  }
+  scorchStartedAt.clear()
 }
 
 function resolveFruit(f: FruitRuntime, caught: boolean): void {
   const pos = Transform.get(f.entity).position
   Tween.deleteFrom(f.entity)
-  VisibilityComponent.createOrReplace(f.entity, { visible: false })
   if (caught) {
     clientState.feedGame.caught += 1
     clientState.feedGame.catchFlashUntil = Date.now() + 350
     if (sfxEntity) AudioSource.playSound(sfxEntity, FRUIT_PICK_SOUND)
-  } else {
-    dropGroundClutter(pos, GltfContainer.get(f.entity).src)
+    spawnCatchBurst()
+    // Don't blink it out in mid-air — reparent onto the drawer and slide it
+    // from just above the circle spot down into the box, staying visible;
+    // fruitTick unparents + hides it once this tween finishes ('caught').
+    if (drawerEntity) {
+      const startLocal = Vector3.add(CATCH_BURST_LOCAL_OFFSET, FRUIT_SUCK_START_LOCAL)
+      const t = Transform.getMutable(f.entity)
+      t.parent = drawerEntity
+      t.position = startLocal
+      Tween.createOrReplace(f.entity, {
+        mode: Tween.Mode.Move({ start: startLocal, end: CATCH_BURST_LOCAL_OFFSET }),
+        duration: CATCH_SUCK_MS,
+        easingFunction: EasingFunction.EF_EASEINQUAD
+      })
+    } else {
+      VisibilityComponent.createOrReplace(f.entity, { visible: false })
+    }
+    f.phase = 'caught'
+    f.resolvedAt = clock
+    return
   }
+  VisibilityComponent.createOrReplace(f.entity, { visible: false })
+  dropGroundClutter(pos, GltfContainer.get(f.entity).src)
+  spawnScorch(pos)
   f.phase = 'resolved'
   f.resolvedAt = clock
 }
@@ -382,6 +609,20 @@ function fruitTick(): void {
         resolveFruit(f, true)
       } else if (tweenSystem.tweenCompleted(f.entity)) {
         resolveFruit(f, false)
+      }
+      continue
+    }
+    if (f.phase === 'caught') {
+      // The suck-into-the-box tween from resolveFruit — unparent from the
+      // drawer, restore scale, hide, and start the respawn clock once it lands.
+      if (tweenSystem.tweenCompleted(f.entity)) {
+        Tween.deleteFrom(f.entity)
+        const t = Transform.getMutable(f.entity)
+        t.parent = undefined
+        t.scale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
+        VisibilityComponent.createOrReplace(f.entity, { visible: false })
+        f.phase = 'resolved'
+        f.resolvedAt = clock
       }
       continue
     }
@@ -511,6 +752,8 @@ function finalizeAndClose(): void {
   if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
   setLaneColliders(false)
   applyDefaultTouchControls()
+  clearCatchBursts()
+  clearScorches()
   if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
   for (const e of groundClutter) {
     Tween.deleteFrom(e)
@@ -556,6 +799,8 @@ function logIfOutOfBounds(): void {
 
 function tick(dt: number): void {
   clock += dt
+  catchBurstTick() // cosmetic, phase-independent so a pop finishes even past round end
+  scorchTick()
   if (phase === 'arrival') {
     arrivalTick()
   } else if (phase === 'intro') {
@@ -575,9 +820,10 @@ function tick(dt: number): void {
 
 /** Spawn the (initially hidden) fruit pool once and start the module's system. */
 export function setupFruitGame(): void {
+  const fruitScale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
   for (let i = 0; i < NUM_FRUIT_SLOTS; i++) {
     const entity = engine.addEntity()
-    Transform.create(entity, { position: Vector3.Zero() })
+    Transform.create(entity, { position: Vector3.Zero(), scale: fruitScale })
     GltfContainer.create(entity, { src: FRUIT_MODELS[i % FRUIT_MODELS.length], ...NO_COLLISION })
     VisibilityComponent.create(entity, { visible: false })
     fruits.push({ entity, phase: 'idle', nextDropAt: 0, resolvedAt: 0 })
@@ -585,10 +831,32 @@ export function setupFruitGame(): void {
 
   for (let i = 0; i < GROUND_CLUTTER_COUNT; i++) {
     const entity = engine.addEntity()
-    Transform.create(entity, { position: Vector3.Zero() })
+    Transform.create(entity, { position: Vector3.Zero(), scale: fruitScale })
     GltfContainer.create(entity, { src: FRUIT_MODELS[i % FRUIT_MODELS.length], ...NO_COLLISION })
     VisibilityComponent.create(entity, { visible: false })
     groundClutter.push(entity)
+  }
+
+  catchBurstTexture = Material.Texture.Common({ src: CATCH_BURST_TEXTURE })
+  for (let i = 0; i < CATCH_BURST_COUNT; i++) {
+    const entity = engine.addEntity()
+    Transform.create(entity, { position: Vector3.Zero(), scale: Vector3.Zero() })
+    MeshRenderer.setPlane(entity)
+    applyCatchBurstMaterial(entity, 1)
+    Billboard.create(entity) // always face the camera
+    VisibilityComponent.create(entity, { visible: false })
+    catchBursts.push(entity)
+  }
+
+  scorchTexture = Material.Texture.Common({ src: SCORCH_TEXTURE })
+  for (let i = 0; i < SCORCH_COUNT; i++) {
+    const entity = engine.addEntity()
+    Transform.create(entity, { position: Vector3.Zero(), scale: Vector3.Zero() })
+    MeshRenderer.setPlane(entity)
+    applyScorchMaterial(entity, 1)
+    // no Billboard — spawnScorch lays it flat on the ground
+    VisibilityComponent.create(entity, { visible: false })
+    scorches.push(entity)
   }
 
   drawerAnchor = engine.addEntity()
@@ -777,7 +1045,10 @@ export function startFruitGame(mascotaId: string): void {
   for (const f of fruits) {
     Tween.deleteFrom(f.entity)
     GltfContainer.createOrReplace(f.entity, { src: randomFruitModel(), ...NO_COLLISION })
-    Transform.getMutable(f.entity).position = randomCanopySpot()
+    const t = Transform.getMutable(f.entity)
+    t.parent = undefined // in case a round ended while this fruit was mid-'caught' (still parented to the drawer)
+    t.scale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
+    t.position = randomCanopySpot()
     VisibilityComponent.createOrReplace(f.entity, { visible: true })
     f.phase = 'idle'
   }
