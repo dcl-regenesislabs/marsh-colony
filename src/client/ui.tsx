@@ -236,7 +236,8 @@ function TopBars() {
   const w1 = Math.round(h * BAR_NAME_ASPECT)
   const w2 = Math.round(h * BAR_COIN_ASPECT)
   const w3 = Math.round(h * BAR_PETS_ASPECT)
-  const totalW = w1 + gap + w2 + gap + w3
+  const iconSize = h // music/trophy badges are square (1:1) in the sheet
+  const totalW = w1 + gap + w2 + gap + w3 + gap + iconSize + gap + iconSize
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
       <NameLevelBar height={h} />
@@ -244,6 +245,10 @@ function TopBars() {
       <CoinsBar height={h} />
       <UiEntity uiTransform={{ width: gap, height: h }} />
       <PetsCountBar height={h} />
+      <UiEntity uiTransform={{ width: gap, height: h }} />
+      <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
+      <UiEntity uiTransform={{ width: gap, height: h }} />
+      <TactileButton id="hud_leaderboard" label="" texture={HUD_SHEET} uvs={HUD_TROPHY_UVS} width={iconSize} height={iconSize} onClick={() => ui.openLeaderboard()} />
     </UiEntity>
   )
 }
@@ -684,70 +689,9 @@ function SideButtons() {
   return <UiEntity />
 }
 
-// ---------------------------------------------------------------------------
-// Jukebox HUD button (mid-right) — the entry point to the track picker.
-// ---------------------------------------------------------------------------
-// The cozy-farm jukebox hangs off a clickable Boombox model in the scene; there
-// is no such prop in this composite, so the colony gets a HUD button instead.
-// It sits on the mid-right edge — the slot this file's header reserves for side
-// buttons, and currently the only free one: the top-right is crossed by the
-// toast pill (top S(84), 320 wide, anchored right) and the bottom-right by
-// ServerStatus. Same gating as BottomNav: hidden during dialogs and the
-// full-screen flows (fetch / carry / hatch) that own the whole screen.
-function MusicButton() {
-  if (clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) {
-    return <UiEntity />
-  }
-  const size = Sbtn(52)
-  const muted = musicState.muted
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: '40%', right: S(16) }, width: size, height: size, pointerFilter: 'none' }}
-    >
-      <TactileButton
-        id="hud_music"
-        label="♪"
-        width={size}
-        height={size}
-        bg={muted ? C.cardAlt : C.pink}
-        textColor={muted ? C.dim : C.text}
-        fontSize={Math.round(size * 0.5)}
-        radius={Math.round(size / 2)}
-        onClick={() => ui.openJukebox()}
-      />
-    </UiEntity>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Leaderboard HUD button (mid-right, just below the Jukebox button) + panel.
-// Same size/gating as MusicButton; a pink circle labelled "TOP 10".
-// ---------------------------------------------------------------------------
-function LeaderboardButton() {
-  if (clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) {
-    return <UiEntity />
-  }
-  const size = Sbtn(52)
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: '40%', right: S(16) }, margin: { top: size + S(12) }, width: size, height: size, pointerFilter: 'none' }}
-    >
-      {/* Pink circle like the music button, labelled "TOP 10" (two lines so it
-          fits the circle). */}
-      <TactileButton
-        id="hud_leaderboard"
-        label={'TOP\n10'}
-        bg={C.pink}
-        textColor={LOC.white}
-        fontSize={Math.round(size * 0.3)}
-        width={size}
-        height={size}
-        radius={Math.round(size / 2)}
-        onClick={() => ui.openLeaderboard()}
-      />
-    </UiEntity>
-  )
-}
+// Jukebox + Leaderboard entry points now live as icon buttons in the top HUD
+// row (TopBars, next to the pets counter) instead of floating mid-right
+// placeholders.
 
 // Column widths shared by the header + rows so they line up. name is fixed (not
 // flex) so Creatures sits centered in the middle and Coins on the right, evenly
@@ -2472,6 +2416,11 @@ const BAR_PETS_BOX = { x0: 567, y0: 30, x1: 989, y1: 155 }
 const NAV_PAW_BOX = { x0: 34, y0: 612, x1: 238, y1: 817 }
 const NAV_INV_BOX = { x0: 263, y0: 612, x1: 466, y1: 817 }
 const NAV_GOALS_BOX = { x0: 492, y0: 614, x1: 696, y1: 817 }
+// Round music/trophy icon badges, stacked just under the coin pill in the
+// sheet — now used in the top HUD row next to the pets counter instead of
+// their old floating mid-right placeholder spot.
+const HUD_MUSIC_BOX = { x0: 578, y0: 338, x1: 697, y1: 457 }
+const HUD_TROPHY_BOX = { x0: 578, y0: 473, x1: 697, y1: 592 }
 
 const BAR_NAME_UVS = petHudUvRect(BAR_NAME_BOX.x0, BAR_NAME_BOX.y0, BAR_NAME_BOX.x1, BAR_NAME_BOX.y1)
 const BAR_COIN_UVS = petHudUvRect(BAR_COIN_BOX.x0, BAR_COIN_BOX.y0, BAR_COIN_BOX.x1, BAR_COIN_BOX.y1)
@@ -2479,6 +2428,8 @@ const BAR_PETS_UVS = petHudUvRect(BAR_PETS_BOX.x0, BAR_PETS_BOX.y0, BAR_PETS_BOX
 const NAV_PAW_UVS = petHudUvRect(NAV_PAW_BOX.x0, NAV_PAW_BOX.y0, NAV_PAW_BOX.x1, NAV_PAW_BOX.y1)
 const NAV_INV_UVS = petHudUvRect(NAV_INV_BOX.x0, NAV_INV_BOX.y0, NAV_INV_BOX.x1, NAV_INV_BOX.y1)
 const NAV_GOALS_UVS = petHudUvRect(NAV_GOALS_BOX.x0, NAV_GOALS_BOX.y0, NAV_GOALS_BOX.x1, NAV_GOALS_BOX.y1)
+const HUD_MUSIC_UVS = petHudUvRect(HUD_MUSIC_BOX.x0, HUD_MUSIC_BOX.y0, HUD_MUSIC_BOX.x1, HUD_MUSIC_BOX.y1)
+const HUD_TROPHY_UVS = petHudUvRect(HUD_TROPHY_BOX.x0, HUD_TROPHY_BOX.y0, HUD_TROPHY_BOX.x1, HUD_TROPHY_BOX.y1)
 
 const BAR_NAME_ASPECT = (BAR_NAME_BOX.x1 - BAR_NAME_BOX.x0) / (BAR_NAME_BOX.y1 - BAR_NAME_BOX.y0)
 const BAR_COIN_ASPECT = (BAR_COIN_BOX.x1 - BAR_COIN_BOX.x0) / (BAR_COIN_BOX.y1 - BAR_COIN_BOX.y0)
@@ -2701,8 +2652,6 @@ const Root = () => {
         <RemotePetPanel />
         <SwapOfferPanel />
         <SideButtons />
-        <MusicButton />
-        <LeaderboardButton />
         <BottomNav />
         <FetchOverlay />
         <CarryHatchButton />
