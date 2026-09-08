@@ -47,7 +47,7 @@ import {
 } from '../shared/config'
 import type { PetData } from '../shared/types'
 import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, clearHint, hasPendingHatchling } from './state'
-import { applyCareLocal } from './sim'
+import { startBathGame } from './bathGame'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
@@ -452,7 +452,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.bathGame.active
 }
 
 /**
@@ -893,9 +893,9 @@ export function placePetAtStation(): void {
   interactClip = 'gesture-positive'
   interactTimer = 0.9
   justBathed = true // hop out of the tub instead of walking straight through its rim
-  applyCareLocal('clean', false) // optimistic local effect
-  actions.care('clean', false) // server is authoritative
-  pushToast('Bath time!  +Hygiene')
+  // Instead of an instant clean, run the bubble-bath minigame — the hygiene reward
+  // is applied only if the player pops enough bubbles (see bathGame.applyBathResults).
+  startBathGame()
 }
 
 // ---------------------------------------------------------------------------
@@ -1284,6 +1284,14 @@ function updateLocalPet(dt: number): void {
   // icons would flash back on while it's talking.
   VisibilityComponent.createOrReplace(localPet, { visible: true })
   if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
+
+  // During the bubble-bath minigame the pet stays put in the tub (where
+  // placePetAtStation teleported it) and just idles — don't let the follow/roam
+  // logic below walk it away while the player is popping bubbles.
+  if (clientState.bathGame.active) {
+    setClip(localPet, 'idle')
+    return
+  }
 
   // While carrying a new egg (or hatching it, before the newborn emerges), send
   // the CURRENT pet to its home slot and park it there. This clears the hatch

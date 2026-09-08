@@ -86,6 +86,18 @@ export const clientState: {
     countdownAt: number
     resultsAt: number
   }
+  // Bubble-bath minigame (see client/bathGame.ts). `popped` counts popped
+  // bubbles, `timeLeft` the popping-phase clock; popFlashUntil (Date.now() ms)
+  // pulses the counter on a pop, countdownAt/resultsAt anchor those animations.
+  bathGame: {
+    active: boolean
+    phase: 'intro' | 'countdown' | 'popping' | 'results'
+    popped: number
+    timeLeft: number
+    popFlashUntil: number
+    countdownAt: number
+    resultsAt: number
+  }
   // Fetch (Play) mode: `active` shows the centered Fetch button and hides the
   // panel; `busy` is true from the moment the ball is thrown until the pet drops
   // it back (the Fetch button is disabled while busy). Holding the Throw button
@@ -135,6 +147,7 @@ export const clientState: {
   feedTask: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
   feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
+  bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
   pendingUntil: 0,
@@ -255,6 +268,7 @@ export function switchActivePet(petId: string): void {
     s.petting.active ||
     s.fetch.active ||
     s.feedGame.active ||
+    s.bathGame.active ||
     s.feedTask.active
   ) {
     pushToast('Finish what your pet is doing first!')
