@@ -32,14 +32,17 @@ import {
   exitFeedResults,
   startCatchingCountdown,
   COUNTDOWN_S,
-  DebugCamKey,
-  debugCamAvailableKeys,
-  debugCamLabel,
-  debugCamValue,
-  debugCamAdjust,
-  debugCamToggleClosePreview,
-  debugCamIsClosePreview,
-  debugCamPrint
+  type DebugFruitPileKey,
+  debugFruitDrawerAdjust,
+  debugFruitDrawerLabel,
+  debugFruitDrawerReset,
+  debugFruitDrawerValue,
+  debugFruitPileActive,
+  debugFruitPileAdjust,
+  debugFruitPileLabel,
+  debugFruitPileReset,
+  debugFruitPileToggle,
+  debugFruitPileValue
 } from './fruitGame'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible } from './ui/anim'
@@ -1730,6 +1733,7 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
 function PettingOverlay() {
   const st = clientState.petting
   if (!st.active) return <UiEntity />
+  const celebrating = st.celebrationUntil > Date.now()
   const pct = Math.round(st.progress * 100)
   const handD = S(96)
   const isM = mobile()
@@ -1737,7 +1741,7 @@ function PettingOverlay() {
   // finger you tap (the app has no cursor-drag yet, so tapping fills the bar).
   const swayX = isM ? 0 : Math.round(sway() * S(150))
   const handIcon = isM ? '👆' : '✋'
-  const hint = isM ? 'Tap your pet!' : 'Swipe left & right to pet!'
+  const hint = celebrating ? 'Your pet is happy!' : isM ? 'Tap your pet!' : 'Swipe left & right to pet!'
   return (
     // Full-screen blocker (transparent) so touches drive the gesture and never
     // reach the avatar. The pet shows through from the fixed camera. On mobile,
@@ -1746,14 +1750,14 @@ function PettingOverlay() {
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'block' }}
       uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
       onMouseDown={() => {
-        if (isM) petTap()
+        if (isM && !celebrating) petTap()
       }}
     >
-      <BackButton onClick={() => cancelPetting()} />
+      {!celebrating && <BackButton onClick={() => cancelPetting()} />}
       {/* Swipe hint: a hand that drifts side to side across the middle (over the
           centered pet). Placeholder disc + emoji until the hand art arrives. */}
       <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: '34%', left: '50%' }, width: handD, height: handD, margin: { left: -handD / 2 + swayX }, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}
+        uiTransform={{ display: celebrating ? 'none' : 'flex', positionType: 'absolute', position: { top: '34%', left: '50%' }, width: handD, height: handD, margin: { left: -handD / 2 + swayX }, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}
       >
         <UiEntity
           uiTransform={{ width: handD, height: handD, borderRadius: Math.round(handD), alignItems: 'center', justifyContent: 'center' }}
@@ -2010,24 +2014,20 @@ function MoveArrowButton(props: { side: 'left' | 'right' }) {
   )
 }
 
-// Post-round reveal: a fruit count-up (0 -> caught) with a feed bar filling in
-// lockstep (same fraction the actual hunger effect uses — Cfg.FEED_HUNGER_PER_FRUIT
-// — so the bar reads as "this is how full your pet's about to get"), then Exit
-// does the actual teardown (fruitGame.ts's finalizeAndClose). No BackButton here
-// — the round is already decided, Exit is the only way out.
 const RESULTS_COUNT_MS = 1500
-const FEED_EATING_MS = 2500
+const FEED_HUNGER_FILL_MS = Cfg.FEED_EAT_CINEMATIC_S * 1000
 function FeedEatingPanel() {
   const st = clientState.feedGame
-  const progress = Math.max(0, Math.min(1, (Date.now() - st.resultsAt) / FEED_EATING_MS))
-  const restored = Math.min(100, st.caught * Cfg.FEED_HUNGER_PER_FRUIT)
-  const barPct = Math.round(progress * restored)
-  const cardW = S(420)
+  const progress = Math.max(0, Math.min(1, (Date.now() - st.resultsAt) / FEED_HUNGER_FILL_MS))
+  // This is a celebratory fill animation, not a live stat readout: it always
+  // starts empty so a fully fed pet still gets the same satisfying 0 → 100 beat.
+  const hungerNow = st.hungerTarget * progress
+  const barPct = Math.round(Math.max(0, Math.min(100, hungerNow)))
+  const rowW = S(330)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(56), left: '50%' }, margin: { left: -cardW / 2 }, width: cardW, height: S(116), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: S(20), pointerFilter: 'none' }} uiBackground={{ color: C.panelBg }}>
-      <OutlineLabel value="Yum! Your pet is eating" fontSize={S(22)} color={C.gold} width={cardW} height={S(32)} textAlign="middle-center" />
-      <Label value={`Hunger +${restored}`} fontSize={S(16)} color={C.text} textAlign="middle-center" uiTransform={{ width: cardW, height: S(24) }} />
-      <UiEntity uiTransform={{ width: cardW - S(48), height: S(18), borderRadius: S(9), margin: { top: S(6) } }} uiBackground={{ color: C.trackBg }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(250), left: '50%' }, margin: { left: -rowW / 2 }, width: rowW, height: S(34), flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
+      <Label value="Hunger" fontSize={S(18)} color={C.text} textAlign="middle-left" uiTransform={{ width: S(92), height: S(30) }} />
+      <UiEntity uiTransform={{ width: rowW - S(96), height: S(16), borderRadius: S(8) }} uiBackground={{ color: C.trackBg }}>
         <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: S(9) }} uiBackground={{ color: C.hunger }} />
       </UiEntity>
     </UiEntity>
@@ -2091,71 +2091,6 @@ function FeedResultsPanel() {
 // by the "3" hotkey, input.ts). +/- nudges the relevant constant in
 // fruitGame.ts and re-applies it straight to the active cinematic camera —
 // "Print values" logs the final numbers to hardcode back into the source.
-const DEBUG_CAM_STEP = 0.1
-function DebugCamPanel() {
-  if (!clientState.debugCamPanelOpen) return <UiEntity />
-  const keys: DebugCamKey[] = debugCamAvailableKeys()
-  const panelW = S(340)
-  return (
-    <UiEntity
-      uiTransform={{
-        positionType: 'absolute',
-        position: { top: S(300), left: S(24) },
-        width: panelW,
-        flexDirection: 'column',
-        alignItems: 'center',
-        borderRadius: S(16),
-        padding: S(14),
-        pointerFilter: 'block'
-      }}
-      uiBackground={{ color: C.panelBg }}
-    >
-      <Label
-        value={`Cam calib (${mobile() ? 'mobile' : 'desktop'})`}
-        fontSize={S(18)}
-        color={C.gold}
-        textAlign="middle-center"
-        uiTransform={{ width: '100%', height: S(26), margin: { bottom: S(6) } }}
-      />
-      {keys.map((k) => (
-        <UiEntity key={k} uiTransform={{ width: '100%', height: S(40), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Label
-            value={`${debugCamLabel(k)}: ${debugCamValue(k).toFixed(2)}`}
-            fontSize={S(15)}
-            color={C.text}
-            textAlign="middle-left"
-            uiTransform={{ width: S(190), height: S(30) }}
-          />
-          <TactileButton id={`debugcam_${k}_minus`} label="-" width={S(40)} height={S(34)} bg={C.card} onClick={() => debugCamAdjust(k, -DEBUG_CAM_STEP)} />
-          <TactileButton id={`debugcam_${k}_plus`} label="+" width={S(40)} height={S(34)} bg={C.card} margin={{ left: S(6) }} onClick={() => debugCamAdjust(k, DEBUG_CAM_STEP)} />
-        </UiEntity>
-      ))}
-      {mobile() ? (
-        <TactileButton
-          id="debugcam_toggle_close"
-          label={debugCamIsClosePreview() ? 'Preview: CLOSE' : 'Preview: WIDE'}
-          width={panelW - S(28)}
-          height={S(38)}
-          bg={C.cardAlt}
-          margin={{ top: S(8) }}
-          onClick={() => debugCamToggleClosePreview()}
-        />
-      ) : null}
-      <TactileButton
-        id="debugcam_print"
-        label="Print values"
-        width={panelW - S(28)}
-        height={S(38)}
-        bg={C.green}
-        textColor={C.outline}
-        margin={{ top: S(8) }}
-        onClick={() => debugCamPrint()}
-      />
-    </UiEntity>
-  )
-}
-
-
 // ---------------------------------------------------------------------------
 // Feed tree minigame overlay (fruitGame.ts): "how to play" + arrows during
 // arrival/intro (before the player can move freely to catch anything), then a
@@ -2164,10 +2099,69 @@ function DebugCamPanel() {
 // submitting whatever was caught so far (same as a natural timeout). Once the
 // round ends, FeedResultsPanel takes over instead (see below).
 // ---------------------------------------------------------------------------
+
+const DEBUG_FRUIT_PILE_KEYS: DebugFruitPileKey[] = ['x', 'y', 'z', 'scale']
+const DEBUG_FRUIT_PILE_POS_STEP = 0.02
+const DEBUG_FRUIT_PILE_SCALE_STEP = 0.05
+
+function DebugFruitPilePanel() {
+  if (!clientState.debugFruitPilePanelOpen || !debugFruitPileActive()) return <UiEntity />
+  const panelW = S(330)
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: S(28), right: S(24) },
+        width: panelW,
+        flexDirection: 'column',
+        alignItems: 'center',
+        borderRadius: S(16),
+        padding: S(12),
+        pointerFilter: 'block'
+      }}
+      uiBackground={{ color: C.panelBg }}
+    >
+      <Label value="Feed set" fontSize={S(18)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      <Label value="Crate position next to the pet" fontSize={S(13)} color={C.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20), margin: { bottom: S(2) } }} />
+      {DEBUG_FRUIT_PILE_KEYS.map((key) => {
+        const step = key === 'scale' ? DEBUG_FRUIT_PILE_SCALE_STEP : DEBUG_FRUIT_PILE_POS_STEP
+        return (
+          <UiEntity key={`crate_${key}`} uiTransform={{ width: '100%', height: S(32), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Label value={`${debugFruitDrawerLabel(key)}: ${debugFruitDrawerValue(key).toFixed(2)}`} fontSize={S(14)} color={C.text} textAlign="middle-left" uiTransform={{ width: S(180), height: S(28) }} />
+            <TactileButton id={`debugcrate_${key}_minus`} label="-" width={S(42)} height={S(28)} bg={C.card} onClick={() => debugFruitDrawerAdjust(key, -step)} />
+            <TactileButton id={`debugcrate_${key}_plus`} label="+" width={S(42)} height={S(28)} bg={C.card} margin={{ left: S(6) }} onClick={() => debugFruitDrawerAdjust(key, step)} />
+          </UiEntity>
+        )
+      })}
+      <Label value="Fruit pile inside the crate" fontSize={S(13)} color={C.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22), margin: { top: S(4) } }} />
+      {DEBUG_FRUIT_PILE_KEYS.map((key) => {
+        const step = key === 'scale' ? DEBUG_FRUIT_PILE_SCALE_STEP : DEBUG_FRUIT_PILE_POS_STEP
+        return (
+          <UiEntity key={`pile_${key}`} uiTransform={{ width: '100%', height: S(32), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Label value={`${debugFruitPileLabel(key)}: ${debugFruitPileValue(key).toFixed(2)}`} fontSize={S(14)} color={C.text} textAlign="middle-left" uiTransform={{ width: S(180), height: S(28) }} />
+            <TactileButton id={`debugpile_${key}_minus`} label="-" width={S(42)} height={S(28)} bg={C.card} onClick={() => debugFruitPileAdjust(key, -step)} />
+            <TactileButton id={`debugpile_${key}_plus`} label="+" width={S(42)} height={S(28)} bg={C.card} margin={{ left: S(6) }} onClick={() => debugFruitPileAdjust(key, step)} />
+          </UiEntity>
+        )
+      })}
+      <UiEntity uiTransform={{ width: '100%', height: S(38), flexDirection: 'row', justifyContent: 'space-between', margin: { top: S(8) } }}>
+        <TactileButton id="debugpile_reset" label="Reset all" width={S(136)} height={S(36)} bg={C.card} onClick={() => { debugFruitDrawerReset(); debugFruitPileReset() }} />
+        <TactileButton id="debugpile_resume" label="Continue" width={S(136)} height={S(36)} bg={C.green} textColor={C.outline} onClick={() => debugFruitPileToggle()} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FeedGameOverlay() {
   const st = clientState.feedGame
   if (!st.active) return <UiEntity />
-  if (st.phase === 'feeding') return <FeedEatingPanel />
+  if (st.phase === 'feeding') {
+    return (
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        {clientState.debugFruitPilePanelOpen ? <DebugFruitPilePanel /> : <FeedEatingPanel />}
+      </UiEntity>
+    )
+  }
   if (st.phase === 'results') return <FeedResultsPanel />
   const catching = st.phase === 'catching'
   const introPhase = st.phase === 'intro'
@@ -2248,7 +2242,6 @@ function FeedGameOverlay() {
           ) : null}
           {mobile() ? <MoveArrowButton side="left" /> : null}
           {mobile() ? <MoveArrowButton side="right" /> : null}
-          <DebugCamPanel />
         </UiEntity>
       </ScreenInsetArea>
     </UiEntity>

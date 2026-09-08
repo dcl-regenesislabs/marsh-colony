@@ -70,6 +70,13 @@ let target = Vector3.create(199.2, 0, 231.8)
 let onArrive: (() => void) | null = null
 let interactTimer = 0
 let interactClip: PetClip = 'idle'
+// The food calibration panel must keep the eat interaction alive. The fruit
+// game owns this flag; all other interactions retain their normal timers.
+let eatCinematicPaused = false
+// Separate from the interaction timer: debug can pause/speed just the baked
+// GLB animation while keeping the fixed food camera and fruit path alive.
+let eatPlaybackPaused = false
+let eatPlaybackSpeed = 1
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
@@ -88,6 +95,9 @@ const BATH_HOP_DISTANCE = 1.2 // metres covered horizontally while hopping out
 const BATH_HOP_HEIGHT = 0.6 // metres, peak arc height
 const BATH_DURATION = 2.5 // seconds the pet stays in the tub
 const BATH_SPLASH_HEIGHT = 0.08
+// The petting camera tracks this raised focus point instead of the pet's feet,
+// keeping the happy reaction centered rather than looking down at the ground.
+const PETTING_CAMERA_LOOK_LIFT = 0.55
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -634,6 +644,69 @@ export function petReact(): void {
   interactTimer = 0.9
 }
 
+/** Restart the baked eating clip and explicitly keep it looping for the full
+ * Feed cinematic. `playSingleAnimation` supplies the reset-to-frame-zero; the
+ * state update below prevents the clip from stopping after its first pass. */
+function restartEatAnimation(): boolean {
+  if (!localPet || !Animator.has(localPet)) return false
+  const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
+  curClip.set(localPet, eatClip)
+  lastLogicalClip.set(localPet, 'eat')
+  Animator.playSingleAnimation(localPet, eatClip, true)
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
+  if (state) {
+    state.playing = !eatPlaybackPaused
+    state.loop = true
+    state.speed = eatPlaybackSpeed
+  }
+  return true
+}
+
+/** Replay the eating loop from its first frame while the food-debug preview is open. */
+export function replayEatCinematic(): boolean {
+  if (!localPet) return false
+  // The debug panel can be opened at the very end of the cinematic. Re-enter
+  // the eat state defensively so its Replay button always has a live animation
+  // to restart instead of silently failing after the old timer elapsed.
+  mode = 'interact'
+  interactClip = 'eat'
+  interactTimer = Math.max(interactTimer, C.FEED_EAT_CINEMATIC_S)
+  eatPlaybackPaused = false
+  return restartEatAnimation()
+}
+
+/** Pause or resume only the baked eat animation, without advancing its timer. */
+export function toggleEatCinematicPlayback(): boolean {
+  if (!localPet || !Animator.has(localPet)) return false
+  const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
+  if (!state) return false
+  eatPlaybackPaused = !eatPlaybackPaused
+  state.playing = !eatPlaybackPaused
+  state.loop = true
+  state.speed = eatPlaybackSpeed
+  return true
+}
+
+/** Set the baked eat animation speed used by the food calibration console. */
+export function setEatCinematicPlaybackSpeed(speed: number): number {
+  eatPlaybackSpeed = Math.max(0.1, Math.min(3, speed))
+  if (!localPet || !Animator.has(localPet)) return eatPlaybackSpeed
+  const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
+  if (state) state.speed = eatPlaybackSpeed
+  return eatPlaybackSpeed
+}
+
+export function eatCinematicPlaybackInfo(): { playing: boolean; speed: number } {
+  return { playing: !eatPlaybackPaused, speed: eatPlaybackSpeed }
+}
+
+/** Hold only the food interaction timer while the hand-calibration panel is open. */
+export function setEatCinematicPaused(paused: boolean): void {
+  eatCinematicPaused = paused
+}
+
 /** Place the pet in a short, in-world eating beat after a successful fruit run. */
 export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: number): void {
   if (!localPet) return
@@ -645,6 +718,10 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
   mode = 'interact'
   interactClip = 'eat'
   interactTimer = duration
+  eatCinematicPaused = false
+  eatPlaybackPaused = false
+  eatPlaybackSpeed = 1
+  restartEatAnimation()
 }
 
 // ---------------------------------------------------------------------------
@@ -653,6 +730,7 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
 // seconds. A dedicated virtual camera frames the pet; the avatar is frozen.
 // ---------------------------------------------------------------------------
 let petCam: Entity | null = null
+let petCamFocus: Entity | null = null
 
 /** Enter petting mode: frame the pet, face it to camera, freeze the avatar. */
 export function startPetting(): void {
@@ -661,15 +739,18 @@ export function startPetting(): void {
     pushToast(clientState.activePet.sleeping ? 'Your pet is asleep!' : 'Your pet is busy right now!')
     return
   }
-  clientState.petting.active = true
-  clientState.petting.progress = 0
+  clientState.petting = { active: true, progress: 0, celebrationUntil: 0 }
 
   const petPos = Transform.get(localPet).position
   // Camera sits a few metres out and slightly up, looking straight at the pet.
   const camPos = Vector3.create(petPos.x, petPos.y + 1.15, petPos.z + 2.8)
   if (!petCam) petCam = engine.addEntity()
+  if (!petCamFocus) petCamFocus = engine.addEntity()
+  Transform.createOrReplace(petCamFocus, {
+    position: Vector3.create(petPos.x, petPos.y + PETTING_CAMERA_LOOK_LIFT, petPos.z)
+  })
   Transform.createOrReplace(petCam, { position: camPos })
-  VirtualCamera.createOrReplace(petCam, { lookAtEntity: localPet })
+  VirtualCamera.createOrReplace(petCam, { lookAtEntity: petCamFocus })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
 
   // Turn the pet to face the camera so we see its front, and freeze it there.
@@ -685,21 +766,19 @@ function releasePettingView(): void {
 
 /** Leave petting mode without completing (BACK button). */
 export function cancelPetting(): void {
-  clientState.petting.active = false
-  clientState.petting.progress = 0
+  clientState.petting = { active: false, progress: 0, celebrationUntil: 0 }
   releasePettingView()
 }
 
-/** Finish petting: reward happiness, restore the view, exit petting mode. */
+/** Finish petting: reward happiness, then linger on the happy reaction. */
 function completePetting(): void {
   const st = clientState.petting
-  st.active = false
-  st.progress = 0
-  releasePettingView()
+  if (st.celebrationUntil > 0) return
+  st.progress = 1
+  st.celebrationUntil = Date.now() + C.PETTING_HAPPY_CINEMATIC_S * 1000
   const pet = clientState.activePet
   if (pet) pet.happiness = Math.min(100, pet.happiness + C.PET_SELF_HAPPINESS)
   actions.petSelf() // server is authoritative; this is the "happiness" action
-  petReact()
   pushToast('Your pet loved that!  +Happy')
 }
 
@@ -709,7 +788,7 @@ function completePetting(): void {
  */
 export function petTap(): void {
   const st = clientState.petting
-  if (!st.active) return
+  if (!st.active || st.celebrationUntil > 0) return
   st.progress += C.PET_TAP_FILL
   if (st.progress >= 1) completePetting()
 }
@@ -740,6 +819,10 @@ function updatePetting(dt: number): void {
   if (!st.active) return
   if (!clientState.activePet || !localPet) {
     cancelPetting()
+    return
+  }
+  if (st.celebrationUntil > 0) {
+    if (Date.now() >= st.celebrationUntil) cancelPetting()
     return
   }
   st.progress = gestureFill(st.progress, dt)
@@ -1290,10 +1373,20 @@ function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
 
-  // Hidden entirely during the Feed tree minigame — it just gets in the way
-  // while the player is dodging around to catch fruit.
+  // During the tree game the pet waits beside the lane, sitting and watching
+  // rather than disappearing. The final feeding shot takes over separately.
   if (clientState.feedGame.active && clientState.feedGame.phase !== 'feeding' && clientState.feedGame.phase !== 'results') {
-    VisibilityComponent.createOrReplace(localPet, { visible: false })
+    const sit = clientState.feedGame.petSitPos
+    if (sit) {
+      VisibilityComponent.createOrReplace(localPet, { visible: true })
+      const transform = Transform.getMutable(localPet)
+      transform.position = Vector3.create(sit.x, C.PET_BASE_Y, sit.z)
+      const look = clientState.feedGame.petSitLook ?? sit
+      transform.rotation = yawToward(transform.position, Vector3.create(look.x, C.PET_BASE_Y, look.z), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+      setClip(localPet, 'sit')
+    } else {
+      VisibilityComponent.createOrReplace(localPet, { visible: false })
+    }
     if (localTag) setTagVisible(localTag, false)
     return
   }
@@ -1452,8 +1545,13 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
+      // The feed debug panel freezes its *timeline* but deliberately leaves
+      // the loop rendering, so the fruit can be tuned against the actual eat
+      // motion for as long as needed.
+      if (interactClip === 'eat' && eatCinematicPaused) break
       interactTimer -= dt
       if (interactTimer <= 0) {
+        eatCinematicPaused = false
         if (justBathed) {
           justBathed = false
           const pt = Transform.getMutable(localPet)

@@ -119,7 +119,7 @@ const DEBUG_SCREENS: DebugScreen[] = [
     variants: ['Just started', 'Halfway', 'Almost full'],
     activate: (v) => {
       applyFixturePlayer(fakePlayer(), fakePet())
-      clientState.petting = { active: true, progress: [0.1, 0.5, 0.9][v] ?? 0.5 }
+      clientState.petting = { active: true, progress: [0.1, 0.5, 0.9][v] ?? 0.5, celebrationUntil: 0 }
     }
   },
   {
@@ -137,7 +137,7 @@ const DEBUG_SCREENS: DebugScreen[] = [
     variants: ['Arrival', 'Intro (Start button)', 'Countdown 3-2-1', 'Catching', 'Results'],
     activate: (v) => {
       applyFixturePlayer(fakePlayer(), fakePet())
-      const base = { active: true, caught: 0, timeLeft: 30, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+      const base = { active: true, caught: 0, timeLeft: 30, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerStart: 40, hungerTarget: 88 }
       const byVariant = [
         { ...base, phase: 'arrival' as const },
         { ...base, phase: 'intro' as const },
@@ -401,9 +401,10 @@ const DEBUG_SCREENS: DebugScreen[] = [
 /** Clears every flag any registry entry might have set, so screens never
  *  bleed into each other when switching. Called before every activate(). */
 function resetAllDebugFlags(): void {
-  clientState.petting = { active: false, progress: 0 }
+  clientState.petting = { active: false, progress: 0, celebrationUntil: 0 }
   clientState.hatch = { active: false, progress: 0 }
-  clientState.feedGame = { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+  clientState.feedGame = { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerStart: 0, hungerTarget: 0 }
+  clientState.debugFruitPilePanelOpen = false
   clientState.dialog.open = false
   clientState.fetch = { active: false, busy: false, charging: false, charge: 0 }
   clientState.carryEgg = { active: false, species: '', name: '', atHome: false }

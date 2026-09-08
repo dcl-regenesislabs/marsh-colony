@@ -53,7 +53,7 @@ export const clientState: {
   lastTreatSentAt: number
   // Hold-to-pet gesture: active while the overlay is up; progress 0..1 fills
   // while the pointer is held and ebbs back when released.
-  petting: { active: boolean; progress: number }
+  petting: { active: boolean; progress: number; celebrationUntil: number }
   // Carrying an egg home: on adoption the egg is attached to the avatar and the
   // player must walk it home (`atHome` true within HOME_RADIUS) to hatch it.
   carryEgg: { active: boolean; species: string; name: string; atHome: boolean }
@@ -85,6 +85,10 @@ export const clientState: {
     catchFlashUntil: number
     countdownAt: number
     resultsAt: number
+    petSitPos: { x: number; y: number; z: number } | null
+    petSitLook: { x: number; y: number; z: number } | null
+    hungerStart: number
+    hungerTarget: number
   }
   // Fetch (Play) mode: `active` shows the centered Fetch button and hides the
   // panel; `busy` is true from the moment the ball is thrown until the pet drops
@@ -109,9 +113,8 @@ export const clientState: {
   colonyPopulation: number
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
-  // DEBUG: fruit game camera calibration panel (fruitGame.ts's debugCam*),
-  // toggled by a debug hotkey while the minigame is active.
-  debugCamPanelOpen: boolean
+  // Compact food-pile calibration panel. It freezes only the final Feed beat.
+  debugFruitPilePanelOpen: boolean
 } = {
   myAddress: '',
   player: null,
@@ -129,12 +132,12 @@ export const clientState: {
   viewingPetAddress: null,
   incomingSwap: null,
   lastTreatSentAt: 0,
-  petting: { active: false, progress: 0 },
+  petting: { active: false, progress: 0, celebrationUntil: 0 },
   carryEgg: { active: false, species: '', name: '', atHome: false },
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
-  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
+  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerStart: 0, hungerTarget: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
   pendingUntil: 0,
@@ -143,7 +146,7 @@ export const clientState: {
   serverReady: false,
   colonyPopulation: 0,
   leaderboard: [],
-  debugCamPanelOpen: false
+  debugFruitPilePanelOpen: false
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
