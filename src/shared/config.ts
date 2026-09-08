@@ -417,6 +417,9 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
+/** Time the pet remains happily bathing in the pool before it can follow again. */
+export const BATH_DURATION_S = 30
+
 /** Server-side per-action cooldown (ms) to stop spam. */
 export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {
   feed: 8000,

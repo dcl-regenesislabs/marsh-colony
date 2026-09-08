@@ -8,7 +8,7 @@ import { EntityNames } from '../../assets/scene/entity-names'
 import type { CareAction } from '../shared/types'
 import { formatLockCountdown, type PetClip } from '../shared/config'
 import { actionObjectPosition } from './objects'
-import { isBusy, sendPetTo, canQueueCareAction } from './pet'
+import { isBusy, sendPetTo, canQueueCareAction, startBathAnimation } from './pet'
 import { applyCareLocal, canPlayNow, sleepLockLeft } from './sim'
 import { startFeedTask } from './feed'
 import { startFruitGame } from './fruitGame'
@@ -83,7 +83,10 @@ function startCare(action: CareAction): void {
       // Optimistic local effect. It can still be refused on arrival (the energy
       // gate / sleep lock may have closed during the walk) — the server applies
       // the same rules, so don't send an action our own mirror just rejected.
-      if (applyCareLocal(action, onBed)) actions.care(action, onBed)
+      if (applyCareLocal(action, onBed)) {
+        if (action === 'clean') startBathAnimation()
+        actions.care(action, onBed)
+      }
     },
     ACTION_CLIP[action]
   )
