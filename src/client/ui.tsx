@@ -237,7 +237,18 @@ function TopBars() {
   const w2 = Math.round(h * BAR_COIN_ASPECT)
   const w3 = Math.round(h * BAR_PETS_ASPECT)
   const iconSize = h // music/trophy badges are square (1:1) in the sheet
-  const totalW = w1 + gap + w2 + gap + w3 + gap + iconSize + gap + iconSize
+  // Same gate the old floating Music/Leaderboard buttons enforced (and
+  // BottomNav still enforces today): hidden during full-screen flows that own
+  // the whole screen and while a dialog is open, so tapping them can't stack
+  // the Jukebox/Leaderboard panel on top of an active fetch/NPC dialog/etc.
+  const showIcons =
+    !clientState.dialog.open &&
+    !clientState.fetch.active &&
+    !clientState.carryEgg.active &&
+    !clientState.carryPet.active &&
+    !clientState.hatch.active
+  const iconsW = gap + iconSize + gap + iconSize
+  const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
   const rightShift = S(40) // nudged off-center — plenty of clearance either side of this row
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 + rightShift }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
@@ -246,10 +257,14 @@ function TopBars() {
       <CoinsBar height={h} />
       <UiEntity uiTransform={{ width: gap, height: h }} />
       <PetsCountBar height={h} />
-      <UiEntity uiTransform={{ width: gap, height: h }} />
-      <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
-      <UiEntity uiTransform={{ width: gap, height: h }} />
-      <TactileButton id="hud_leaderboard" label="" texture={HUD_SHEET} uvs={HUD_TROPHY_UVS} width={iconSize} height={iconSize} onClick={() => ui.openLeaderboard()} />
+      {showIcons ? (
+        <UiEntity uiTransform={{ width: iconsW, height: h, flexDirection: 'row', alignItems: 'center' }}>
+          <UiEntity uiTransform={{ width: gap, height: h }} />
+          <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
+          <UiEntity uiTransform={{ width: gap, height: h }} />
+          <TactileButton id="hud_leaderboard" label="" texture={HUD_SHEET} uvs={HUD_TROPHY_UVS} width={iconSize} height={iconSize} onClick={() => ui.openLeaderboard()} />
+        </UiEntity>
+      ) : null}
     </UiEntity>
   )
 }
