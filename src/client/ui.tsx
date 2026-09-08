@@ -266,37 +266,55 @@ function StatRow(props: { label: string; value: number; color: Color; width: num
   )
 }
 
-// Growth-stage progression — Junior → Teenager → Adult, the current stage lit up
-// and the rest dimmed, so it reads as "your pet still has to grow" instead of the
-// old opaque "size 0.55". Shown on every pet passport (yours and other players').
-// Growth timeline — Junior / Teenager / Adult as nodes joined by short connector
-// lines. Compact + left-aligned (doesn't span the row). The pet's CURRENT stage
-// (node + label) is drawn in its rarity color (common = pink, etc.); every other
-// stage and the connectors are grey. Shown on every pet passport (yours + others).
-const GROWTH_STAGES: { key: Cfg.PetStage; label: string; w: number }[] = [
-  { key: 'JUNIOR', label: 'Junior', w: 52 },
-  { key: 'TEENAGER', label: 'Teenager', w: 74 },
-  { key: 'ADULT', label: 'Adult', w: 46 }
+// Growth progress bar — one continuous line that fills (in the pet's rarity color)
+// with the pet's overall growth from newborn to Adult, with the three stage names
+// placed along the path at their real positions (Junior at the start, Teenager at
+// its threshold, Adult at the end) and a marker dot at each. Shows both how grown
+// the pet is AND how far each stage sits (#153). On every pet passport.
+const GROWTH_MARKS: { key: Cfg.PetStage; label: string; pos: number }[] = [
+  { key: 'JUNIOR', label: 'Junior', pos: 0 },
+  { key: 'TEENAGER', label: 'Teenager', pos: Cfg.PET_STAGE_TEEN_FRACTION },
+  { key: 'ADULT', label: 'Adult', pos: 1 }
 ]
 function StageProgress(props: { size: number; color: Color }) {
-  const ci = GROWTH_STAGES.findIndex((s) => s.key === Cfg.petStage(props.size))
-  const grey = LOC.neutral
-  const dot = S(10)
-  const dotCur = S(14)
-  const line = S(3)
+  const overall = Cfg.petGrowthFraction(props.size) // 0..1 across the whole range
+  const cur = Cfg.petStage(props.size)
+  const inactive = LOC.dim // visible on the light-pink card (LOC.neutral was near-invisible)
+  const barH = S(8)
+  const node = S(13)
+  const labelW = S(80)
   return (
-    <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { top: S(5) } }}>
-      {GROWTH_STAGES.map((s, i) => {
-        const cur = i === ci
-        const sz = cur ? dotCur : dot
-        return (
-          <UiEntity key={`tl-${s.key}`} uiTransform={{ flexDirection: 'row', alignItems: 'center' }}>
-            {i > 0 ? <UiEntity uiTransform={{ width: S(16), height: line, margin: { left: S(4), right: S(6) } }} uiBackground={{ color: grey }} /> : null}
-            <UiEntity uiTransform={{ width: sz, height: sz, borderRadius: sz / 2, margin: { right: S(6) } }} uiBackground={{ color: cur ? props.color : grey }} />
-            <Label value={s.label} fontSize={S(13)} color={cur ? props.color : LOC.dim} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: S(s.w), height: S(18) }} />
-          </UiEntity>
-        )
-      })}
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', margin: { top: S(6), bottom: S(2) } }}>
+      {/* the bar: grey track + rarity fill + a marker dot per stage */}
+      <UiEntity uiTransform={{ width: '100%', height: node, justifyContent: 'center' }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: '100%', height: barH, borderRadius: barH / 2 }} uiBackground={{ color: inactive }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: `${Math.round(overall * 100)}%`, height: barH, borderRadius: barH / 2 }} uiBackground={{ color: props.color }} />
+        {GROWTH_MARKS.map((m) => (
+          <UiEntity
+            key={`gm-${m.key}`}
+            uiTransform={{ positionType: 'absolute', position: { left: `${m.pos * 100}%`, top: 0 }, margin: { left: m.pos === 0 ? 0 : m.pos === 1 ? -node : -node / 2 }, width: node, height: node, borderRadius: node / 2 }}
+            uiBackground={{ color: overall + 0.0005 >= m.pos ? props.color : inactive }}
+          />
+        ))}
+      </UiEntity>
+      {/* stage names along the path, under their markers */}
+      <UiEntity uiTransform={{ width: '100%', height: S(18), margin: { top: S(3) } }}>
+        {GROWTH_MARKS.map((m) => (
+          <Label
+            key={`gl-${m.key}`}
+            value={m.label}
+            fontSize={S(13)}
+            color={m.key === cur ? props.color : inactive}
+            textAlign={m.pos === 0 ? 'middle-left' : m.pos === 1 ? 'middle-right' : 'middle-center'}
+            textWrap="nowrap"
+            uiTransform={
+              m.pos === 1
+                ? { positionType: 'absolute', position: { right: 0, top: 0 }, width: labelW, height: S(18) }
+                : { positionType: 'absolute', position: { left: `${m.pos * 100}%`, top: 0 }, margin: { left: m.pos === 0 ? 0 : -labelW / 2 }, width: labelW, height: S(18) }
+            }
+          />
+        ))}
+      </UiEntity>
     </UiEntity>
   )
 }
