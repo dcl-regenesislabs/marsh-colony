@@ -625,7 +625,8 @@ export function growSize(size: number): number {
 // ---------------------------------------------------------------------------
 // Growth stages (Adopt-Me style): a pet's SIZE grows with cumulative care
 // (see sizeForCareCount) and crosses 3 thresholds over a couple of days. Each
-// stage renders at a fixed, chunky size, and its name shows in the health bar.
+// stage renders at a fixed, chunky size; the pet passport shows the current stage
+// and how close it is to the next one (see petGrowthFraction + the growth bar).
 // ---------------------------------------------------------------------------
 export type PetStage = 'JUNIOR' | 'TEENAGER' | 'ADULT'
 
@@ -640,12 +641,15 @@ export function petStage(size: number): PetStage {
   return 'JUNIOR'
 }
 
-/** User-facing label for a growth stage. */
-export function petStageLabel(size: number): string {
-  const stage = petStage(size)
-  if (stage === 'TEENAGER') return 'Teenager'
-  return stage.charAt(0) + stage.slice(1).toLowerCase()
+/** Overall growth 0..1 across the whole SIZE_BASE..ADULT range — 0 at a newborn,
+ *  1 once fully grown (ADULT). Drives the growth progress bar's fill. */
+export function petGrowthFraction(size: number): number {
+  return Math.max(0, Math.min(1, (size - SIZE_BASE) / (PET_STAGE_ADULT_SIZE - SIZE_BASE)))
 }
+
+/** Where the TEENAGER threshold sits along that 0..1 bar (so its label/marker can
+ *  be placed proportionally). Junior is at 0, Adult at 1. */
+export const PET_STAGE_TEEN_FRACTION = (PET_STAGE_TEEN_SIZE - SIZE_BASE) / (PET_STAGE_ADULT_SIZE - SIZE_BASE)
 
 // Each stage renders at one fixed size, so pets visibly snap between 3 sizes.
 // The range is deliberately wide so a JUNIOR reads as a tiny baby next to an ADULT.

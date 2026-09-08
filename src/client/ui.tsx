@@ -266,14 +266,66 @@ function StatRow(props: { label: string; value: number; color: Color; width: num
   )
 }
 
-// Snapshot + rarity + growth stage/size — shared by the owner's PetPanel and
-// the read-only RemotePetPanel so both "passports" look consistent. `name`/
-// `level` are optional: PetPanel passes them to show its header inline (the
-// hud2 card has no separate title bar); RemotePetPanel leaves them off since
-// its LightModal title already shows the name/level.
+// Growth progress bar — one continuous line that fills (in the pet's rarity color)
+// with the pet's overall growth from newborn to Adult, with the three stage names
+// placed along the path at their real positions (Junior at the start, Teenager at
+// its threshold, Adult at the end) and a marker dot at each. Shows both how grown
+// the pet is AND how far each stage sits (#153). On every pet passport.
+const GROWTH_MARKS: { key: Cfg.PetStage; label: string; pos: number }[] = [
+  { key: 'JUNIOR', label: 'Junior', pos: 0 },
+  { key: 'TEENAGER', label: 'Teenager', pos: Cfg.PET_STAGE_TEEN_FRACTION },
+  { key: 'ADULT', label: 'Adult', pos: 1 }
+]
+function StageProgress(props: { size: number; color: Color }) {
+  const overall = Cfg.petGrowthFraction(props.size) // 0..1 across the whole range
+  const cur = Cfg.petStage(props.size)
+  const inactive = LOC.dim // visible on the light-pink card (LOC.neutral was near-invisible)
+  const barH = S(8)
+  const node = S(13)
+  const labelW = S(80)
+  return (
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', margin: { top: S(6), bottom: S(2) } }}>
+      {/* the bar: grey track + rarity fill + a marker dot per stage */}
+      <UiEntity uiTransform={{ width: '100%', height: node, justifyContent: 'center' }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: '100%', height: barH, borderRadius: barH / 2 }} uiBackground={{ color: inactive }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: `${Math.round(overall * 100)}%`, height: barH, borderRadius: barH / 2 }} uiBackground={{ color: props.color }} />
+        {GROWTH_MARKS.map((m) => (
+          <UiEntity
+            key={`gm-${m.key}`}
+            uiTransform={{ positionType: 'absolute', position: { left: `${m.pos * 100}%`, top: 0 }, margin: { left: m.pos === 0 ? 0 : m.pos === 1 ? -node : -node / 2 }, width: node, height: node, borderRadius: node / 2 }}
+            uiBackground={{ color: overall + 0.0005 >= m.pos ? props.color : inactive }}
+          />
+        ))}
+      </UiEntity>
+      {/* stage names along the path, under their markers */}
+      <UiEntity uiTransform={{ width: '100%', height: S(18), margin: { top: S(3) } }}>
+        {GROWTH_MARKS.map((m) => (
+          <Label
+            key={`gl-${m.key}`}
+            value={m.label}
+            fontSize={S(13)}
+            color={m.key === cur ? props.color : inactive}
+            textAlign={m.pos === 0 ? 'middle-left' : m.pos === 1 ? 'middle-right' : 'middle-center'}
+            textWrap="nowrap"
+            uiTransform={
+              m.pos === 1
+                ? { positionType: 'absolute', position: { right: 0, top: 0 }, width: labelW, height: S(18) }
+                : { positionType: 'absolute', position: { left: `${m.pos * 100}%`, top: 0 }, margin: { left: m.pos === 0 ? 0 : -labelW / 2 }, width: labelW, height: S(18) }
+            }
+          />
+        ))}
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// Snapshot + rarity + growth stage — shared by the owner's PetPanel and the
+// read-only RemotePetPanel so both "passports" look consistent. `name`/`level`
+// are optional: PetPanel passes them to show its header inline (the hud2 card has
+// no separate title bar); RemotePetPanel leaves them off since its LightModal
+// title already shows the name/level.
 function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; width: number; name?: string; level?: number }) {
   const img = Cfg.speciesImage(props.species)
-  const stage = Cfg.petStageLabel(props.size)
   const rc = Cfg.RARITY_COLOR[props.rarity] ?? Cfg.RARITY_COLOR.common
   const rarityColor: Color = { r: rc.r, g: rc.g, b: rc.b, a: 1 }
   const discSize = S(84)
@@ -289,7 +341,7 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
           <Label value={`${props.name}  ·  Lv ${props.level}`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
         )}
         <Label value={Cfg.rarityLabel(props.rarity).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
-        <Label value={`${stage} pet  ·  size ${props.size.toFixed(2)}`} fontSize={S(14)} color={LOC.dim} textAlign="middle-left" uiTransform={{ width: '100%', height: S(20), margin: { top: S(2) } }} />
+        <StageProgress size={props.size} color={rarityColor} />
       </UiEntity>
     </UiEntity>
   )
