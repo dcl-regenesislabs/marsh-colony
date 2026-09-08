@@ -884,8 +884,7 @@ function AdoptPanel() {
             fontSize={S(20)}
             radius={S(18)}
             onClick={() => {
-              if (buySlotLocal()) pushToast('Slot unlocked!')
-              else pushToast('Not enough coins')
+              buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
               actions.buySlot()
             }}
           />
@@ -1052,8 +1051,7 @@ function ShopPanel() {
             price={Cfg.slotPrice(slots)}
             color={C.gold}
             onBuy={() => {
-              if (buySlotLocal()) pushToast('Unlocked a pet slot!')
-              else pushToast('Not enough coins')
+              buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
               actions.buySlot()
             }}
           />
@@ -1159,8 +1157,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
         onClick={
           canUnlock
             ? () => {
-                if (buySlotLocal()) pushToast('Slot unlocked!')
-                else pushToast('Not enough coins')
+                buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
                 actions.buySlot()
               }
             : undefined
@@ -1620,49 +1617,109 @@ function JukeboxPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Toasts (screen center)
+// Toasts (screen center, slide in/out from the right)
 // ---------------------------------------------------------------------------
-// Shows one toast at a time from clientState.toasts (a queue) — advances to
-// the next message once the current one expires, instead of stacking every
-// pushed toast on screen at once. Sits below the top HUD bars, off to the
-// side, so it never covers a centered modal.
+// Shows one toast at a time from clientState.toasts (a queue) — advances to the
+// next message once the current one expires, instead of stacking every pushed
+// toast on screen at once. It deploys from the right edge into the middle of the
+// screen (the one region with no HUD), holds, then retracts back to the right —
+// so it never covers the top coin bar, the right-rail buttons, or a modal. The
+// server `notify` kind picks the accent color (error/reward/progress/info).
+const TOAST_ENTER_MS = 240 // slide-in from the right
+const TOAST_HOLD_MS = 2600 // fully-shown dwell
+const TOAST_EXIT_MS = 300 // retract back to the right
+const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
+
+// notify kind -> accent color. Positive/progress events read green, rewards
+// gold, failures red; everything else falls back to a calm blue.
+const TOAST_ACCENT: Record<string, Color> = {
+  error: { r: 0.95, g: 0.42, b: 0.38, a: 1 },
+  cooldown: { r: 0.95, g: 0.42, b: 0.38, a: 1 },
+  reward: C.gold,
+  spin: C.gold,
+  meteor: C.gold,
+  daily: C.gold,
+  streak: C.gold,
+  giving: C.gold,
+  adopt: C.green,
+  breed: C.green,
+  level: C.green,
+  achievement: C.green,
+  feed: C.green,
+  roster: C.blue,
+  shop: C.blue,
+  swap: C.blue,
+  sleep: C.blue,
+  energy: C.blue
+}
+function toastAccent(kind: string): Color {
+  return TOAST_ACCENT[kind] ?? C.blue
+}
+const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
+const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
+
 function Toasts() {
   const now = Date.now()
+  // Hold the queue while a panel/modal/dialog owns the screen: the toast sits at
+  // screen-center, so it would paint over the open UI — exactly the overlap
+  // complaint in #186 that the old off-to-the-side toast/HintBanner avoided.
+  // Nothing is shifted or shown until they close, then the queue resumes.
+  const overlayOpen =
+    uiState.panel !== 'none' ||
+    clientState.dialog.open ||
+    clientState.petPanelOpen ||
+    clientState.viewingPetAddress !== null ||
+    clientState.incomingSwap !== null
+  if (overlayOpen) return <UiEntity />
   if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
-    const message = clientState.toasts.shift()!
-    clientState.currentToast = { message, until: now + 3200 }
+    const next = clientState.toasts.shift()!
+    clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }
   }
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
+
+  // Drive slide (offset toward the right) + fade from elapsed/remaining time.
+  const elapsed = now - t.shownAt
+  const remaining = t.until - now
+  const offMax = S(560) // how far off to the right the pill starts/ends (hidden)
+  let slide = 0
+  let alpha = 1
+  if (elapsed < TOAST_ENTER_MS) {
+    const e = easeOutCubic(elapsed / TOAST_ENTER_MS)
+    slide = offMax * (1 - e)
+    alpha = e
+  } else if (remaining < TOAST_EXIT_MS) {
+    const p = remaining / TOAST_EXIT_MS // 1 -> 0
+    slide = offMax * (1 - p)
+    alpha = p
+  }
+
+  const w = S(360)
+  const h = S(54)
+  const accent = toastAccent(t.kind)
   return (
     <ScreenInsetArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), right: S(16) }, width: S(320), alignItems: 'center', pointerFilter: 'none' }}>
-          <UiEntity uiTransform={{ width: S(320), height: S(42), justifyContent: 'center', alignItems: 'center', borderRadius: S(21) }} uiBackground={{ color: { r: 0.12, g: 0.1, b: 0.09, a: 0.96 } }}>
-            <Label value={t.message} fontSize={S(15)} color={C.text} textAlign="middle-center" uiTransform={{ width: S(304), height: S(34) }} />
-          </UiEntity>
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: '46%', left: '50%' },
+            margin: { top: -h / 2, left: -w / 2 + slide },
+            width: w,
+            height: h,
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: { left: S(14), right: S(16) },
+            borderRadius: S(27),
+            pointerFilter: 'none'
+          }}
+          uiBackground={{ color: withAlpha({ r: 0.12, g: 0.1, b: 0.09, a: 0.97 }, alpha) }}
+        >
+          <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
+          <Label value={t.message} fontSize={S(15)} color={withAlpha(C.text, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(54), height: h - S(12) }} />
         </UiEntity>
       </UiEntity>
     </ScreenInsetArea>
-  )
-}
-
-// Contextual hint banner — persistent one-line guidance ("go explore the
-// meteorite", "click your pet", ...). Simple look for now (tune later): a rounded
-// pill near the top-center. Non-interactive; cleared when its action is done.
-function HintBanner() {
-  const h = clientState.hint
-  // Hidden behind any open panel/modal — it used to float on top of them
-  // (the "toast overlapping the UI" complaint), covering the title card.
-  if (!h || uiState.panel !== 'none' || clientState.dialog.open || clientState.petPanelOpen || clientState.viewingPetAddress || clientState.incomingSwap) return <UiEntity />
-  const w = S(620)
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: S(120), left: '50%' }, margin: { left: -w / 2 }, width: w, height: S(72), alignItems: 'center', justifyContent: 'center', borderRadius: S(20), pointerFilter: 'none' }}
-      uiBackground={{ color: { r: 0.12, g: 0.1, b: 0.09, a: 0.96 } }}
-    >
-      <Label value={`💡  ${h.message}`} fontSize={S(18)} color={C.text} textAlign="middle-center" uiTransform={{ width: w - S(28), height: S(56) }} />
-    </UiEntity>
   )
 }
 
@@ -2464,17 +2521,9 @@ function PriceDot(props: { size?: number }) {
 function CarryHatchButton() {
   const st = clientState.carryEgg
   if (!st.active) return <UiEntity />
-  if (!st.atHome) {
-    // Walking home — reminder banner (top-center).
-    return (
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(230) }, width: S(460), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-        uiBackground={{ color: C.panelBg }}
-      >
-        <Label value="Take your egg home to hatch it!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-      </UiEntity>
-    )
-  }
+  // While walking home there's no fixed banner — the "take your egg home"
+  // guidance now rides the toast pipeline (fired when the flow starts).
+  if (!st.atHome) return <UiEntity />
   const bw = S(300)
   const bh = S(92)
   return (
@@ -2496,13 +2545,9 @@ function BathButton() {
       {/* BACK — cancel the bath and just keep the pet following */}
       <BackButton onClick={() => cancelCarryPet()} />
       {!st.atStation ? (
-        // Walking to the tub — reminder banner (top-center).
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-          uiBackground={{ color: C.panelBg }}
-        >
-          <Label value="Carry your pet to the bath!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-        </UiEntity>
+        // Walking to the tub — no fixed banner; the "carry your pet to the bath"
+        // guidance is a toast fired when the flow starts.
+        <UiEntity />
       ) : (
         // At the tub — place the pet.
         <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
@@ -2618,8 +2663,7 @@ const Root = () => {
         {uiState.panel === 'jukebox' && <JukeboxPanel />}
         {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
         <DialogBox />
-        {/* Hints + reward + toasts render LAST so they sit on top of any panel/modal. */}
-        <HintBanner />
+        {/* Reward + toasts render LAST so they sit on top of any panel/modal. */}
         <RewardPopup />
         <Toasts />
       </UiEntity>

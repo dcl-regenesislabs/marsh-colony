@@ -1,6 +1,7 @@
-// Runtime creature skins. The GLBs ship with embedded base-color textures; here
-// we OVERRIDE each mesh's material with a fresh per-family base-color PNG
-// (assets/textures/creatures/) via GltfNodeModifiers, picked by the pet's rarity.
+// Runtime creature skins. The GLBs ship TEXTURELESS (mesh only); here we assign
+// each mesh a per-family base-color PNG (assets/textures/creatures/) as an UNLIT
+// material via GltfNodeModifiers, picked by the pet's rarity. Applying the skin at
+// runtime is what lets one mesh serve every rarity (common/rare/legendary skins).
 //
 // Why per-node and not a single global override: a cross model has TWO materials
 // — the body (its armature family) and the head (the other family) — so each mesh
@@ -95,20 +96,23 @@ const FILE_PREFIX: Record<Family, string> = {
 /** Which base-color variant a rarity uses. Three skins per family were delivered. */
 function variantForRarity(rarity: Rarity): string {
   if (rarity === 'legendary') return 'basecolorGold'
-  if (rarity === 'rare' || rarity === 'ultraRare') return 'basecolor2'
-  return 'basecolor' // common / uncommon
+  if (rarity === 'rare') return 'basecolor2'
+  return 'basecolor' // common
 }
 
 function textureSrc(family: Family, rarity: Rarity): string {
   return `assets/textures/creatures/${FILE_PREFIX[family]}_${variantForRarity(rarity)}.png`
 }
 
-/** A matte PBR material carrying just the new base-color texture as albedo. */
+/** An UNLIT material carrying just the base-color texture. Unlit shows the art
+ *  flat at full brightness and identical on desktop and mobile — a PBR/albedo
+ *  material renders much darker on mobile under the scene's lighting/tone-mapping,
+ *  which is what made the new skins look almost black on phones. */
 function skinMaterial(src: string): PBMaterial {
   return {
     material: {
-      $case: 'pbr',
-      pbr: { texture: Material.Texture.Common({ src }), roughness: 1, metallic: 0, specularIntensity: 0 }
+      $case: 'unlit',
+      unlit: { texture: Material.Texture.Common({ src }) }
     }
   }
 }

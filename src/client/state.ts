@@ -27,12 +27,11 @@ export const clientState: {
   followEnabled: boolean
   // Toast queue: pushToast() enqueues a message here; Toasts() (ui.tsx) shows
   // one at a time from `currentToast`, advancing the queue as each expires —
-  // multiple toasts no longer stack/overlap on screen.
-  toasts: string[]
-  currentToast: { message: string; until: number } | null
-  // Contextual guidance hint (one shown at a time), persistent until its action
-  // is done. See showHint/clearHint. null = nothing showing.
-  hint: { id: string; message: string } | null
+  // multiple toasts no longer stack/overlap on screen. `kind` (server notify
+  // kind, or 'info' for local ones) drives the accent color; `shownAt` marks
+  // when the current toast started so the render can drive its slide/fade.
+  toasts: { message: string; kind: string }[]
+  currentToast: { message: string; kind: string; shownAt: number; until: number } | null
   // Gamified "+XP +coins" reward popup after a care action. Auto-expires.
   reward: { xp: number; coins: number; until: number } | null
   lastSpin: { reward: SpinReward; index: number; at: number } | null
@@ -120,7 +119,6 @@ export const clientState: {
   followEnabled: true,
   toasts: [],
   currentToast: null,
-  hint: null,
   reward: null,
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, adoptCta: false },
@@ -309,27 +307,22 @@ export function presenceFor(address: string): PresenceEntry | undefined {
   return clientState.presence.find((e) => e.address.toLowerCase() === address.toLowerCase())
 }
 
-export function pushToast(message: string): void {
-  clientState.toasts.push(message)
+export function pushToast(message: string, kind: string = 'info'): void {
+  clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }
 
 // ---------------------------------------------------------------------------
 // Contextual hints — one-time guidance ("go explore the meteorite", "click your
-// pet", ...). Each id fires at most once, and stays up until its action clears
-// it. Kept separate from toasts (transient) since hints persist.
+// pet", ...). Each id fires at most once, then rides the normal toast pipeline
+// (slides in from the right, holds, retracts) instead of a persistent banner.
+// `kind` picks the toast accent (see Toasts in ui.tsx).
 // ---------------------------------------------------------------------------
 const shownHints = new Set<string>()
-export function showHint(id: string, message: string): void {
+export function showHint(id: string, message: string, kind: string = 'info'): void {
   if (shownHints.has(id)) return
   shownHints.add(id)
-  clientState.hint = { id, message }
-}
-/** Clear the current hint (optionally only if it matches `id`). */
-export function clearHint(id?: string): void {
-  if (!clientState.hint) return
-  if (id && clientState.hint.id !== id) return
-  clientState.hint = null
+  pushToast(message, kind)
 }
 
 /** Flash a gamified "+XP +coins" reward popup (after a care action). */
