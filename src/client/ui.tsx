@@ -585,10 +585,10 @@ function BottomNav() {
   // the nav bar — Keep places it (nav returns), Discard sends it to the Care
   // Center (nothing kept). Until then the 3 nav buttons stay hidden.
   if (p.hatchling) {
-    const kdH = bh
+    const kdH = Math.round(bh * 1.15)
     const kdW = Math.round(kdH * KEEP_DISCARD_ASPECT)
     return (
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(34), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
         <TactileButton id="nav_keep" label="" texture={KEEP_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
         <TactileButton id="nav_discard" label="" texture={DISCARD_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
       </UiEntity>
