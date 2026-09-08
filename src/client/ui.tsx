@@ -615,6 +615,13 @@ function SwapOfferPanel() {
   )
 }
 
+// Keep/Discard button art (source is 443x336) — sized off this ratio wherever
+// they're used instead of the old text-pill's own width/height, so the art
+// never gets stretched.
+const KEEP_BUTTON_ICON = 'assets/images/revamp/keepbutton.png'
+const DISCARD_BUTTON_ICON = 'assets/images/revamp/discardbutton.png'
+const KEEP_DISCARD_ASPECT = 443 / 336
+
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
@@ -624,17 +631,18 @@ function BottomNav() {
   // Also hidden in Fetch mode, while carrying an egg or the pet, and during the
   // hatch animation (so Keep/Discard only appears once the newborn has emerged).
   if (!p || clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) return <UiEntity />
-  const bw = Sbtn(160)
   const bh = Sbtn(72)
 
   // Just hatched: a new pet is waiting on a Keep/Discard decision. It takes over
   // the nav bar — Keep places it (nav returns), Discard sends it to the Care
   // Center (nothing kept). Until then the 3 nav buttons stay hidden.
   if (p.hatchling) {
+    const kdH = Math.round(bh * 1.15)
+    const kdW = Math.round(kdH * KEEP_DISCARD_ASPECT)
     return (
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-        <TactileButton id="nav_keep" label="Keep" width={bw} height={bh} bg={LOC.violet} textColor={LOC.white} fontSize={S(20)} radius={S(20)} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
-        <TactileButton id="nav_discard" label="Discard" width={bw} height={bh} bg={LOC.rose} textColor={LOC.white} fontSize={S(20)} radius={S(20)} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(50), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+        <TactileButton id="nav_keep" label="" texture={KEEP_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
+        <TactileButton id="nav_discard" label="" texture={DISCARD_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
       </UiEntity>
     )
   }
@@ -1237,8 +1245,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
           <UiEntity uiTransform={{ width: S(70), height: S(70), borderRadius: S(35), margin: { bottom: S(6) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(hatch.species) }} />
           <Label value={`${hatch.name} hatched!`} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20) }} />
           <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(6) } }}>
-            <TactileButton id="hatch_keep" label="Keep" width={S(78)} height={S(38)} bg={LOC.violet} textColor={LOC.white} fontSize={S(15)} radius={S(12)} margin={{ right: S(4) }} pulse onClick={() => keepHatchling()} />
-            <TactileButton id="hatch_discard" label="Discard" width={S(84)} height={S(38)} bg={LOC.rose} textColor={LOC.white} fontSize={S(14)} radius={S(12)} margin={{ left: S(4) }} onClick={() => discardHatchling()} />
+            <TactileButton id="hatch_keep" label="" texture={KEEP_BUTTON_ICON} width={S(70)} height={Math.round(S(70) / KEEP_DISCARD_ASPECT)} margin={{ right: S(4) }} pulse onClick={() => keepHatchling()} />
+            <TactileButton id="hatch_discard" label="" texture={DISCARD_BUTTON_ICON} width={S(70)} height={Math.round(S(70) / KEEP_DISCARD_ASPECT)} margin={{ left: S(4) }} onClick={() => discardHatchling()} />
           </UiEntity>
         </PetGridCard>
       )
