@@ -2421,14 +2421,14 @@
         },
         "582": {
           "json": {
-            "src": "assets/Models/Sprout/Sprout.glb",
+            "src": "assets/Models/creatures/sprout/sprout.glb",
             "visibleMeshesCollisionMask": 0,
             "invisibleMeshesCollisionMask": 3
           }
         },
         "583": {
           "json": {
-            "src": "assets/Models/Sprout/Sprout.glb",
+            "src": "assets/Models/creatures/sprout/sprout.glb",
             "visibleMeshesCollisionMask": 0,
             "invisibleMeshesCollisionMask": 3
           }
@@ -2505,7 +2505,7 @@
         },
         "66117": {
           "json": {
-            "src": "assets/Models/Sprout/Sprout.glb",
+            "src": "assets/Models/creatures/sprout/sprout.glb",
             "visibleMeshesCollisionMask": 0,
             "invisibleMeshesCollisionMask": 3
           }

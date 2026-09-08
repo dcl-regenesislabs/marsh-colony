@@ -95,20 +95,23 @@ const FILE_PREFIX: Record<Family, string> = {
 /** Which base-color variant a rarity uses. Three skins per family were delivered. */
 function variantForRarity(rarity: Rarity): string {
   if (rarity === 'legendary') return 'basecolorGold'
-  if (rarity === 'rare' || rarity === 'ultraRare') return 'basecolor2'
-  return 'basecolor' // common / uncommon
+  if (rarity === 'rare') return 'basecolor2'
+  return 'basecolor' // common
 }
 
 function textureSrc(family: Family, rarity: Rarity): string {
   return `assets/textures/creatures/${FILE_PREFIX[family]}_${variantForRarity(rarity)}.png`
 }
 
-/** A matte PBR material carrying just the new base-color texture as albedo. */
+/** An UNLIT material carrying just the base-color texture. Unlit shows the art
+ *  flat at full brightness and identical on desktop and mobile — a PBR/albedo
+ *  material renders much darker on mobile under the scene's lighting/tone-mapping,
+ *  which is what made the new skins look almost black on phones. */
 function skinMaterial(src: string): PBMaterial {
   return {
     material: {
-      $case: 'pbr',
-      pbr: { texture: Material.Texture.Common({ src }), roughness: 1, metallic: 0, specularIntensity: 0 }
+      $case: 'unlit',
+      unlit: { texture: Material.Texture.Common({ src }) }
     }
   }
 }
