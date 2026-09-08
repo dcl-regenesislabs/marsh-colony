@@ -241,6 +241,10 @@ const CANOPY_HEIGHT = 8.75 // above the spawnpoint — where fruit hangs/falls f
 const CAMERA_LOOK_HEIGHT = 4.2 // above the spawnpoint — independent of CANOPY_HEIGHT, so raising the drop height doesn't tilt the shot up too
 const LANE_END_MARGIN = 1.0 // metres inset from each end-cap wall, so fruit don't spawn right against them
 const CANOPY_DEPTH = 0.6 // half-depth, narrow so it reads as one lane
+// The active pet is parked here (sitting, watching) for the round: this far
+// PAST the right-hand end-cap wall along +localRight, so it's clearly outside
+// the catch lane and never in the player's way.
+const PET_SIT_MARGIN = 1.5
 
 // Same "hold" pose/asset pet.ts uses for carrying the pet to the bath — a
 // two-handed cradling pose, better suited to holding the drawer than the
@@ -987,6 +991,16 @@ export function startFruitGame(mascotaId: string): void {
     (p3.z + p4.z) / 2
   )
 
+  // Where the active pet sits and watches for the round — just past the
+  // right-hand end-cap wall, on the ground, facing the play area (pet.ts reads
+  // these). Right = +localRight; distance = half the lane + a margin.
+  const laneMid = Vector3.create(canopyCenter.x, groundY, canopyCenter.z)
+  const petSitPos = Vector3.create(
+    laneMid.x + localRight.x * (laneWidth / 2 + PET_SIT_MARGIN),
+    groundY,
+    laneMid.z + localRight.z * (laneWidth / 2 + PET_SIT_MARGIN)
+  )
+
   // Cached for arrivalTick's cut to the game camera.
   pendingCamPos = camPos
   pendingLookTarget = geo.gameLookTarget
@@ -1053,7 +1067,7 @@ export function startFruitGame(mascotaId: string): void {
     f.phase = 'idle'
   }
 
-  clientState.feedGame = { active: true, phase: 'arrival', caught: 0, timeLeft: GAME_DURATION_S, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+  clientState.feedGame = { active: true, phase: 'arrival', caught: 0, timeLeft: GAME_DURATION_S, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos, petSitLook: laneMid }
   introEmotePlayed = false
   drawerRevealed = false
   phase = 'arrival'

@@ -84,6 +84,10 @@ export const clientState: {
     catchFlashUntil: number
     countdownAt: number
     resultsAt: number
+    // Where the active pet sits (SitIdle clip) and what it faces while the
+    // round runs — set by fruitGame.startFruitGame, consumed by pet.ts.
+    petSitPos: { x: number; y: number; z: number } | null
+    petSitLook: { x: number; y: number; z: number } | null
   }
   // Fetch (Play) mode: `active` shows the centered Fetch button and hides the
   // panel; `busy` is true from the moment the ball is thrown until the pet drops
@@ -132,7 +136,7 @@ export const clientState: {
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
-  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
+  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
   pendingUntil: 0,

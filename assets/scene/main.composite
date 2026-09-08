@@ -1447,20 +1447,20 @@
         "584": {
           "json": {
             "position": {
-              "x": 193,
-              "y": 0,
-              "z": 274.75
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
+              "x": 191.67160034179688,
+              "y": -5.329070518200751e-15,
+              "z": 274.6441955566406
             },
             "rotation": {
               "x": 0,
-              "y": 0.13052618503570557,
+              "y": 0.3803466558456421,
               "z": 0,
-              "w": 0.9914448857307434
+              "w": 0.9248440265655518
+            },
+            "scale": {
+              "x": 1.2171422243118286,
+              "y": 1.0179001092910767,
+              "z": 1.1594140529632568
             },
             "parent": 0
           }
@@ -2911,9 +2911,9 @@
         "serializationType": "map"
       },
       "data": {
-        "1": {
+        "584": {
           "json": {
-            "gizmo": 0
+            "gizmo": 3
           }
         }
       }
@@ -3959,16 +3959,13 @@
         "0": {
           "json": {
             "name": "Marsh Colony",
-            "description": "Empty Scene Template",
+            "description": "A Tamagotchi-style pet care game for Decentraland (SDK7) — adopt a pet, keep it fed, clean, rested and happy, earn coins from its happiness, and raise it in a shared social Care Center",
             "thumbnail": "assets/images/thumbnail.png",
             "categories": [],
-            "author": "SDK",
+            "author": "RGL",
+            "email": "",
             "tags": [],
             "layout": {
-              "base": {
-                "x": 0,
-                "y": 0
-              },
               "parcels": [
                 {
                   "x": 0,
@@ -7570,8 +7567,14 @@
                   "x": 29,
                   "y": 0
                 }
-              ]
+              ],
+              "base": {
+                "x": 0,
+                "y": 0
+              }
             },
+            "silenceVoiceChat": false,
+            "disablePortableExperiences": false,
             "spawnPoints": [
               {
                 "name": "SpawnArea1",
@@ -7585,8 +7588,11 @@
                     ]
                   },
                   "y": {
-                    "$case": "single",
-                    "value": 0.5
+                    "$case": "range",
+                    "value": [
+                      0.5,
+                      0.5
+                    ]
                   },
                   "z": {
                     "$case": "range",
@@ -7605,7 +7611,10 @@
             ],
             "skyboxConfig": {
               "fixedTime": 36000
-            }
+            },
+            "creator": "",
+            "disableNearbyVoiceChat": false,
+            "hideLandscapeTerrain": false
           }
         }
       }

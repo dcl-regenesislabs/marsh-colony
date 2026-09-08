@@ -137,7 +137,7 @@ const DEBUG_SCREENS: DebugScreen[] = [
     variants: ['Arrival', 'Intro (Start button)', 'Countdown 3-2-1', 'Catching', 'Results'],
     activate: (v) => {
       applyFixturePlayer(fakePlayer(), fakePet())
-      const base = { active: true, caught: 0, timeLeft: 30, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+      const base = { active: true, caught: 0, timeLeft: 30, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null }
       const byVariant = [
         { ...base, phase: 'arrival' as const },
         { ...base, phase: 'intro' as const },
@@ -405,7 +405,7 @@ const DEBUG_SCREENS: DebugScreen[] = [
 function resetAllDebugFlags(): void {
   clientState.petting = { active: false, progress: 0 }
   clientState.hatch = { active: false, progress: 0 }
-  clientState.feedGame = { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+  clientState.feedGame = { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null }
   clientState.dialog.open = false
   clientState.fetch = { active: false, busy: false, charging: false, charge: 0 }
   clientState.carryEgg = { active: false, species: '', name: '', atHome: false }

@@ -1272,10 +1272,22 @@ function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
 
-  // Hidden entirely during the Feed tree minigame — it just gets in the way
-  // while the player is dodging around to catch fruit.
+  // During the Feed tree minigame the pet sits and watches from the side of
+  // the lane (spot + facing come from fruitGame.startFruitGame). Parked here
+  // every frame so the normal follow/wander tick below never drags it around;
+  // tag stays hidden so mood icons don't float over the minigame.
   if (clientState.feedGame.active) {
-    VisibilityComponent.createOrReplace(localPet, { visible: false })
+    const sit = clientState.feedGame.petSitPos
+    if (sit) {
+      VisibilityComponent.createOrReplace(localPet, { visible: true })
+      const t = Transform.getMutable(localPet)
+      t.position = Vector3.create(sit.x, C.PET_BASE_Y, sit.z)
+      const look = clientState.feedGame.petSitLook ?? sit
+      t.rotation = yawToward(t.position, Vector3.create(look.x, C.PET_BASE_Y, look.z), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+      setClip(localPet, 'sit')
+    } else {
+      VisibilityComponent.createOrReplace(localPet, { visible: false })
+    }
     if (localTag) setTagVisible(localTag, false)
     return
   }
