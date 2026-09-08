@@ -1904,8 +1904,8 @@
         "513": {
           "json": {
             "src": "assets/scene/Models/Caretaker.glb",
-            "visibleMeshesCollisionMask": 2,
-            "invisibleMeshesCollisionMask": 2
+            "visibleMeshesCollisionMask": 3,
+            "invisibleMeshesCollisionMask": 3
           }
         },
         "515": {
