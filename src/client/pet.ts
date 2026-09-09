@@ -61,6 +61,11 @@ type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 let localPet: Entity | null = null
 let localSpecies = ''
 let localSkinKey = '' // species|rarity of the skin currently applied to localPet
+// After a reparent (carry pick-up / put-down) DCL reloads the GLTF instance a few
+// frames late and that reload drops the runtime skin override. Re-assert the skin
+// every frame until this ms deadline so it re-applies once the reload lands.
+let skinReassertUntil = 0
+const SKIN_REASSERT_MS = 1500
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
 // pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
@@ -603,7 +608,7 @@ function ensureLocalPet(): void {
   // Re-skin on species OR rarity change (a same-species roster switch reuses the
   // entity but may need a different rarity skin).
   const skinKey = `${pet.species}|${pet.rarity}`
-  if (localSkinKey !== skinKey) {
+  if (localSkinKey !== skinKey || Date.now() < skinReassertUntil) {
     localSkinKey = skinKey
     applyCreatureSkin(localPet, pet.species, pet.rarity)
   }
@@ -831,6 +836,7 @@ function attachPetToHands(pet: PetData): void {
   t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(pet.species) + PET_HOLD_YAW, 0)
   setHeldPetPointerCollider(false)
   setLocalTagVisible(false)
+  skinReassertUntil = Date.now() + SKIN_REASSERT_MS // reparent reloads the GLTF late; keep re-asserting the skin
 }
 
 /** Detach the pet back into world space (place at the tub, or cancel the carry); restore its tag.
@@ -852,6 +858,7 @@ function detachPetFromHands(): void {
   setHeldPetPointerCollider(true)
   setLocalTagVisible(true)
   if (carriedPetAnchor) AvatarAttach.deleteFrom(carriedPetAnchor) // stop riding the player's bone between baths
+  skinReassertUntil = Date.now() + SKIN_REASSERT_MS // reparent back to the scene reloads the GLTF too — re-assert the skin
 }
 
 /** Bath step 1: pick the pet up into the player's hands to carry it to the tub. */
