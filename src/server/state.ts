@@ -269,6 +269,27 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
   return data
 }
 
+/** Collapse legacy 5-tier rarities into the current 3 tiers: uncommon -> common,
+ *  ultraRare -> rare. Common/rare/legendary (and anything unexpected) pass through
+ *  to their nearest valid tier so old saves never carry a dead rarity value. */
+function normalizeRarity(r: unknown): Rarity {
+  if (r === 'legendary') return 'legendary'
+  if (r === 'rare' || r === 'ultraRare') return 'rare'
+  return 'common'
+}
+
+// A species whose head/body aren't real families (the removed alien pets, or any
+// unknown legacy id) would resolve to a deleted GLB and render as an INVISIBLE
+// pet. Remap those saves onto a valid adoptable species so the pet still shows up;
+// family originals and crosses pass through untouched. Also collapses the rarity.
+const FAMILY_SET = new Set<string>(C.FAMILIES)
+function migratePet<T extends PetData>(pet: T): T {
+  const cur = C.speciesParts(pet.species)
+  const species = FAMILY_SET.has(cur.head) && FAMILY_SET.has(cur.body) ? pet.species : 'sprout-original'
+  const parts = C.speciesParts(species)
+  return { ...pet, species, head: parts.head, body: parts.body, rarity: normalizeRarity(pet.rarity) }
+}
+
 function sanitize(address: string, d: PlayerData): PlayerData {
   const base = newPlayer(address)
   return {
@@ -278,8 +299,8 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     inventory: { ...base.inventory, ...(d.inventory ?? {}) },
     counters: d.counters ?? {},
     achievements: d.achievements ?? [],
-    pets: (d.pets ?? []).map((pet) => ({ ...newPet(pet.species, pet.name), ...pet })),
-    hatchling: d.hatchling ? { ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling } : null
+    pets: (d.pets ?? []).map((pet) => migratePet({ ...newPet(pet.species, pet.name), ...pet })),
+    hatchling: d.hatchling ? migratePet({ ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling }) : null
   }
 }
 
@@ -480,7 +501,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   bump(p, 'breedCount')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
-  return { notes: [{ kind: 'breed', message: `You bred a ${rarity} egg${potionNote} — carry it home to hatch!` }], rarity, species: child.species, name: child.name }
+  return { notes: [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!` }], rarity, species: child.species, name: child.name }
 }
 
 /** DEBUG/testing: grow the active pet straight to Adult + level 5 so breeding

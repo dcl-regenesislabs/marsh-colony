@@ -237,14 +237,35 @@ function TopBars() {
   const w1 = Math.round(h * BAR_NAME_ASPECT)
   const w2 = Math.round(h * BAR_COIN_ASPECT)
   const w3 = Math.round(h * BAR_PETS_ASPECT)
-  const totalW = w1 + gap + w2 + gap + w3
+  const iconSize = h // music/trophy badges are square (1:1) in the sheet
+  // Same gate the old floating Music/Leaderboard buttons enforced (and
+  // BottomNav still enforces today): hidden during full-screen flows that own
+  // the whole screen and while a dialog is open, so tapping them can't stack
+  // the Jukebox/Leaderboard panel on top of an active fetch/NPC dialog/etc.
+  const showIcons =
+    !clientState.dialog.open &&
+    !clientState.fetch.active &&
+    !clientState.carryEgg.active &&
+    !clientState.carryPet.active &&
+    !clientState.hatch.active
+  const iconsW = gap + iconSize + gap + iconSize
+  const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
+  const rightShift = S(40) // nudged off-center — plenty of clearance either side of this row
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 + rightShift }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
       <NameLevelBar height={h} />
       <UiEntity uiTransform={{ width: gap, height: h }} />
       <CoinsBar height={h} />
       <UiEntity uiTransform={{ width: gap, height: h }} />
       <PetsCountBar height={h} />
+      {showIcons ? (
+        <UiEntity uiTransform={{ width: iconsW, height: h, flexDirection: 'row', alignItems: 'center' }}>
+          <UiEntity uiTransform={{ width: gap, height: h }} />
+          <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
+          <UiEntity uiTransform={{ width: gap, height: h }} />
+          <TactileButton id="hud_leaderboard" label="" texture={HUD_SHEET} uvs={HUD_TROPHY_UVS} width={iconSize} height={iconSize} onClick={() => ui.openLeaderboard()} />
+        </UiEntity>
+      ) : null}
     </UiEntity>
   )
 }
@@ -267,14 +288,66 @@ function StatRow(props: { label: string; value: number; color: Color; width: num
   )
 }
 
-// Snapshot + rarity + growth stage/size — shared by the owner's PetPanel and
-// the read-only RemotePetPanel so both "passports" look consistent. `name`/
-// `level` are optional: PetPanel passes them to show its header inline (the
-// hud2 card has no separate title bar); RemotePetPanel leaves them off since
-// its LightModal title already shows the name/level.
+// Growth progress bar — one continuous line that fills (in the pet's rarity color)
+// with the pet's overall growth from newborn to Adult, with the three stage names
+// placed along the path at their real positions (Junior at the start, Teenager at
+// its threshold, Adult at the end) and a marker dot at each. Shows both how grown
+// the pet is AND how far each stage sits (#153). On every pet passport.
+const GROWTH_MARKS: { key: Cfg.PetStage; label: string; pos: number }[] = [
+  { key: 'JUNIOR', label: 'Junior', pos: 0 },
+  { key: 'TEENAGER', label: 'Teenager', pos: Cfg.PET_STAGE_TEEN_FRACTION },
+  { key: 'ADULT', label: 'Adult', pos: 1 }
+]
+function StageProgress(props: { size: number; color: Color }) {
+  const overall = Cfg.petGrowthFraction(props.size) // 0..1 across the whole range
+  const cur = Cfg.petStage(props.size)
+  const inactive = LOC.dim // visible on the light-pink card (LOC.neutral was near-invisible)
+  const barH = S(8)
+  const node = S(13)
+  const labelW = S(80)
+  return (
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', margin: { top: S(6), bottom: S(2) } }}>
+      {/* the bar: grey track + rarity fill + a marker dot per stage */}
+      <UiEntity uiTransform={{ width: '100%', height: node, justifyContent: 'center' }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: '100%', height: barH, borderRadius: barH / 2 }} uiBackground={{ color: inactive }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: `${Math.round(overall * 100)}%`, height: barH, borderRadius: barH / 2 }} uiBackground={{ color: props.color }} />
+        {GROWTH_MARKS.map((m) => (
+          <UiEntity
+            key={`gm-${m.key}`}
+            uiTransform={{ positionType: 'absolute', position: { left: `${m.pos * 100}%`, top: 0 }, margin: { left: m.pos === 0 ? 0 : m.pos === 1 ? -node : -node / 2 }, width: node, height: node, borderRadius: node / 2 }}
+            uiBackground={{ color: overall + 0.0005 >= m.pos ? props.color : inactive }}
+          />
+        ))}
+      </UiEntity>
+      {/* stage names along the path, under their markers */}
+      <UiEntity uiTransform={{ width: '100%', height: S(18), margin: { top: S(3) } }}>
+        {GROWTH_MARKS.map((m) => (
+          <Label
+            key={`gl-${m.key}`}
+            value={m.label}
+            fontSize={S(13)}
+            color={m.key === cur ? props.color : inactive}
+            textAlign={m.pos === 0 ? 'middle-left' : m.pos === 1 ? 'middle-right' : 'middle-center'}
+            textWrap="nowrap"
+            uiTransform={
+              m.pos === 1
+                ? { positionType: 'absolute', position: { right: 0, top: 0 }, width: labelW, height: S(18) }
+                : { positionType: 'absolute', position: { left: `${m.pos * 100}%`, top: 0 }, margin: { left: m.pos === 0 ? 0 : -labelW / 2 }, width: labelW, height: S(18) }
+            }
+          />
+        ))}
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// Snapshot + rarity + growth stage — shared by the owner's PetPanel and the
+// read-only RemotePetPanel so both "passports" look consistent. `name`/`level`
+// are optional: PetPanel passes them to show its header inline (the hud2 card has
+// no separate title bar); RemotePetPanel leaves them off since its LightModal
+// title already shows the name/level.
 function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; width: number; name?: string; level?: number }) {
   const img = Cfg.speciesImage(props.species)
-  const stage = Cfg.petStageLabel(props.size)
   const rc = Cfg.RARITY_COLOR[props.rarity] ?? Cfg.RARITY_COLOR.common
   const rarityColor: Color = { r: rc.r, g: rc.g, b: rc.b, a: 1 }
   const discSize = S(84)
@@ -290,7 +363,7 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
           <Label value={`${props.name}  ·  Lv ${props.level}`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
         )}
         <Label value={Cfg.rarityLabel(props.rarity).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
-        <Label value={`${stage} pet  ·  size ${props.size.toFixed(2)}`} fontSize={S(14)} color={LOC.dim} textAlign="middle-left" uiTransform={{ width: '100%', height: S(20), margin: { top: S(2) } }} />
+        <StageProgress size={props.size} color={rarityColor} />
       </UiEntity>
     </UiEntity>
   )
@@ -564,6 +637,13 @@ function SwapOfferPanel() {
   )
 }
 
+// Keep/Discard button art (source is 443x336) — sized off this ratio wherever
+// they're used instead of the old text-pill's own width/height, so the art
+// never gets stretched.
+const KEEP_BUTTON_ICON = 'assets/images/revamp/keepbutton.png'
+const DISCARD_BUTTON_ICON = 'assets/images/revamp/discardbutton.png'
+const KEEP_DISCARD_ASPECT = 443 / 336
+
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
@@ -573,17 +653,18 @@ function BottomNav() {
   // Also hidden in Fetch mode, while carrying an egg or the pet, and during the
   // hatch animation (so Keep/Discard only appears once the newborn has emerged).
   if (!p || clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) return <UiEntity />
-  const bw = Sbtn(160)
   const bh = Sbtn(72)
 
   // Just hatched: a new pet is waiting on a Keep/Discard decision. It takes over
   // the nav bar — Keep places it (nav returns), Discard sends it to the Care
   // Center (nothing kept). Until then the 3 nav buttons stay hidden.
   if (p.hatchling) {
+    const kdH = Math.round(bh * 1.15)
+    const kdW = Math.round(kdH * KEEP_DISCARD_ASPECT)
     return (
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-        <TactileButton id="nav_keep" label="Keep" width={bw} height={bh} bg={LOC.violet} textColor={LOC.white} fontSize={S(20)} radius={S(20)} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
-        <TactileButton id="nav_discard" label="Discard" width={bw} height={bh} bg={LOC.rose} textColor={LOC.white} fontSize={S(20)} radius={S(20)} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(50), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+        <TactileButton id="nav_keep" label="" texture={KEEP_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
+        <TactileButton id="nav_discard" label="" texture={DISCARD_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
       </UiEntity>
     )
   }
@@ -625,70 +706,9 @@ function SideButtons() {
   return <UiEntity />
 }
 
-// ---------------------------------------------------------------------------
-// Jukebox HUD button (mid-right) — the entry point to the track picker.
-// ---------------------------------------------------------------------------
-// The cozy-farm jukebox hangs off a clickable Boombox model in the scene; there
-// is no such prop in this composite, so the colony gets a HUD button instead.
-// It sits on the mid-right edge — the slot this file's header reserves for side
-// buttons, and currently the only free one: the top-right is crossed by the
-// toast pill (top S(84), 320 wide, anchored right) and the bottom-right by
-// ServerStatus. Same gating as BottomNav: hidden during dialogs and the
-// full-screen flows (fetch / carry / hatch) that own the whole screen.
-function MusicButton() {
-  if (clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) {
-    return <UiEntity />
-  }
-  const size = Sbtn(52)
-  const muted = musicState.muted
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: '40%', right: S(16) }, width: size, height: size, pointerFilter: 'none' }}
-    >
-      <TactileButton
-        id="hud_music"
-        label="♪"
-        width={size}
-        height={size}
-        bg={muted ? C.cardAlt : C.pink}
-        textColor={muted ? C.dim : C.text}
-        fontSize={Math.round(size * 0.5)}
-        radius={Math.round(size / 2)}
-        onClick={() => ui.openJukebox()}
-      />
-    </UiEntity>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Leaderboard HUD button (mid-right, just below the Jukebox button) + panel.
-// Same size/gating as MusicButton; a pink circle labelled "TOP 10".
-// ---------------------------------------------------------------------------
-function LeaderboardButton() {
-  if (clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) {
-    return <UiEntity />
-  }
-  const size = Sbtn(52)
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: '40%', right: S(16) }, margin: { top: size + S(12) }, width: size, height: size, pointerFilter: 'none' }}
-    >
-      {/* Pink circle like the music button, labelled "TOP 10" (two lines so it
-          fits the circle). */}
-      <TactileButton
-        id="hud_leaderboard"
-        label={'TOP\n10'}
-        bg={C.pink}
-        textColor={LOC.white}
-        fontSize={Math.round(size * 0.3)}
-        width={size}
-        height={size}
-        radius={Math.round(size / 2)}
-        onClick={() => ui.openLeaderboard()}
-      />
-    </UiEntity>
-  )
-}
+// Jukebox + Leaderboard entry points now live as icon buttons in the top HUD
+// row (TopBars, next to the pets counter) instead of floating mid-right
+// placeholders.
 
 // Column widths shared by the header + rows so they line up. name is fixed (not
 // flex) so Creatures sits centered in the middle and Coins on the right, evenly
@@ -885,8 +905,7 @@ function AdoptPanel() {
             fontSize={S(20)}
             radius={S(18)}
             onClick={() => {
-              if (buySlotLocal()) pushToast('Slot unlocked!')
-              else pushToast('Not enough coins')
+              buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
               actions.buySlot()
             }}
           />
@@ -1053,8 +1072,7 @@ function ShopPanel() {
             price={Cfg.slotPrice(slots)}
             color={C.gold}
             onBuy={() => {
-              if (buySlotLocal()) pushToast('Unlocked a pet slot!')
-              else pushToast('Not enough coins')
+              buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
               actions.buySlot()
             }}
           />
@@ -1160,8 +1178,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
         onClick={
           canUnlock
             ? () => {
-                if (buySlotLocal()) pushToast('Slot unlocked!')
-                else pushToast('Not enough coins')
+                buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
                 actions.buySlot()
               }
             : undefined
@@ -1189,8 +1206,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
           <UiEntity uiTransform={{ width: S(70), height: S(70), borderRadius: S(35), margin: { bottom: S(6) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(hatch.species) }} />
           <Label value={`${hatch.name} hatched!`} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20) }} />
           <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(6) } }}>
-            <TactileButton id="hatch_keep" label="Keep" width={S(78)} height={S(38)} bg={LOC.violet} textColor={LOC.white} fontSize={S(15)} radius={S(12)} margin={{ right: S(4) }} pulse onClick={() => keepHatchling()} />
-            <TactileButton id="hatch_discard" label="Discard" width={S(84)} height={S(38)} bg={LOC.rose} textColor={LOC.white} fontSize={S(14)} radius={S(12)} margin={{ left: S(4) }} onClick={() => discardHatchling()} />
+            <TactileButton id="hatch_keep" label="" texture={KEEP_BUTTON_ICON} width={S(70)} height={Math.round(S(70) / KEEP_DISCARD_ASPECT)} margin={{ right: S(4) }} pulse onClick={() => keepHatchling()} />
+            <TactileButton id="hatch_discard" label="" texture={DISCARD_BUTTON_ICON} width={S(70)} height={Math.round(S(70) / KEEP_DISCARD_ASPECT)} margin={{ left: S(4) }} onClick={() => discardHatchling()} />
           </UiEntity>
         </PetGridCard>
       )
@@ -1621,49 +1638,109 @@ function JukeboxPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Toasts (screen center)
+// Toasts (screen center, slide in/out from the right)
 // ---------------------------------------------------------------------------
-// Shows one toast at a time from clientState.toasts (a queue) — advances to
-// the next message once the current one expires, instead of stacking every
-// pushed toast on screen at once. Sits below the top HUD bars, off to the
-// side, so it never covers a centered modal.
+// Shows one toast at a time from clientState.toasts (a queue) — advances to the
+// next message once the current one expires, instead of stacking every pushed
+// toast on screen at once. It deploys from the right edge into the middle of the
+// screen (the one region with no HUD), holds, then retracts back to the right —
+// so it never covers the top coin bar, the right-rail buttons, or a modal. The
+// server `notify` kind picks the accent color (error/reward/progress/info).
+const TOAST_ENTER_MS = 240 // slide-in from the right
+const TOAST_HOLD_MS = 2600 // fully-shown dwell
+const TOAST_EXIT_MS = 300 // retract back to the right
+const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
+
+// notify kind -> accent color. Positive/progress events read green, rewards
+// gold, failures red; everything else falls back to a calm blue.
+const TOAST_ACCENT: Record<string, Color> = {
+  error: { r: 0.95, g: 0.42, b: 0.38, a: 1 },
+  cooldown: { r: 0.95, g: 0.42, b: 0.38, a: 1 },
+  reward: C.gold,
+  spin: C.gold,
+  meteor: C.gold,
+  daily: C.gold,
+  streak: C.gold,
+  giving: C.gold,
+  adopt: C.green,
+  breed: C.green,
+  level: C.green,
+  achievement: C.green,
+  feed: C.green,
+  roster: C.blue,
+  shop: C.blue,
+  swap: C.blue,
+  sleep: C.blue,
+  energy: C.blue
+}
+function toastAccent(kind: string): Color {
+  return TOAST_ACCENT[kind] ?? C.blue
+}
+const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
+const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
+
 function Toasts() {
   const now = Date.now()
+  // Hold the queue while a panel/modal/dialog owns the screen: the toast sits at
+  // screen-center, so it would paint over the open UI — exactly the overlap
+  // complaint in #186 that the old off-to-the-side toast/HintBanner avoided.
+  // Nothing is shifted or shown until they close, then the queue resumes.
+  const overlayOpen =
+    uiState.panel !== 'none' ||
+    clientState.dialog.open ||
+    clientState.petPanelOpen ||
+    clientState.viewingPetAddress !== null ||
+    clientState.incomingSwap !== null
+  if (overlayOpen) return <UiEntity />
   if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
-    const message = clientState.toasts.shift()!
-    clientState.currentToast = { message, until: now + 3200 }
+    const next = clientState.toasts.shift()!
+    clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }
   }
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
+
+  // Drive slide (offset toward the right) + fade from elapsed/remaining time.
+  const elapsed = now - t.shownAt
+  const remaining = t.until - now
+  const offMax = S(560) // how far off to the right the pill starts/ends (hidden)
+  let slide = 0
+  let alpha = 1
+  if (elapsed < TOAST_ENTER_MS) {
+    const e = easeOutCubic(elapsed / TOAST_ENTER_MS)
+    slide = offMax * (1 - e)
+    alpha = e
+  } else if (remaining < TOAST_EXIT_MS) {
+    const p = remaining / TOAST_EXIT_MS // 1 -> 0
+    slide = offMax * (1 - p)
+    alpha = p
+  }
+
+  const w = S(360)
+  const h = S(54)
+  const accent = toastAccent(t.kind)
   return (
     <ScreenInsetArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), right: S(16) }, width: S(320), alignItems: 'center', pointerFilter: 'none' }}>
-          <UiEntity uiTransform={{ width: S(320), height: S(42), justifyContent: 'center', alignItems: 'center', borderRadius: S(21) }} uiBackground={{ color: { r: 0.12, g: 0.1, b: 0.09, a: 0.96 } }}>
-            <Label value={t.message} fontSize={S(15)} color={C.text} textAlign="middle-center" uiTransform={{ width: S(304), height: S(34) }} />
-          </UiEntity>
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: '46%', left: '50%' },
+            margin: { top: -h / 2, left: -w / 2 + slide },
+            width: w,
+            height: h,
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: { left: S(14), right: S(16) },
+            borderRadius: S(27),
+            pointerFilter: 'none'
+          }}
+          uiBackground={{ color: withAlpha({ r: 0.12, g: 0.1, b: 0.09, a: 0.97 }, alpha) }}
+        >
+          <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
+          <Label value={t.message} fontSize={S(15)} color={withAlpha(C.text, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(54), height: h - S(12) }} />
         </UiEntity>
       </UiEntity>
     </ScreenInsetArea>
-  )
-}
-
-// Contextual hint banner — persistent one-line guidance ("go explore the
-// meteorite", "click your pet", ...). Simple look for now (tune later): a rounded
-// pill near the top-center. Non-interactive; cleared when its action is done.
-function HintBanner() {
-  const h = clientState.hint
-  // Hidden behind any open panel/modal — it used to float on top of them
-  // (the "toast overlapping the UI" complaint), covering the title card.
-  if (!h || uiState.panel !== 'none' || clientState.dialog.open || clientState.petPanelOpen || clientState.viewingPetAddress || clientState.incomingSwap) return <UiEntity />
-  const w = S(620)
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: S(120), left: '50%' }, margin: { left: -w / 2 }, width: w, height: S(72), alignItems: 'center', justifyContent: 'center', borderRadius: S(20), pointerFilter: 'none' }}
-      uiBackground={{ color: { r: 0.12, g: 0.1, b: 0.09, a: 0.96 } }}
-    >
-      <Label value={`💡  ${h.message}`} fontSize={S(18)} color={C.text} textAlign="middle-center" uiTransform={{ width: w - S(28), height: S(56) }} />
-    </UiEntity>
   )
 }
 
@@ -2473,6 +2550,11 @@ const BAR_PETS_BOX = { x0: 567, y0: 30, x1: 989, y1: 155 }
 const NAV_PAW_BOX = { x0: 34, y0: 612, x1: 238, y1: 817 }
 const NAV_INV_BOX = { x0: 263, y0: 612, x1: 466, y1: 817 }
 const NAV_GOALS_BOX = { x0: 492, y0: 614, x1: 696, y1: 817 }
+// Round music/trophy icon badges, stacked just under the coin pill in the
+// sheet — now used in the top HUD row next to the pets counter instead of
+// their old floating mid-right placeholder spot.
+const HUD_MUSIC_BOX = { x0: 578, y0: 338, x1: 697, y1: 457 }
+const HUD_TROPHY_BOX = { x0: 578, y0: 473, x1: 697, y1: 592 }
 
 const BAR_NAME_UVS = petHudUvRect(BAR_NAME_BOX.x0, BAR_NAME_BOX.y0, BAR_NAME_BOX.x1, BAR_NAME_BOX.y1)
 const BAR_COIN_UVS = petHudUvRect(BAR_COIN_BOX.x0, BAR_COIN_BOX.y0, BAR_COIN_BOX.x1, BAR_COIN_BOX.y1)
@@ -2480,6 +2562,8 @@ const BAR_PETS_UVS = petHudUvRect(BAR_PETS_BOX.x0, BAR_PETS_BOX.y0, BAR_PETS_BOX
 const NAV_PAW_UVS = petHudUvRect(NAV_PAW_BOX.x0, NAV_PAW_BOX.y0, NAV_PAW_BOX.x1, NAV_PAW_BOX.y1)
 const NAV_INV_UVS = petHudUvRect(NAV_INV_BOX.x0, NAV_INV_BOX.y0, NAV_INV_BOX.x1, NAV_INV_BOX.y1)
 const NAV_GOALS_UVS = petHudUvRect(NAV_GOALS_BOX.x0, NAV_GOALS_BOX.y0, NAV_GOALS_BOX.x1, NAV_GOALS_BOX.y1)
+const HUD_MUSIC_UVS = petHudUvRect(HUD_MUSIC_BOX.x0, HUD_MUSIC_BOX.y0, HUD_MUSIC_BOX.x1, HUD_MUSIC_BOX.y1)
+const HUD_TROPHY_UVS = petHudUvRect(HUD_TROPHY_BOX.x0, HUD_TROPHY_BOX.y0, HUD_TROPHY_BOX.x1, HUD_TROPHY_BOX.y1)
 
 const BAR_NAME_ASPECT = (BAR_NAME_BOX.x1 - BAR_NAME_BOX.x0) / (BAR_NAME_BOX.y1 - BAR_NAME_BOX.y0)
 const BAR_COIN_ASPECT = (BAR_COIN_BOX.x1 - BAR_COIN_BOX.x0) / (BAR_COIN_BOX.y1 - BAR_COIN_BOX.y0)
@@ -2582,17 +2666,9 @@ function PriceDot(props: { size?: number }) {
 function CarryHatchButton() {
   const st = clientState.carryEgg
   if (!st.active) return <UiEntity />
-  if (!st.atHome) {
-    // Walking home — reminder banner (top-center).
-    return (
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(230) }, width: S(460), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-        uiBackground={{ color: C.panelBg }}
-      >
-        <Label value="Take your egg home to hatch it!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-      </UiEntity>
-    )
-  }
+  // While walking home there's no fixed banner — the "take your egg home"
+  // guidance now rides the toast pipeline (fired when the flow starts).
+  if (!st.atHome) return <UiEntity />
   const bw = S(300)
   const bh = S(92)
   return (
@@ -2614,13 +2690,9 @@ function BathButton() {
       {/* BACK — cancel the bath and just keep the pet following */}
       <BackButton onClick={() => cancelCarryPet()} />
       {!st.atStation ? (
-        // Walking to the tub — reminder banner (top-center).
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-          uiBackground={{ color: C.panelBg }}
-        >
-          <Label value="Carry your pet to the bath!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-        </UiEntity>
+        // Walking to the tub — no fixed banner; the "carry your pet to the bath"
+        // guidance is a toast fired when the flow starts.
+        <UiEntity />
       ) : (
         // At the tub — place the pet.
         <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
@@ -2718,8 +2790,6 @@ const Root = () => {
         <RemotePetPanel />
         <SwapOfferPanel />
         <SideButtons />
-        <MusicButton />
-        <LeaderboardButton />
         <BottomNav />
         <FetchOverlay />
         <CarryHatchButton />
@@ -2740,8 +2810,7 @@ const Root = () => {
         {uiState.panel === 'jukebox' && <JukeboxPanel />}
         {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
         <DialogBox />
-        {/* Hints + reward + toasts render LAST so they sit on top of any panel/modal. */}
-        <HintBanner />
+        {/* Reward + toasts render LAST so they sit on top of any panel/modal. */}
         <RewardPopup />
         <Toasts />
       </UiEntity>

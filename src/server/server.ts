@@ -9,9 +9,15 @@ import { trackEvent } from '../shared/analytics'
 
 const TICK_INTERVAL = 5 // seconds between decay/persist passes
 const SNAPSHOT_INTERVAL = 3 // seconds between owner snapshot pushes
+// Session-duration guards (see the departure sweep below).
+const MAX_SESSION_SECONDS = 14400 // 4h ceiling on a reported session (matches cozy-farm) — caps a stuck clock
+const DEPART_GRACE_MS = 10000 // don't call a departure until the session is this old (~2 ticks): the identity entity can lag the first requestState, and departing early would emit a premature `session ended` + a duplicate `session started`
 
 // Track which addresses are currently connected (seen via PlayerIdentityData).
 const connected = new Set<string>()
+// address -> ms timestamp when their session started, so we can report the
+// session's duration in the `session ended` event when they disconnect.
+const sessionStart = new Map<string, number>()
 
 function forwardNotes(address: string, notes: S.Notify[]): void {
   for (const n of notes) {
@@ -54,6 +60,7 @@ export function server(): void {
     connected.add(ctx.from)
     const p = await S.loadPlayer(ctx.from)
     if (firstThisSession) {
+      sessionStart.set(ctx.from, Date.now()) // start the clock for session-duration
       trackEvent('session started', ctx.from, { is_new_user: S.isFreshPlayer(ctx.from) })
     }
     pushSnapshot(p)
@@ -298,6 +305,34 @@ export function server(): void {
       }
       broadcastPresence()
       broadcastColony()
+
+      // Departures: anyone we marked `connected` who no longer has a
+      // PlayerIdentityData entity has left the scene -> emit `session ended`
+      // with how long they stayed, keyed by the SAME wallet (addr, the ctx.from
+      // stored in `connected`) as `session started`, so PostHog can pair them.
+      // NB: this measures per-VISIT — the identity entity vanishes on parcel exit
+      // — which for our dashboard counts as one session. Detected within one
+      // TICK_INTERVAL of the disconnect.
+      const present = new Set<string>()
+      for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+        void entity
+        present.add(identity.address.toLowerCase()) // case-insensitive vs connected (ctx.from) — a case skew would else "depart" everyone every tick
+      }
+      const nowMs = Date.now()
+      for (const addr of [...connected]) {
+        if (present.has(addr.toLowerCase())) continue
+        const start = sessionStart.get(addr)
+        // First-tick grace: a just-joined player's identity entity can lag their
+        // first requestState by a tick — don't treat that as a departure.
+        if (start && nowMs - start < DEPART_GRACE_MS) continue
+        // Report duration only when we have a start (a missing clock is skipped,
+        // not reported as 0s — which would read as an instant session), capped so
+        // a stuck clock can't post an absurd number.
+        const props = start ? { duration_seconds: Math.min(Math.round((nowMs - start) / 1000), MAX_SESSION_SECONDS) } : {}
+        trackEvent('session ended', addr, props)
+        connected.delete(addr)
+        sessionStart.delete(addr)
+      }
     }
 
     if (snapAcc >= SNAPSHOT_INTERVAL) {
