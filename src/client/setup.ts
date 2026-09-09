@@ -32,6 +32,7 @@ import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
 import { preloadCreatureTextures } from './creatureSkins'
+import { preloadUiAssets } from './uiAssets'
 import { setupPetSpeech } from './speech'
 import { setupNav } from './nav'
 
@@ -175,6 +176,7 @@ export function setupClient(): void {
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
+  preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
   setupUi()
   applyDefaultTouchControls()
   setupInput()
