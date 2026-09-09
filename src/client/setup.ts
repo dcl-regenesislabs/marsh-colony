@@ -30,6 +30,7 @@ import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
+import { setupBathGame } from './bathGame'
 import { preloadCreatureTextures } from './creatureSkins'
 import { setupPetSpeech } from './speech'
 import { setupNav } from './nav'
@@ -181,6 +182,7 @@ export function setupClient(): void {
   setupPetSystems() // renders + simulates remote pets from server `presence`
   setupPlay() // Play action: throw an animated meteorite forward
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
+  setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
   setupPetSpeech() // speech bubble over the pet — asks for what its stats need
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)

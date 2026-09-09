@@ -47,7 +47,7 @@ import {
 } from '../shared/config'
 import type { PetData } from '../shared/types'
 import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, hasPendingHatchling } from './state'
-import { applyCareLocal } from './sim'
+import { startBathGame } from './bathGame'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
@@ -87,6 +87,7 @@ const BATH_HOP_DURATION = 0.45 // seconds
 const BATH_HOP_DISTANCE = 1.2 // metres covered horizontally while hopping out
 const BATH_HOP_HEIGHT = 0.6 // metres, peak arc height
 const BATH_SPLASH_HEIGHT = 0.08
+const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-out (NOT the whole minigame)
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -455,7 +456,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.bathGame.active
 }
 
 /**
@@ -876,23 +877,8 @@ export function cancelCarryPet(): void {
   hideArrow('carryPet')
 }
 
-/** Start the bath animation after a care action reaches the pool directly. */
-export function startBathAnimation(): void {
-  if (!localPet) return
-  const t = Transform.getMutable(localPet)
-  // The care errand has already navigated to a collision-safe pool position.
-  // Keep that landing point so the bath does not visibly snap after arriving.
-  t.rotation = Quaternion.Identity()
-  bathSplashFrom = t.position
-  onArrive = null
-  mode = 'interact'
-  interactClip = 'gesture-positive'
-  interactTimer = C.BATH_DURATION_S
-  bathSplashT = 0
-  justBathed = true
-}
-
-/** Bath step 2: place the pet in the tub and run the clean action. */
+/** Bath step 2: place the pet in the tub and start the bubble minigame. The bath
+ *  reward + splash come from the minigame's RESULT (finishBath), not from here. */
 export function placePetAtStation(): void {
   if (!clientState.carryPet.active) return
   clientState.carryPet = { active: false, atStation: false }
@@ -905,19 +891,31 @@ export function placePetAtStation(): void {
     t.rotation = Quaternion.Identity()
     bathSplashFrom = t.position
   }
-  // Force the happy-splash pose directly rather than via petReact() — its
-  // `mode === 'goto'` guard exists to avoid interrupting an unrelated in-progress
-  // walk, but here the pet was just hard-teleported into the tub, so any stale
-  // 'goto' (e.g. a queued care action that was mid-walk when the carry started)
-  // is no longer relevant and must not be left to swallow the bathhop transition.
+  // A brief neutral interact just clears any stale 'goto' (e.g. a queued care
+  // action mid-walk when the carry started) so the pet doesn't wander off after
+  // the game. NO splash/countdown is armed here — the pet simply idles in the tub
+  // while the minigame runs (updateLocalPet holds it there), and only a WIN plays
+  // the splash + hop-out (finishBath). This is what stops a full bath animation
+  // from playing after a LOSS or BACK and reading as a successful bath.
   mode = 'interact'
   interactClip = 'gesture-positive'
-  interactTimer = C.BATH_DURATION_S
+  interactTimer = 0.5
   bathSplashT = 0
-  justBathed = true // hop out of the tub instead of walking straight through its rim
-  applyCareLocal('clean', false) // optimistic local effect
-  actions.care('clean', false) // server is authoritative
-  pushToast('Bath time!  +Hygiene')
+  justBathed = false
+  startBathGame()
+}
+
+/** Called by the bath minigame when it ends. On a WIN the pet plays the short
+ *  splash + hop-out-of-the-tub celebration; on a loss/BACK it just resumes — no
+ *  splash, no reward, so the outcome stays honest. */
+export function finishBath(won: boolean): void {
+  if (!localPet || !won) return
+  bathSplashFrom = Transform.get(localPet).position
+  mode = 'interact'
+  interactClip = 'gesture-positive'
+  interactTimer = BATH_SPLASH_SECONDS
+  bathSplashT = 0
+  justBathed = true // splash in place, then hop out of the tub (see updateLocalPet)
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,6 +1306,14 @@ function updateLocalPet(dt: number): void {
   // icons would flash back on while it's talking.
   VisibilityComponent.createOrReplace(localPet, { visible: true })
   if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
+
+  // During the bubble-bath minigame the pet stays put in the tub (where
+  // placePetAtStation teleported it) and just idles — don't let the follow/roam
+  // logic below walk it away while the player is popping bubbles.
+  if (clientState.bathGame.active) {
+    setClip(localPet, 'idle')
+    return
+  }
 
   // While carrying a new egg (or hatching it, before the newborn emerges), send
   // the CURRENT pet to its home slot and park it there. This clears the hatch
@@ -1720,39 +1726,6 @@ function updateSleepCountdown(): void {
   ts.text = C.formatLockCountdown(left)
 }
 
-// Bath countdown — a floating timer stays with the pet in the pool, even if
-// its owner walks away while the full bathing animation is playing.
-let bathLabel: Entity | null = null
-const BATH_LABEL_LIFT = 0.7 // metres above the name tag
-
-function updateBathCountdown(): void {
-  if (bathLabel === null) {
-    bathLabel = engine.addEntity()
-    Transform.create(bathLabel, { position: Vector3.create(0, -100, 0), scale: Vector3.Zero() })
-    Billboard.create(bathLabel, {})
-    TextShape.create(bathLabel, {
-      text: '',
-      fontSize: 2.6,
-      textColor: { r: 0.75, g: 0.95, b: 1, a: 1 },
-      outlineColor: { r: 0.05, g: 0.15, b: 0.25 },
-      outlineWidth: 0.22
-    })
-  }
-  const t = Transform.getMutable(bathLabel)
-  const ts = TextShape.getMutable(bathLabel)
-  const pet = clientState.activePet
-  if (localPet === null || !pet || !justBathed || mode !== 'interact') {
-    if (ts.text !== '') ts.text = ''
-    if (t.scale.x !== 0) t.scale = Vector3.Zero()
-    return
-  }
-  const pos = Transform.get(localPet).position
-  const tune = petOverheadTuning(pet.species, pet.size)
-  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(pet.size) + tune.nameLift + BATH_LABEL_LIFT, pos.z)
-  t.scale = Vector3.One()
-  ts.text = `Bath: ${Math.max(1, Math.ceil(interactTimer))}s`
-}
-
 export function setupPetSystems(): void {
   engine.addSystem((dt: number) => {
     updateCarryEgg()
@@ -1760,7 +1733,6 @@ export function setupPetSystems(): void {
     updateHatch(dt)
     updatePetting(dt)
     updateLocalPet(dt)
-    updateBathCountdown()
     updateSleepCountdown()
     updateInactivePets(dt)
     updateRemotePets(dt)

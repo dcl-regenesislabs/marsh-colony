@@ -41,6 +41,7 @@ import {
   debugCamIsClosePreview,
   debugCamPrint
 } from './fruitGame'
+import { getBubbles, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, type Bubble } from './bathGame'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
@@ -2314,6 +2315,148 @@ function FeedGameOverlay() {
 }
 
 // ---------------------------------------------------------------------------
+// Bubble-bath minigame overlay (see client/bathGame.ts). Light-blue circles rise
+// up the screen at irregular speeds; tap them to pop. Pop BUBBLE_GOAL within the
+// time to get the pet clean. Bubble positions/sizes come straight from the module
+// bubble list (getBubbles), which the bath tick mutates every frame.
+// ---------------------------------------------------------------------------
+const BUBBLE_FILL = { r: 0.5, g: 0.8, b: 0.98, a: 0.82 } // celeste
+const BUBBLE_SHINE = { r: 1, g: 1, b: 1, a: 0.55 }
+
+function BathBubble(props: { key?: string; b: Bubble }) {
+  const b = props.b
+  const size = S(b.r * 2)
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { left: `${b.x * 100}%`, top: `${b.y * 100}%` },
+        margin: { left: -size / 2, top: -size / 2 }, // center the circle on (x,y)
+        width: size,
+        height: size,
+        borderRadius: size / 2
+      }}
+      uiBackground={{ color: BUBBLE_FILL }}
+      onMouseDown={() => popBubble(b.id)}
+    >
+      {/* little highlight so it reads as a bubble, not a flat disc */}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { left: size * 0.22, top: size * 0.18 }, width: size * 0.26, height: size * 0.26, borderRadius: size * 0.13 }}
+        uiBackground={{ color: BUBBLE_SHINE }}
+      />
+    </UiEntity>
+  )
+}
+
+function BathResultsPanel() {
+  const st = clientState.bathGame
+  const clean = st.popped >= BUBBLE_GOAL
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: C.scrim }}
+    >
+      <UiEntity
+        uiTransform={{ width: S(480), height: S(310), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: S(24) }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value={clean ? 'Squeaky clean!' : 'Almost!'} fontSize={S(40)} color={clean ? C.hygiene : C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(52) }} />
+        <Label value={`You popped ${st.popped} bubbles`} fontSize={S(24)} color={C.text} textAlign="middle-center" uiTransform={{ width: '100%', height: S(38), margin: { top: S(8), bottom: S(14) } }} />
+        <Label
+          value={clean ? '+Hygiene' : `Pop ${BUBBLE_GOAL} to get your pet clean — try again!`}
+          fontSize={S(20)}
+          color={C.dim}
+          textAlign="middle-center"
+          textWrap="wrap"
+          uiTransform={{ width: S(420), height: S(46), margin: { bottom: S(18) } }}
+        />
+        <TactileButton id="bath_exit" label={clean ? 'Done' : 'Close'} width={S(200)} height={S(64)} bg={C.green} textColor={C.outline} fontSize={S(26)} radius={S(22)} pulse onClick={() => exitBathResults()} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function BathGameOverlay() {
+  const st = clientState.bathGame
+  if (!st.active) return <UiEntity />
+  if (st.phase === 'results') return <BathResultsPanel />
+  const popping = st.phase === 'popping'
+  const intro = st.phase === 'intro'
+  const countdown = st.phase === 'countdown'
+  const flashing = Date.now() < st.popFlashUntil
+  const countdownNum = Math.max(1, Math.min(BATH_COUNTDOWN_S, Math.ceil(BATH_COUNTDOWN_S - (Date.now() - st.countdownAt) / 1000)))
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelBathGame()} />
+      <ScreenInsetArea>
+        <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+          {/* the bubbles — only score during 'popping', but they float during intro/countdown too */}
+          {getBubbles().map((b) => (
+            <BathBubble key={`bub-${b.id}`} b={b} />
+          ))}
+          {/* HUD: counter+timer / countdown / intro instructions. Same layout as
+              the feed minigame — the live counter sits top-right (responsive,
+              mobile-friendly), intro/countdown are centered. */}
+          <UiEntity
+            uiTransform={
+              popping
+                ? {
+                    positionType: 'absolute',
+                    position: { top: S(160), right: S(24) },
+                    width: S(320),
+                    height: S(70),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: S(20),
+                    pointerFilter: 'none'
+                  }
+                : {
+                    positionType: 'absolute',
+                    position: { top: S(90), left: '50%' },
+                    margin: { left: -S(220) },
+                    width: S(440),
+                    height: S(120),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: S(20),
+                    pointerFilter: 'none'
+                  }
+            }
+            uiBackground={{ color: C.panelBg }}
+          >
+            {popping ? (
+              <Label
+                value={`Bubbles: ${st.popped}/${BUBBLE_GOAL}    ${Math.ceil(st.timeLeft)}s`}
+                fontSize={flashing ? S(34) : S(28)}
+                color={flashing ? C.gold : C.hygiene}
+                textAlign="middle-center"
+                uiTransform={{ width: '100%', height: S(36) }}
+              />
+            ) : countdown ? (
+              <Label value={`${countdownNum}`} fontSize={S(72)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Label
+                value={`Tap the bubbles to scrub your pet clean!\nPop ${BUBBLE_GOAL} before time runs out.`}
+                fontSize={S(22)}
+                color={C.text}
+                textAlign="middle-center"
+                textWrap="wrap"
+                uiTransform={{ width: S(400), height: S(100) }}
+              />
+            )}
+          </UiEntity>
+          {intro ? (
+            <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(230), left: '50%' }, margin: { left: -S(110) }, width: S(220), height: S(70), pointerFilter: 'none' }}>
+              <TactileButton id="bath_start" label="Start" width={S(220)} height={S(70)} bg={C.green} textColor={C.outline} fontSize={S(28)} radius={S(24)} pulse onClick={() => startBathCountdown()} />
+            </UiEntity>
+          ) : null}
+        </UiEntity>
+      </ScreenInsetArea>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // "Choose Location!" modal — shown on scene entry (Adopt-Me style). Two options:
 // Adoption Center (adopt a pet) and House (care for your pet). Centered, rounded,
 // mobile-first. Uses its own bright palette to match the reference look.
@@ -2660,6 +2803,10 @@ const Root = () => {
     ) : clientState.feedGame.active ? (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <FeedGameOverlay />
+      </UiEntity>
+    ) : clientState.bathGame.active ? (
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        <BathGameOverlay />
       </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
