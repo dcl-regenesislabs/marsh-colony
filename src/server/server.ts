@@ -216,16 +216,6 @@ export function server(): void {
     pushSnapshot(p)
   })
 
-  room.onMessage('debugGrowAdult', async (_data, ctx) => {
-    if (!ctx) return
-    const p = await S.loadPlayer(ctx.from)
-    const notes = S.debugGrowAdult(p)
-    await S.savePlayer(ctx.from)
-    forwardNotes(ctx.from, notes)
-    pushSnapshot(p)
-    broadcastPresence() // its size/level changed — mirror it for everyone
-  })
-
   room.onMessage('claimDaily', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
