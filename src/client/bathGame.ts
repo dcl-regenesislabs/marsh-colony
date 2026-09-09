@@ -10,8 +10,9 @@
 // lock (kept intentionally simple for the prototype).
 
 import { engine } from '@dcl/sdk/ecs'
-import { actions, clientState } from './state'
+import { actions, clientState, pushToast } from './state'
 import { applyCareLocal } from './sim'
+import { finishBath } from './pet'
 
 export const BATH_DURATION_S = 16 // seconds of the timed popping phase
 export const BUBBLE_GOAL = 12 // pops needed for the pet to count as clean
@@ -108,9 +109,10 @@ function applyBathResults(): void {
   clientState.bathGame.phase = 'results'
   clientState.bathGame.resultsAt = Date.now()
   bubbles = []
-  // Only a clean-enough scrub actually bathes the pet.
-  if (clientState.bathGame.popped >= BUBBLE_GOAL) {
-    applyCareLocal('clean', false) // optimistic hygiene bump
+  // Only a clean-enough scrub actually bathes the pet. Gate the server call on the
+  // optimistic mirror accepting it (energy/lock rules) so we never tell the server
+  // to clean when our own sim just refused — matches input.ts's care path.
+  if (clientState.bathGame.popped >= BUBBLE_GOAL && applyCareLocal('clean', false)) {
     actions.care('clean', false) // server is authoritative
   }
 }
@@ -120,6 +122,8 @@ export function exitBathResults(): void {
   clientState.bathGame.active = false
   phase = 'idle'
   bubbles = []
+  // Play the win splash + hop-out only if the pet actually came out clean.
+  finishBath(clientState.bathGame.popped >= BUBBLE_GOAL)
 }
 
 /** BACK button — bail out mid-game (no clean applied). */
@@ -128,6 +132,7 @@ export function cancelBathGame(): void {
   clientState.bathGame.active = false
   phase = 'idle'
   bubbles = []
+  pushToast('Bath cancelled') // BACK: acknowledge like every other step of the carry flow
 }
 
 function tick(dt: number): void {
