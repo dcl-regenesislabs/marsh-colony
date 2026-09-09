@@ -70,12 +70,10 @@ let target = Vector3.create(199.2, 0, 231.8)
 let onArrive: (() => void) | null = null
 let interactTimer = 0
 let interactClip: PetClip = 'idle'
-// The food calibration panel must keep the eat interaction alive. The fruit
-// game owns this flag; all other interactions retain their normal timers.
-let eatCinematicPaused = false
-// Separate from the interaction timer: debug can pause/speed just the baked
-// GLB animation while keeping the fixed food camera and fruit path alive.
-let eatPlaybackPaused = false
+// Feed owns the pet until its explicit Exit. The results card can outlive the
+// timed hunger-fill, so a duration alone must never make the eat loop fall
+// back to idle underneath that card.
+let eatCinematicActive = false
 let eatPlaybackSpeed = 1
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
@@ -559,6 +557,7 @@ function ensureLocalPet(): void {
     }
     return
   }
+  const renderSpecies = pet.species
   if (!localPet) {
     localPet = engine.addEntity()
     // Reconnecting while the pet was left sleeping: resume it AT the bed,
@@ -570,7 +569,7 @@ function ensureLocalPet(): void {
       spawnPos = sleepRestPos(pet, spawnPos)
       mode = 'asleep'
     }
-    Transform.create(localPet, { position: spawnPos, scale: petScale(pet.species, stageScaleFor(pet.size)) })
+    Transform.create(localPet, { position: spawnPos, scale: petScale(renderSpecies, stageScaleFor(pet.size)) })
     pointerEventsSystem.onPointerDown(
       { entity: localPet, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
       () => {
@@ -606,23 +605,23 @@ function ensureLocalPet(): void {
     reanchorLocalPet(pet)
   }
   localPetId = pet.id
-  if (localSpecies !== pet.species) {
-    localSpecies = pet.species
-    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
-    ensureAnimator(localPet, pet.species)
+  if (localSpecies !== renderSpecies) {
+    localSpecies = renderSpecies
+    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(renderSpecies), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+    ensureAnimator(localPet, renderSpecies)
   }
   // Re-skin on species OR rarity change (a same-species roster switch reuses the
   // entity but may need a different rarity skin).
-  const skinKey = `${pet.species}|${pet.rarity}`
+  const skinKey = `${renderSpecies}|${pet.rarity}`
   if (localSkinKey !== skinKey) {
     localSkinKey = skinKey
-    applyCreatureSkin(localPet, pet.species, pet.rarity)
+    applyCreatureSkin(localPet, renderSpecies, pet.rarity)
   }
   // Keep visual scale synced to growth. This runs before updateLocalPet's
   // interaction branches every frame, so carry behavior must only change the
   // parent/pose and must never write a competing carry-specific scale.
   const t = Transform.getMutable(localPet)
-  const s = petScale(pet.species, stageScaleFor(pet.size))
+  const s = petScale(renderSpecies, stageScaleFor(pet.size))
   if (t.scale.x !== s.x) t.scale = s
 }
 
@@ -655,72 +654,40 @@ function restartEatAnimation(): boolean {
   Animator.playSingleAnimation(localPet, eatClip, true)
   const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
   if (state) {
-    state.playing = !eatPlaybackPaused
+    state.playing = true
     state.loop = true
     state.speed = eatPlaybackSpeed
   }
   return true
 }
 
-/** Replay the eating loop from its first frame while the food-debug preview is open. */
-export function replayEatCinematic(): boolean {
-  if (!localPet) return false
-  // The debug panel can be opened at the very end of the cinematic. Re-enter
-  // the eat state defensively so its Replay button always has a live animation
-  // to restart instead of silently failing after the old timer elapsed.
-  mode = 'interact'
-  interactClip = 'eat'
-  interactTimer = Math.max(interactTimer, C.FEED_EAT_CINEMATIC_S)
-  eatPlaybackPaused = false
+/** Sprout's baked clip needs an explicit loop boundary for the feed path. */
+export function restartFeedEatCycle(): boolean {
   return restartEatAnimation()
 }
 
-/** Pause or resume only the baked eat animation, without advancing its timer. */
-export function toggleEatCinematicPlayback(): boolean {
-  if (!localPet || !Animator.has(localPet)) return false
-  const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
-  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
-  if (!state) return false
-  eatPlaybackPaused = !eatPlaybackPaused
-  state.playing = !eatPlaybackPaused
-  state.loop = true
-  state.speed = eatPlaybackSpeed
-  return true
-}
-
-/** Set the baked eat animation speed used by the food calibration console. */
-export function setEatCinematicPlaybackSpeed(speed: number): number {
-  eatPlaybackSpeed = Math.max(0.1, Math.min(3, speed))
-  if (!localPet || !Animator.has(localPet)) return eatPlaybackSpeed
-  const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
-  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
-  if (state) state.speed = eatPlaybackSpeed
-  return eatPlaybackSpeed
-}
-
-export function eatCinematicPlaybackInfo(): { playing: boolean; speed: number } {
-  return { playing: !eatPlaybackPaused, speed: eatPlaybackSpeed }
-}
-
-/** Hold only the food interaction timer while the hand-calibration panel is open. */
-export function setEatCinematicPaused(paused: boolean): void {
-  eatCinematicPaused = paused
+/** End the feed-owned eat loop immediately when its results card is dismissed. */
+export function stopEatCinematic(): void {
+  eatCinematicActive = false
+  if (mode === 'interact' && interactClip === 'eat') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
 }
 
 /** Place the pet in a short, in-world eating beat after a successful fruit run. */
-export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: number): void {
+export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: number, playbackSpeed = 1): void {
   if (!localPet) return
   const t = Transform.getMutable(localPet)
-  t.position = flat(position)
+  t.position = Vector3.create(position.x, position.y, position.z)
   t.rotation = yawToward(position, lookAt, yawOffsetForSpecies(clientState.activePet?.species ?? ''))
   onArrive = null
   justBathed = false
   mode = 'interact'
   interactClip = 'eat'
   interactTimer = duration
-  eatCinematicPaused = false
-  eatPlaybackPaused = false
-  eatPlaybackSpeed = 1
+  eatCinematicActive = true
+  eatPlaybackSpeed = Math.max(0.1, Math.min(3, playbackSpeed))
   restartEatAnimation()
 }
 
@@ -1545,13 +1512,9 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
-      // The feed debug panel freezes its *timeline* but deliberately leaves
-      // the loop rendering, so the fruit can be tuned against the actual eat
-      // motion for as long as needed.
-      if (interactClip === 'eat' && eatCinematicPaused) break
+      if (interactClip === 'eat' && eatCinematicActive) break
       interactTimer -= dt
       if (interactTimer <= 0) {
-        eatCinematicPaused = false
         if (justBathed) {
           justBathed = false
           const pt = Transform.getMutable(localPet)

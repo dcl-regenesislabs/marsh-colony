@@ -38,7 +38,13 @@ import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchC
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
-import { getLocalPet, playEatCinematic, setEatCinematicPaused, suppressPetTags } from './pet'
+import {
+  getLocalPet,
+  playEatCinematic,
+  restartFeedEatCycle,
+  stopEatCinematic,
+  suppressPetTags
+} from './pet'
 
 const FRUIT_MODELS = [
   'assets/Models/Fruit01.glb',
@@ -276,39 +282,98 @@ type FruitHandCalibration = {
   mouthY: number
   mouthZ: number
   scale: number
+  pickupAt: number
+  disappearAt: number
+  travelDuration: number
 }
-
 // These offsets are local to the pet model. Each species keeps a fixed preset.
 const DEFAULT_FRUIT_HAND: FruitHandCalibration = {
   x: 0.28, y: 0.72, z: 0.3,
   mouthX: 0.04, mouthY: 0.94, mouthZ: 0.08,
-  scale: 0.16
+  scale: 0.45,
+  pickupAt: 0.18,
+  disappearAt: 0.46,
+  travelDuration: 0.28
 }
-// Sprout_Eat is 1.666… seconds long. Keep the visible fruit on that exact
-// cadence so its hand → mouth trip restarts with the baked animation.
-const EAT_HAND_CYCLE_MS = 1667
+// Sprout's rendered action uses a 1.625 s sampler span; the other originals
+// use 1.666667 s. Their loop boundaries are not interchangeable.
+const EAT_BITE_COUNT = 3
+const SPROUT_EAT_CYCLE_MS = 1625
+const STANDARD_EAT_CYCLE_MS = 5000 / 3
+// Keep the pet at its established eating speed. The fruit's travel easing is
+// adjusted independently below; slowing the whole loop made the pet sluggish.
+const EAT_LOOP_SPEED = 1
+const EAT_HAND_CYCLE_MS = Cfg.FEED_EAT_CINEMATIC_S * 1000 / EAT_BITE_COUNT / EAT_LOOP_SPEED
+const FRUIT_PATH_EASE_POWER = 1.18
+function eatAnimationCycleMs(species: string): number {
+  return species.startsWith('sprout') ? SPROUT_EAT_CYCLE_MS : STANDARD_EAT_CYCLE_MS
+}
+function eatPlaybackSpeedForSpecies(species: string): number {
+  return eatAnimationCycleMs(species) / EAT_HAND_CYCLE_MS
+}
+// The caught-fruit number completes before the hunger meter begins filling.
+// Exported for the UI so both beats stay on one shared timeline.
+export const FEED_RESULTS_FOCUS_S = 0.75
+export const FEED_RESULTS_CARD_FADE_S = 0.35
+// Matched to survival-game's game-over counter: a short readable minimum,
+// then more time only when a result has genuinely many units to reveal.
+const FEED_COUNTER_MIN_DURATION_MS = 700
+const FEED_COUNTER_MAX_DURATION_MS = 1800
+const FEED_COUNTER_MS_PER_FRUIT = 18
+export function feedResultsCounterDurationMs(targetValue: number): number {
+  return Math.max(
+    FEED_COUNTER_MIN_DURATION_MS,
+    Math.min(FEED_COUNTER_MAX_DURATION_MS, Math.round(Math.max(1, targetValue) * FEED_COUNTER_MS_PER_FRUIT))
+  )
+}
+// The pet keeps eating after this finishes, awaiting Exit, so the completed
+// card can settle briefly rather than forcing the bar to use every last beat.
+const FEED_RESULTS_BAR_S = 3.8
 const FRUIT_HAND_PRESETS: Partial<Record<string, FruitHandCalibration>> = {
   'sprout-original': {
-    x: -0.02, y: 0.4, z: 0.18,
+    x: -0.02, y: 0.35, z: 0.32,
     mouthX: 0.02, mouthY: 0.62, mouthZ: 0.04,
-    scale: 0.45
+    scale: 0.45,
+    pickupAt: 0.15,
+    disappearAt: 0.46,
+    travelDuration: 0.46
+  },
+  'amebita-original': {
+    x: 0.28, y: -0.58, z: 0.30,
+    mouthX: 0.04, mouthY: 0.94, mouthZ: 0.08,
+    scale: 0.45,
+    pickupAt: 0.08,
+    disappearAt: 0.46,
+    travelDuration: 0.46
+  },
+  'fluflito-original': {
+    x: 0.28, y: -0.16, z: 0.30,
+    mouthX: 0.04, mouthY: 0.84, mouthZ: 0.08,
+    scale: 0.45,
+    pickupAt: 0.14,
+    disappearAt: 0.46,
+    travelDuration: 0.46
   }
 }
-const fruitHandBySpecies = new Map<string, FruitHandCalibration>()
 
 // Drawer 2 is authored from x/z = 0 at one inner corner (not centered at its
 // pivot). These coordinates are therefore deliberately all *inside* its
 // 0.62 × 0.47m bounds, not around (0, 0, 0).
 type FruitPileCalibration = { x: number; y: number; z: number; scale: number }
-export type DebugFruitPileKey = keyof FruitPileCalibration
-type FruitDrawerCalibration = { x: number; y: number; z: number; scale: number }
+type FruitDrawerCalibration = { x: number; y: number; z: number; scale: number; yaw: number }
 
-// Calibrated in the in-scene pile preview. Keep this as the default so both
-// the real feeding shot and the debug preview start with the pile in place.
-const DEFAULT_FRUIT_PILE: FruitPileCalibration = { x: -0.64, y: -0.02, z: -0.18, scale: 1.40 }
-let fruitPileCalibration: FruitPileCalibration = { ...DEFAULT_FRUIT_PILE }
-const DEFAULT_FRUIT_DRAWER: FruitDrawerCalibration = { x: -0.02, y: 0, z: -0.16, scale: 1 }
-let fruitDrawerCalibration: FruitDrawerCalibration = { ...DEFAULT_FRUIT_DRAWER }
+// Calibrated for the final feed shot. Drawer 2 is authored with an offset
+// pivot, so these fixed local transforms keep both the crate and the dense
+// fruit pile inside its visible bounds on desktop and mobile.
+const FRUIT_PILE_CALIBRATION: FruitPileCalibration = { x: -0.64, y: -0.02, z: -0.18, scale: 1.40 }
+const DESKTOP_FRUIT_DRAWER: FruitDrawerCalibration = { x: -0.02, y: 0, z: -0.16, scale: 1, yaw: 0 }
+// The mobile feeding composition has its own calibrated crate. Keeping it
+// separate prevents its closer, angled framing from changing the desktop shot.
+const MOBILE_FRUIT_DRAWER: FruitDrawerCalibration = { x: 0.50, y: 0, z: -0.16, scale: 1, yaw: -10 }
+
+function activeFruitDrawerCalibration(): FruitDrawerCalibration {
+  return mobile() ? MOBILE_FRUIT_DRAWER : DESKTOP_FRUIT_DRAWER
+}
 const FRUIT_PILE_CHILDREN = [
   // Broad lower layer plus a smaller upper layer: dense enough to read as a
   // full crate without one oversized fruit hiding all the others.
@@ -338,13 +403,28 @@ const GROUND_FRUIT_OFFSETS = [
   Vector3.create(-0.38, 0.02, -0.5)
 ]
 
-const EAT_PICKUP_START = 0.12 // fraction of Sprout_Eat: fruit leaves drawer
-const EAT_MOUTH_REACHED = 0.46 // disappear before the pet's hand crosses its face
 const EAT_BITE_PATH_FRACTION = 0.85 // a clearly readable one-way hand → mouth movement
-const EAT_BITE_COUNT = 3
 const FEED_STAGE_SIDE_OFFSET = 2.3
 const FEED_CAMERA_DISTANCE = 2.4
-const FEED_CAMERA_TRANSITION_MS = 750
+// Mobile's final frame is deliberately composed as a two-part scene: the pet
+// and its crate occupy one side, while Fruits caught occupies the other.
+type FeedCameraCalibration = {
+  cameraRight: number
+  cameraUp: number
+  cameraBack: number
+  focusRight: number
+  focusUp: number
+  focusForward: number
+}
+const MOBILE_FEED_CAMERA: FeedCameraCalibration = {
+  cameraRight: 1.22,
+  cameraUp: 0.67,
+  cameraBack: 1.70,
+  focusRight: 0.57,
+  focusUp: 0.57,
+  focusForward: 0.05
+}
+const FEED_CAMERA_TRANSITION_MS = FEED_RESULTS_FOCUS_S * 1000
 
 let groundY = 0
 let canopyCenter = Vector3.Zero()
@@ -352,6 +432,10 @@ let canopyHalfWidth = 4.0 // overwritten from the lane_3/lane_4 gap each game
 let localRight = Vector3.create(1, 0, 0)
 let localForward = Vector3.create(0, 0, 1)
 let cinematicSpawnPos = Vector3.Zero()
+let feedingShotAnchor: Vector3 | null = null
+
+type FeedPetCalibration = { right: number; up: number; forward: number }
+const MOBILE_FEED_PET: FeedPetCalibration = { right: 0.50, up: 0, forward: -0.42 }
 
 // Cached each game start, consumed when 'arrival' hands off to 'intro'.
 let pendingCamPos = Vector3.Zero()
@@ -381,21 +465,31 @@ function feedingDrawerPosition(petPos: Vector3): Vector3 {
 function feedingShot(anchor: Vector3): { petPos: Vector3; drawerPos: Vector3; camPos: Vector3; focus: Vector3 } {
   // Move the staged pet sideways off the player instead of placing it between
   // the active camera and avatar. This makes the shot about pet + food only.
-  const petPos = Vector3.create(
+  const basePetPos = Vector3.create(
     anchor.x + localRight.x * FEED_STAGE_SIDE_OFFSET,
     anchor.y,
     anchor.z + localRight.z * FEED_STAGE_SIDE_OFFSET
   )
-  const drawerPos = feedingDrawerPosition(petPos)
+  const isMobile = mobile()
+  // The calibrated pet moves independently of the crate. Its held fruit is
+  // parented to the pet entity, so it travels with this exact transform.
+  const petPos = Vector3.create(
+    basePetPos.x + (isMobile ? localRight.x * MOBILE_FEED_PET.right + localForward.x * MOBILE_FEED_PET.forward : 0),
+    basePetPos.y + (isMobile ? MOBILE_FEED_PET.up : 0),
+    basePetPos.z + (isMobile ? localRight.z * MOBILE_FEED_PET.right + localForward.z * MOBILE_FEED_PET.forward : 0)
+  )
+  const drawerPos = feedingDrawerPosition(basePetPos)
+  const mobileCamera = MOBILE_FEED_CAMERA
+  const cameraDistance = isMobile ? mobileCamera.cameraBack : FEED_CAMERA_DISTANCE
   const camPos = Vector3.create(
-    petPos.x - localForward.x * FEED_CAMERA_DISTANCE + localRight.x * 0.12,
-    petPos.y + 1.12,
-    petPos.z - localForward.z * FEED_CAMERA_DISTANCE + localRight.z * 0.12
+    petPos.x - localForward.x * cameraDistance + localRight.x * (isMobile ? mobileCamera.cameraRight : 0.12),
+    petPos.y + (isMobile ? mobileCamera.cameraUp : 1.12),
+    petPos.z - localForward.z * cameraDistance + localRight.z * (isMobile ? mobileCamera.cameraRight : 0.12)
   )
   const focus = Vector3.create(
-    (petPos.x + drawerPos.x) / 2,
-    petPos.y + 0.5,
-    (petPos.z + drawerPos.z) / 2
+    (petPos.x + drawerPos.x) / 2 + (isMobile ? localRight.x * mobileCamera.focusRight + localForward.x * mobileCamera.focusForward : 0),
+    petPos.y + (isMobile ? mobileCamera.focusUp : 0.5),
+    (petPos.z + drawerPos.z) / 2 + (isMobile ? localRight.z * mobileCamera.focusRight + localForward.z * mobileCamera.focusForward : 0)
   )
   return { petPos, drawerPos, camPos, focus }
 }
@@ -422,25 +516,23 @@ function setFeedingAvatarHidden(hidden: boolean): void {
   })
 }
 
+function fruitHandCalibrationForSpecies(species: string): FruitHandCalibration {
+  return FRUIT_HAND_PRESETS[species] ?? DEFAULT_FRUIT_HAND
+}
+
 function fruitHandCalibration(): FruitHandCalibration | null {
   const species = clientState.activePet?.species
-  if (!species) return null
-  let calibration = fruitHandBySpecies.get(species)
-  if (!calibration) {
-    calibration = { ...(FRUIT_HAND_PRESETS[species] ?? DEFAULT_FRUIT_HAND) }
-    fruitHandBySpecies.set(species, calibration)
-  }
-  return calibration
+  return species ? fruitHandCalibrationForSpecies(species) : null
+}
+
+function usesHeldFruitAnimation(species: string | undefined): boolean {
+  // Pepito's baked eat action takes its head into the crate, which already
+  // communicates the bite much better than a separate floating fruit.
+  return species !== 'pepito-original'
 }
 
 function setDrawerFruitForCurrentBite(heldFruitVisible: boolean): void {
   if (!foodSetVisible || foodPileFruits.length === 0) return
-  // While positioning the pile, always show the complete pile. In the real
-  // cinematic, the first three disappear one-by-one as the bites happen.
-  if (clientState.debugFruitPilePanelOpen) {
-    for (const fruit of foodPileFruits) VisibilityComponent.createOrReplace(fruit, { visible: true })
-    return
-  }
   const completedLoops = Math.floor(heldFruitElapsedMs / EAT_HAND_CYCLE_MS) % EAT_BITE_COUNT
   const removed = Math.min(foodPileFruits.length, completedLoops + (heldFruitVisible ? 1 : 0))
   for (let i = 0; i < foodPileFruits.length; i++) {
@@ -454,8 +546,9 @@ function setDrawerFruitForCurrentBite(heldFruitVisible: boolean): void {
  * as eaten. It never travels back down on the same bite. */
 function showHeldFruit(): void {
   const pet = getLocalPet()
+  const species = clientState.activePet?.species
   const calibration = fruitHandCalibration()
-  if (!pet || !calibration) {
+  if (!pet || !calibration || !usesHeldFruitAnimation(species)) {
     hideHeldFruit()
     return
   }
@@ -465,8 +558,15 @@ function showHeldFruit(): void {
     GltfContainer.create(heldFruit, { src: FRUIT_MODELS[0], ...NO_COLLISION })
     VisibilityComponent.create(heldFruit, { visible: false })
   }
-  const cycle = (heldFruitElapsedMs % EAT_HAND_CYCLE_MS) / EAT_HAND_CYCLE_MS
-  const eatingThisFruit = cycle >= EAT_PICKUP_START && cycle <= EAT_MOUTH_REACHED
+  const elapsed = heldFruitElapsedMs % EAT_HAND_CYCLE_MS
+  const cycle = elapsed / EAT_HAND_CYCLE_MS
+  const pickupAt = calibration.pickupAt
+  const disappearAt = Math.max(pickupAt + 0.02, calibration.disappearAt)
+  // A negative pickup phase means the fruit appears at the end of the
+  // preceding loop and carries through frame zero of the new eat animation.
+  // That gives calibration room before 0.00 without desynchronizing a loop.
+  const phaseSincePickup = ((cycle - pickupAt) % 1 + 1) % 1
+  const eatingThisFruit = phaseSincePickup <= disappearAt - pickupAt
   setDrawerFruitForCurrentBite(eatingThisFruit)
   if (!eatingThisFruit) {
     hideHeldFruit()
@@ -474,7 +574,10 @@ function showHeldFruit(): void {
   }
   // A single forward trip: at pickup the fruit is in the hand, reaches the
   // mouth once, and is then gone. The next loop takes a different fruit.
-  const trip = Math.max(0, Math.min(1, (cycle - EAT_PICKUP_START) / (EAT_MOUTH_REACHED - EAT_PICKUP_START)))
+  const rawTrip = Math.max(0, Math.min(1, phaseSincePickup / calibration.travelDuration))
+  // Slower fruit-only takeoff, while preserving the calibrated hand/mouth
+  // endpoints and disappearance frame.
+  const trip = Math.pow(rawTrip, FRUIT_PATH_EASE_POWER)
   Transform.createOrReplace(heldFruit, {
     parent: pet,
     position: Vector3.create(
@@ -493,15 +596,13 @@ function startHeldFruitMotion(): void {
   showHeldFruit()
 }
 
-/** The pile preview is a still frame, so keep one fruit visibly resting in the
- * pet's hand instead of advancing its hand → mouth path. */
-function holdFruitAtHand(): void {
-  heldFruitElapsedMs = EAT_HAND_CYCLE_MS * EAT_PICKUP_START
-  showHeldFruit()
-}
-
 function advanceHeldFruitMotion(dt: number): void {
+  const previousCycle = Math.floor(heldFruitElapsedMs / EAT_HAND_CYCLE_MS)
   heldFruitElapsedMs += dt * 1000
+  const species = clientState.activePet?.species
+  if (species?.startsWith('sprout') && Math.floor(heldFruitElapsedMs / EAT_HAND_CYCLE_MS) !== previousCycle) {
+    restartFeedEatCycle()
+  }
 }
 
 function hideHeldFruit(): void {
@@ -542,14 +643,15 @@ function ensureFoodSet(): void {
 }
 
 /** Move/scale the whole authored crate beneath the shot anchor. The fruit pile
- * stays parented to it, so it follows every crate calibration adjustment. */
+ * stays parented to it, so it follows the final crate placement. */
 function applyFruitDrawerLayout(): void {
   if (!foodDrawer || !foodDrawerAnchor) return
+  const calibration = activeFruitDrawerCalibration()
   Transform.createOrReplace(foodDrawer, {
     parent: foodDrawerAnchor,
-    position: Vector3.create(fruitDrawerCalibration.x, fruitDrawerCalibration.y, fruitDrawerCalibration.z),
-    rotation: Quaternion.Identity(),
-    scale: Vector3.scale(Vector3.One(), 1.25 * fruitDrawerCalibration.scale)
+    position: Vector3.create(calibration.x, calibration.y, calibration.z),
+    rotation: Quaternion.fromEulerDegrees(0, mobile() ? calibration.yaw : 0, 0),
+    scale: Vector3.scale(Vector3.One(), 1.25 * calibration.scale)
   })
   applyFruitPileLayout()
 }
@@ -558,8 +660,8 @@ function applyFruitPileLayout(): void {
   if (!foodDrawer || !foodPile) return
   Transform.createOrReplace(foodPile, {
     parent: foodDrawer,
-    position: Vector3.create(fruitPileCalibration.x, fruitPileCalibration.y, fruitPileCalibration.z),
-    scale: Vector3.scale(Vector3.One(), fruitPileCalibration.scale)
+    position: Vector3.create(FRUIT_PILE_CALIBRATION.x, FRUIT_PILE_CALIBRATION.y, FRUIT_PILE_CALIBRATION.z),
+    scale: Vector3.scale(Vector3.One(), FRUIT_PILE_CALIBRATION.scale)
   })
   for (let i = 0; i < foodPileFruits.length; i++) {
     const child = FRUIT_PILE_CHILDREN[i]
@@ -574,10 +676,9 @@ function applyFruitPileLayout(): void {
   }
 }
 
-function showFoodSet(petPos: Vector3, cameraPos: Vector3): void {
+function showFoodSet(drawerPos: Vector3, cameraPos: Vector3): void {
   ensureFoodSet()
   if (!foodDrawer || !foodDrawerAnchor) return
-  const drawerPos = feedingDrawerPosition(petPos)
   Transform.createOrReplace(foodDrawerAnchor, {
     position: drawerPos,
     rotation: Quaternion.fromLookAt(drawerPos, Vector3.create(cameraPos.x, drawerPos.y, cameraPos.z)),
@@ -590,7 +691,7 @@ function showFoodSet(petPos: Vector3, cameraPos: Vector3): void {
     const offset = GROUND_FRUIT_OFFSETS[i]
     const fruit = foodGroundFruits[i]
     Transform.createOrReplace(fruit, {
-      position: Vector3.create(drawerPos.x + offset.x, petPos.y + offset.y, drawerPos.z + offset.z),
+      position: Vector3.create(drawerPos.x + offset.x, drawerPos.y + offset.y, drawerPos.z + offset.z),
       rotation: Quaternion.fromEulerDegrees(i * 24, i * 86, i % 2 === 0 ? 82 : -76),
       scale: Vector3.scale(Vector3.One(), 0.5)
     })
@@ -1004,9 +1105,11 @@ function beginCatching(): void {
  *  screen showing the results (count-up + feed bar) — closing fully happens
  *  separately, once the player taps Exit (see finalizeAndClose). */
 function showResults(): void {
-  // The hunger bar completes while the pet eats, so there is no second modal
-  // to interrupt the final shot. Release the player as soon as that beat ends.
-  finalizeAndClose()
+  // Keep the completed card on screen. The feed-owned eat loop remains active
+  // until Exit releases the complete feeding scene. Its reveal clock stays at
+  // the beginning so the card never replays its entrance.
+  phase = 'results'
+  clientState.feedGame.phase = 'results'
 }
 
 function applyResults(): void {
@@ -1031,23 +1134,30 @@ function applyResults(): void {
 
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (player && cinCam) {
-    const shot = feedingShot(player.position)
+    feedingShotAnchor = Vector3.create(player.position.x, player.position.y, player.position.z)
+    const shot = feedingShot(feedingShotAnchor)
     const cameraStart = Transform.get(cinCam)
     const cameraEndRotation = Quaternion.fromLookAt(shot.camPos, shot.focus)
     Tween.deleteFrom(cinCam)
-    Tween.createOrReplace(cinCam, {
-      mode: Tween.Mode.MoveRotateScale({
-        position: { start: cameraStart.position, end: shot.camPos },
-        rotation: { start: cameraStart.rotation, end: cameraEndRotation }
-      }),
-      duration: FEED_CAMERA_TRANSITION_MS,
-      easingFunction: EasingFunction.EF_EASEOUTQUAD
-    })
+    if (mobile()) {
+      // Unity mobile's wide-shot tween can retain its old transform after the
+      // round, so apply the final shot directly for a consistent composition.
+      Transform.createOrReplace(cinCam, { position: shot.camPos, rotation: cameraEndRotation })
+    } else {
+      Tween.createOrReplace(cinCam, {
+        mode: Tween.Mode.MoveRotateScale({
+          position: { start: cameraStart.position, end: shot.camPos },
+          rotation: { start: cameraStart.rotation, end: cameraEndRotation }
+        }),
+        duration: FEED_CAMERA_TRANSITION_MS,
+        easingFunction: EasingFunction.EF_EASEOUTQUAD
+      })
+    }
     // Pet faces the nearby drawer; camera is perpendicular, giving a clear
     // side view of it taking a fruit and eating it.
-    playEatCinematic(shot.petPos, shot.drawerPos, Cfg.FEED_EAT_CINEMATIC_S)
+    playEatCinematic(shot.petPos, shot.drawerPos, Cfg.FEED_EAT_CINEMATIC_S, eatPlaybackSpeedForSpecies(clientState.activePet?.species ?? ''))
     startHeldFruitMotion()
-    showFoodSet(shot.petPos, shot.camPos)
+    showFoodSet(shot.drawerPos, shot.camPos)
     suppressPetTags(true)
     setFeedingAvatarHidden(true)
   }
@@ -1057,6 +1167,7 @@ function applyResults(): void {
   clientState.feedGame.resultsAt = Date.now()
   clientState.feedGame.hungerStart = hungerStart
   clientState.feedGame.hungerTarget = hungerTarget
+  clientState.feedGame.hungerFillProgress = 0
 }
 
 /** Release the camera/movement lock/touch controls and hand the screen back —
@@ -1065,10 +1176,9 @@ function applyResults(): void {
 function finalizeAndClose(): void {
   hideHeldFruit()
   hideFoodSet()
+  stopEatCinematic()
   suppressPetTags(false)
   setFeedingAvatarHidden(false)
-  clientState.debugFruitPilePanelOpen = false
-  setEatCinematicPaused(false)
   if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
   if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
   setLaneColliders(false)
@@ -1082,23 +1192,14 @@ function finalizeAndClose(): void {
     VisibilityComponent.createOrReplace(e, { visible: false })
   }
   clientState.feedGame.active = false
+  feedingShotAnchor = null
   phase = 'idle'
 }
 
-/** Bail out early (Back button, only shown before 'results') — submits
- *  whatever was caught so far and closes immediately, skipping the results
- *  reveal (you asked to leave, so no flourish). */
+/** The Back button follows the same completion path as a natural timeout. */
 export function cancelFruitGame(): void {
-  if (phase === 'idle' || phase === 'results') return
-  const caught = clientState.feedGame.caught
-  // Back is an early exit, not a round completion: grant partial progress but
-  // never start the pet-eating transition reserved for the natural timeout.
-  if (caught > 0) {
-    applyFeedMinigameLocal(caught)
-    actions.feedResult(caught)
-  }
-  finalizeAndClose()
-  if (caught > 0) pushToast(`Caught ${caught} fruit${caught === 1 ? '' : 's'}!`)
+  if (phase === 'idle' || phase === 'results' || phase === 'feeding') return
+  applyResults()
 }
 
 /** Exit button on the results screen. */
@@ -1107,31 +1208,8 @@ export function exitFeedResults(): void {
   finalizeAndClose()
 }
 
-// DEBUG: purely observational — logs (throttled) if the player is found
-// further from the canopy than the lane should ever allow, so a live test on
-// mobile tells us for certain whether they're actually escaping the pen and
-// where/when, instead of guessing from a static code read. No correction, no
-// teleport — just evidence.
-let lastBoundsLogAt = -999
-function logIfOutOfBounds(): void {
-  if (clock - lastBoundsLogAt < 1) return
-  const pp = playerPos()
-  const dist = distFlat(pp, canopyCenter)
-  const maxExpected = canopyHalfWidth + 3 // generous margin over the intended width
-  if (dist <= maxExpected) return
-  lastBoundsLogAt = clock
-  console.log(`[Client] fruit game DEBUG: player at (${pp.x.toFixed(2)}, ${pp.z.toFixed(2)}) is ${dist.toFixed(2)}m from canopyCenter — expected within ~${maxExpected.toFixed(2)}m`)
-}
-
-/** Pet systems run before this fruit-game system, so after a debug roster swap
- * the reused local-pet entity has already loaded the selected species here. */
 function tick(dt: number): void {
-  if (phase === 'feeding') {
-    // Pile calibration freezes the exact visual the player is positioning;
-    // the hand-to-mouth prop belongs to the real, moving cinematic only.
-    if (clientState.debugFruitPilePanelOpen) {
-      return
-    }
+  if (phase === 'feeding' || phase === 'results') {
     advanceHeldFruitMotion(dt)
     showHeldFruit()
   }
@@ -1142,18 +1220,21 @@ function tick(dt: number): void {
     arrivalTick()
   } else if (phase === 'intro') {
     introTick()
-    logIfOutOfBounds()
   } else if (phase === 'countdown') {
     countdownTick()
-    logIfOutOfBounds()
   } else if (phase === 'catching') {
     fruitTick()
-    logIfOutOfBounds()
     const st = clientState.feedGame
     st.timeLeft = Math.max(0, st.timeLeft - dt)
     if (st.timeLeft <= 0) applyResults()
-  } else if (phase === 'feeding' && clock - phaseAt >= Cfg.FEED_EAT_CINEMATIC_S) {
-    showResults()
+  } else if (phase === 'feeding') {
+    // The caught counter gets its own first beat. Then the bar moves smoothly
+    // through the remaining cinematic and finishes with the last bite.
+    const countDurationS = feedResultsCounterDurationMs(clientState.feedGame.caught) / 1000
+    const barStartS = FEED_RESULTS_FOCUS_S + FEED_RESULTS_CARD_FADE_S + countDurationS
+    const rawProgress = Math.max(0, Math.min(1, (clock - phaseAt - barStartS) / FEED_RESULTS_BAR_S))
+    clientState.feedGame.hungerFillProgress = rawProgress * rawProgress * (3 - 2 * rawProgress)
+    if (rawProgress >= 1) showResults()
   }
 }
 
@@ -1258,8 +1339,7 @@ function computeCinematicGeometry(rawCamPos: Vector3, spawnPos: Vector3, gY: num
 
   // Close "personal" shot: same height as the wide position, just this much
   // nearer to the player, along the same camera-to-player line. Mobile only,
-  // but computed unconditionally — harmless, and lets the debug panel preview
-  // it regardless of the platform it's running on.
+  // but computed unconditionally — harmless for the shared shot geometry.
   const towardCam = Vector3.create(-viewDir.x, 0, -viewDir.z)
   const closeCamPos = Vector3.create(
     spawnPos.x + towardCam.x * CLOSE_CAM_DIST,
@@ -1402,8 +1482,7 @@ export function startFruitGame(mascotaId: string): void {
   clearScorches()
   suppressPetTags(false)
   setFeedingAvatarHidden(false)
-  clientState.debugFruitPilePanelOpen = false
-  setEatCinematicPaused(false)
+  stopEatCinematic()
   clientState.feedGame = {
     active: true,
     phase: 'arrival',
@@ -1415,7 +1494,8 @@ export function startFruitGame(mascotaId: string): void {
     petSitPos,
     petSitLook: laneMid,
     hungerStart: 0,
-    hungerTarget: 0
+    hungerTarget: 0,
+    hungerFillProgress: 0
   }
   introEmotePlayed = false
   drawerRevealed = false
@@ -1423,126 +1503,3 @@ export function startFruitGame(mascotaId: string): void {
   phaseAt = clock
   console.log(`[Client] fruit game: startFruitGame() full reset done — introEmotePlayed=${introEmotePlayed}, drawerRevealed=${drawerRevealed}, drawerEntity=${drawerEntity}`)
 }
-
-// ---------------------------------------------------------------------------
-// Compact fruit-pile calibration: it freezes the final Feed beat while the
-// player moves the single parent transform that owns the fruit pile.
-// ---------------------------------------------------------------------------
-export function debugFruitPileToggle(): boolean {
-  if (phase !== 'feeding') return false
-  clientState.debugFruitPilePanelOpen = !clientState.debugFruitPilePanelOpen
-  setEatCinematicPaused(clientState.debugFruitPilePanelOpen)
-  if (clientState.debugFruitPilePanelOpen) {
-    holdFruitAtHand()
-    applyFruitPileLayout()
-    setDrawerFruitForCurrentBite(false)
-  }
-  return true
-}
-
-export function debugFruitPileActive(): boolean {
-  return phase === 'feeding' && clientState.debugFruitPilePanelOpen
-}
-
-export function debugFruitPileLabel(key: DebugFruitPileKey): string {
-  switch (key) {
-    case 'x': return 'Pile X'
-    case 'y': return 'Pile Y'
-    case 'z': return 'Pile Z'
-    case 'scale': return 'Pile scale'
-  }
-}
-
-export function debugFruitPileValue(key: DebugFruitPileKey): number {
-  return fruitPileCalibration[key]
-}
-
-export function debugFruitPileAdjust(key: DebugFruitPileKey, delta: number): void {
-  fruitPileCalibration[key] += delta
-  if (key === 'scale') fruitPileCalibration.scale = Math.max(0.2, Math.min(2, fruitPileCalibration.scale))
-  applyFruitPileLayout()
-}
-
-export function debugFruitPileReset(): void {
-  fruitPileCalibration = { ...DEFAULT_FRUIT_PILE }
-  applyFruitPileLayout()
-}
-
-export function debugFruitDrawerLabel(key: DebugFruitPileKey): string {
-  switch (key) {
-    case 'x': return 'Crate X'
-    case 'y': return 'Crate Y'
-    case 'z': return 'Crate Z'
-    case 'scale': return 'Crate scale'
-  }
-}
-
-export function debugFruitDrawerValue(key: DebugFruitPileKey): number {
-  return fruitDrawerCalibration[key]
-}
-
-export function debugFruitDrawerAdjust(key: DebugFruitPileKey, delta: number): void {
-  fruitDrawerCalibration[key] += delta
-  if (key === 'scale') fruitDrawerCalibration.scale = Math.max(0.4, Math.min(2, fruitDrawerCalibration.scale))
-  applyFruitDrawerLayout()
-}
-
-export function debugFruitDrawerReset(): void {
-  fruitDrawerCalibration = { ...DEFAULT_FRUIT_DRAWER }
-  applyFruitDrawerLayout()
-}
-
-/** Restart only the baked pet eat loop from frame zero. */
-
-/** Pause or resume only the baked pet eat loop. */
-
-
-
-/** Restart only the procedural fruit hand → mouth path from its hand point. */
-
-/** Pause or resume only the procedural fruit path. */
-
-
-
-/** Shift the fruit along its loop without restarting the pet animation. */
-
-
-/** Put both animations on the same frame zero and make their speed equal. */
-
-/** Launch a no-reward preview of the actual final Feed shot. Its timeline is
- * locked open while the complete fruit pile is positioned. */
-export function startDebugFruitPilePreview(): boolean {
-  const pet = clientState.activePet
-  if (!pet || phase !== 'idle') return false
-  startFruitGame(pet.id)
-  if (!clientState.feedGame.active || !cinCam) return false
-
-  stopHoldEmote()
-  if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
-  for (const fruit of fruits) {
-    Tween.deleteFrom(fruit.entity)
-    VisibilityComponent.createOrReplace(fruit.entity, { visible: false })
-    fruit.phase = 'idle'
-  }
-
-  const shot = feedingShot(cinematicSpawnPos)
-  Transform.createOrReplace(cinCam, {
-    position: shot.camPos,
-    rotation: Quaternion.fromLookAt(shot.camPos, shot.focus)
-  })
-  playEatCinematic(shot.petPos, shot.drawerPos, Cfg.FEED_EAT_CINEMATIC_S)
-  startHeldFruitMotion()
-  showFoodSet(shot.petPos, shot.camPos)
-  suppressPetTags(true)
-  setFeedingAvatarHidden(true)
-  phase = 'feeding'
-  phaseAt = clock
-  clientState.feedGame.phase = 'feeding'
-  clientState.feedGame.resultsAt = Date.now()
-  clientState.debugFruitPilePanelOpen = true
-  holdFruitAtHand()
-  setEatCinematicPaused(true)
-  return true
-}
-
-// The fruit-pile preview is the only feed debug entry point.

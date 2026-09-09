@@ -257,6 +257,9 @@ function pop(x: number): number {
 
 /** Say something over the pet. Replaces whatever is showing. */
 export function petSay(text: string, seconds = C.PET_SPEECH_HOLD_SECONDS): void {
+  // The feed game owns the pet from the approach through its final eating shot.
+  // Drop new requests here as well as hiding an already-visible bubble in update.
+  if (clientState.feedGame.active) return
   pending = { text, seconds }
   if (phase === 'hidden') return
   phase = 'out' // let the current line pop away first
@@ -310,6 +313,19 @@ function hideTags(on: boolean): void {
 
 function update(dt: number): void {
   const b = ensureBubble()
+
+  // A bubble can already be on screen when the feed minigame starts. Collapse it
+  // immediately rather than letting its out animation overlap the cinematic.
+  if (clientState.feedGame.active) {
+    pending = null
+    phase = 'hidden'
+    phaseT = 0
+    TextShape.getMutable(b.label).text = ''
+    Transform.getMutable(b.root).scale = Vector3.Zero()
+    hideTags(false)
+    return
+  }
+
   const a = anchor()
 
   // No pet to speak from — collapse instantly, don't leave a bubble floating.
@@ -421,6 +437,7 @@ function momentIsTaken(): boolean {
     clientState.carryPet.active ||
     clientState.petting.active ||
     clientState.fetch.active ||
+    clientState.feedGame.active ||
     clientState.dialog.open ||
     isBusy()
   )

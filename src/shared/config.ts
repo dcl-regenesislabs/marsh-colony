@@ -428,8 +428,8 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
-/** Three complete 1.67s eat beats: take one fruit, bite, then move to the next. */
-export const FEED_EAT_CINEMATIC_S = 5
+/** Three deliberately unhurried bites; the pet and fruit path slow together. */
+export const FEED_EAT_CINEMATIC_S = 6.6
 
 /** Server-side per-action cooldown (ms) to stop spam. */
 export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {

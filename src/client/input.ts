@@ -3,7 +3,7 @@
 // walk to the object, do the animation for a beat, then a short rest before
 // the next. This stops the pet from teleport-spamming between stations.
 
-import { engine, pointerEventsSystem, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
+import { engine, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
 import { EntityNames } from '../../assets/scene/entity-names'
 import type { CareAction } from '../shared/types'
 import { formatLockCountdown, type PetClip } from '../shared/config'
@@ -11,7 +11,6 @@ import { actionObjectPosition } from './objects'
 import { isBusy, sendPetTo, canQueueCareAction } from './pet'
 import { applyCareLocal, canPlayNow, sleepLockLeft } from './sim'
 import { startFeedTask } from './feed'
-import { debugFruitPileToggle, startDebugFruitPilePreview } from './fruitGame'
 import { actions, clientState, pushToast, hasPendingHatchling } from './state'
 import { ui } from './ui'
 
@@ -104,24 +103,6 @@ function setupCareQueue(): void {
   })
 }
 
-// DEBUG hotkey: "1" opens the compact fruit-pile calibration preview.
-function setupDebugHotkeys(): void {
-  engine.addSystem(() => {
-    // The final feeding camera and timeline stay locked while the pile moves.
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)) {
-      if (debugFruitPileToggle()) {
-        pushToast(clientState.debugFruitPilePanelOpen ? 'DEBUG: food pile calibration ON' : 'DEBUG: food cinematic resumed')
-      } else if (!clientState.activePet) {
-        pushToast('DEBUG: no active pet to calibrate')
-      } else if (startDebugFruitPilePreview()) {
-        pushToast('DEBUG: food pile calibration ON')
-      } else {
-        pushToast('DEBUG: finish the current activity first')
-      }
-    }
-  })
-}
-
 function onClick(name: string, hoverText: string, cb: () => void): void {
   const ent = engine.getEntityOrNullByName(name)
   if (!ent) {
@@ -143,5 +124,4 @@ export function setupInput(): void {
   // Caretaker click is handled in caretaker.ts (click collider, not the raw GLTF).
   // Shop is suspended for now — the object stays in the scene but isn't clickable.
   setupCareQueue()
-  setupDebugHotkeys()
 }

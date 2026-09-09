@@ -89,6 +89,9 @@ export const clientState: {
     petSitLook: { x: number; y: number; z: number } | null
     hungerStart: number
     hungerTarget: number
+    // Driven by fruitGame's tick while the final eat beat plays. Keeping it in
+    // state makes the HUD fill continuous and tied to the cinematic clock.
+    hungerFillProgress: number
   }
   // Fetch (Play) mode: `active` shows the centered Fetch button and hides the
   // panel; `busy` is true from the moment the ball is thrown until the pet drops
@@ -113,8 +116,6 @@ export const clientState: {
   colonyPopulation: number
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
-  // Compact food-pile calibration panel. It freezes only the final Feed beat.
-  debugFruitPilePanelOpen: boolean
 } = {
   myAddress: '',
   player: null,
@@ -137,7 +138,7 @@ export const clientState: {
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
-  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerStart: 0, hungerTarget: 0 },
+  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerStart: 0, hungerTarget: 0, hungerFillProgress: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
   pendingUntil: 0,
@@ -145,8 +146,7 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
-  leaderboard: [],
-  debugFruitPilePanelOpen: false
+  leaderboard: []
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
