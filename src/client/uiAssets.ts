@@ -13,6 +13,8 @@ const STATIC_UI_ASSETS = [
   'assets/images/revamp/discardbutton.png',
   'assets/images/revamp/backbutton256.png',
   'assets/images/revamp/bubble.png',
+  'assets/images/bubble.png',
+  'assets/images/petmoods.png',
   'assets/images/revamp/potion.png',
   'assets/images/coin_icon.png',
   'assets/images/left_arrow.png',
