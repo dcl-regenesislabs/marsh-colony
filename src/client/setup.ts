@@ -30,6 +30,9 @@ import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
+import { setupBathGame } from './bathGame'
+import { preloadCreatureTextures } from './creatureSkins'
+import { preloadUiAssets } from './uiAssets'
 import { setupPetSpeech } from './speech'
 import { setupNav } from './nav'
 
@@ -111,14 +114,15 @@ function registerHandlers(): void {
 
   room.onMessage('notify', (data) => {
     markServerAlive()
-    pushToast(data.message)
+    pushToast(data.message, data.kind)
   })
 
   // Breeding result — the offspring is an egg (server hatchling). Carry it home
   // and hatch it, just like a fresh adoption; the rarity is the surprise inside.
   room.onMessage('breedResult', (data) => {
     markServerAlive()
-    pushToast(`You bred a ${data.rarity.toUpperCase()} egg — carry it home!`)
+    // No toast here — the server's 'breed' note already announced the rarity;
+    // this message just kicks off the carry-egg-home flow.
     if (data.species) startCarryEgg(data.species, data.name, true)
   })
 
@@ -172,12 +176,15 @@ export function setupClient(): void {
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
+  preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
   setupUi()
   applyDefaultTouchControls()
   setupInput()
+  preloadCreatureTextures() // warm the creature-skin PNG cache so runtime skins don't pop in
   setupPetSystems() // renders + simulates remote pets from server `presence`
   setupPlay() // Play action: throw an animated meteorite forward
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
+  setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
   setupPetSpeech() // speech bubble over the pet — asks for what its stats need
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)

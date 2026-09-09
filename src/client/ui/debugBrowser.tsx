@@ -373,10 +373,10 @@ const DEBUG_SCREENS: DebugScreen[] = [
   },
   {
     id: 'hint',
-    label: 'Hint Banner',
+    label: 'Hint Toast',
     activate: () => {
       applyFixturePlayer(fakePlayer(), fakePet())
-      clientState.hint = { id: 'debug', message: 'This is an example contextual hint message.' }
+      pushToast('Go explore the meteorite for daily rewards and surprises!', 'reward')
     }
   },
   {
@@ -392,8 +392,10 @@ const DEBUG_SCREENS: DebugScreen[] = [
     label: 'Toasts',
     activate: () => {
       applyFixturePlayer(fakePlayer(), fakePet())
-      pushToast('Example toast message #1')
-      pushToast('Something else happened')
+      pushToast('Rare potion added to your inventory!', 'reward')
+      pushToast('Not enough coins for that.', 'error')
+      pushToast('Your pet reached Adult — breeding unlocked!', 'level')
+      pushToast('Music muted.')
     }
   }
 ]
@@ -411,7 +413,6 @@ function resetAllDebugFlags(): void {
   clientState.incomingSwap = null
   clientState.viewingPetAddress = null
   clientState.petPanelOpen = false
-  clientState.hint = null
   clientState.reward = null
   clientState.lastSpin = null
   clientState.toasts = []

@@ -104,23 +104,22 @@ export const SPROUT_BASE = 'sprout-original'
 export const SPROUT_DERIVATIVES: string[] = ['sprout-amebita', 'sprout-fluflito', 'sprout-pepito']
 export const SPROUT_SPECIES: string[] = [SPROUT_BASE, ...SPROUT_DERIVATIVES]
 
-// Per-species model overrides (outside the assets/scene/Models convention).
-const MODEL_OVERRIDES: Record<string, string> = {
-  'alienPet-v1': 'models/AlienPet_dcl.glb', // alien model (idle + walk)
-  'alienPet-2': 'models/alien_pet_2.glb', // second alien model (idle + walk)
-  'sprout-original': 'models/sprouts/sprout_original.glb', // adoptable Sprout
-  'sprout-amebita': 'models/sprouts/sprout_amebita.glb', // breeding variant
-  'sprout-fluflito': 'models/sprouts/sprout_fluflito.glb', // breeding variant
-  'sprout-pepito': 'models/sprouts/sprout_pepito.glb', // breeding variant
-  // The other 3 adoptable originals. Their breeding variants (assets/Models/
-  // <Fam>_<Other>.glb) are on disk too, wired in with the crossing issue.
-  'pepito-original': 'assets/Models/Pepito_Original.glb',
-  'amebita-original': 'assets/Models/Amebita_Original.glb',
-  'fluflito-original': 'assets/Models/Fluflito.glb'
+// Creature models live under assets/Models/creatures/<head-family>/, named
+// <family>.glb for an original and <head>_<body>.glb for a cross. The path is
+// derived from each pet's head/body, so there's no per-species table to keep in
+// sync — every family original and all 12 crosses resolve by the same rule. The
+// mesh ships textureless; the base-color skin is applied at runtime (creatureSkins.ts).
+// NB: the "Models" segment is capitalised to match the rest of assets/Models (props),
+// so the path is case-exact on DCL's case-sensitive asset resolver.
+function creatureModelFile(head: Family, body: Family): string {
+  const file = head === body ? head : `${head}_${body}`
+  return `assets/Models/creatures/${head}/${file}.glb`
 }
 
 export function modelForSpecies(species: string): string {
-  return MODEL_OVERRIDES[species] ?? `assets/scene/Models/${species}/${species}.glb`
+  const { head, body } = speciesParts(species)
+  if (isFamily(head) && isFamily(body)) return creatureModelFile(head, body)
+  return `assets/scene/Models/${species}/${species}.glb` // non-family fallback
 }
 
 // Display-name overrides for ids that don't read well raw (the species id is
@@ -200,9 +199,8 @@ export function clipsForSpecies(species: string): string[] {
 
 // Per-species scale multiplier (× the pet's grown size). Default 1.
 const SPECIES_SCALE: Record<string, number> = {
-  'alienPet-2': 3, // new alien model is authored small — scale it up
-  // Sprouts are authored ~1 m tall (the alien is ~1.9 m): scale up so an ADULT
-  // Sprout reads at a comparable size next to the other pets.
+  // Family creatures are authored ~1 m tall: scale up so an ADULT reads at a
+  // comparable size next to the other pets.
   'sprout-original': 1.6,
   'sprout-amebita': 1.6,
   'sprout-fluflito': 1.6,
@@ -225,10 +223,10 @@ export function scaleForSpecies(species: string): number {
 // and every one of the 16 combinations is wired below — model, clips, scale — so a
 // cross renders on ANY client (needed because pets are swapped between players).
 //
-// The model files follow one rule (verified against disk): Sprout-headed crosses
-// live in models/sprouts/ (sprout_<body>.glb), the rest in assets/Models/
-// (<Head>_<Body>.glb). The animation clips of a cross GLB always use the HEAD
-// family's prefix, so clips = familyClips(<Head>).
+// The model files follow one rule: assets/Models/creatures/<head>/<file>.glb,
+// where <file> is <family> for an original and <head>_<body> for a cross (see
+// creatureModelFile / modelForSpecies). The animation clips of a cross GLB always
+// use the HEAD family's prefix, so clips = familyClips(<Head>).
 // ---------------------------------------------------------------------------
 export const FAMILIES = ['sprout', 'pepito', 'amebita', 'fluflito'] as const
 export type Family = (typeof FAMILIES)[number]
@@ -279,18 +277,14 @@ export function crossSpecies(head: Family, body: Family): string {
   return head === body ? `${head}-original` : `${head}_${body}`
 }
 
-/** Model file for a cross (head !== body), by the on-disk naming rule. */
-function crossModelFile(head: Family, body: Family): string {
-  return head === 'sprout' ? `models/sprouts/sprout_${body}.glb` : `assets/Models/${cap(head)}_${cap(body)}.glb`
-}
-
-// Wire every cross (head !== body) into the render maps. Originals are already
-// listed above; this fills in the 12 crossings so any bred/swapped pet renders.
+// Wire every cross (head !== body) into the render maps. The model path is derived
+// on the fly by modelForSpecies (creatureModelFile), so only the clip/scale/label
+// maps need filling here — for every one of the 12 crossings, so a bred/swapped
+// pet renders on any client.
 for (const head of FAMILIES) {
   for (const body of FAMILIES) {
     if (head === body) continue
     const id = `${head}_${body}`
-    MODEL_OVERRIDES[id] = crossModelFile(head, body)
     SPECIES_CLIPS[id] = familyClips(cap(head)) // cross clips use the HEAD family's prefix
     SPECIES_SCALE[id] = 1.6
     SPECIES_LABEL[id] = `${cap(head)}-${cap(body)}`
@@ -298,10 +292,8 @@ for (const head of FAMILIES) {
 }
 
 // Per-species yaw offset (degrees) — corrects models whose "forward" axis differs
-// from the walk direction (e.g. the alien faces sideways). Default 0.
-const SPECIES_YAW_OFFSET: Record<string, number> = {
-  'alienPet-v1': -15 // alien model faces sideways; rotate it to face its heading
-}
+// from the walk direction. Default 0 (all current family models face forward).
+const SPECIES_YAW_OFFSET: Record<string, number> = {}
 
 export function yawOffsetForSpecies(species: string): number {
   return SPECIES_YAW_OFFSET[species] ?? 0
@@ -310,8 +302,6 @@ export function yawOffsetForSpecies(species: string): number {
 // Optional thumbnail shown in the adoption card circle. Add image paths as the
 // art lands; species without one fall back to a colored disc.
 const SPECIES_IMAGE: Record<string, string> = {
-  'alienPet-v1': 'assets/images/pets/alien1.png',
-  'alienPet-2': 'assets/images/pets/alien2.png',
   'sprout-original': 'assets/images/pets/sprout.png',
   'pepito-original': 'assets/images/pets/pepito.png',
   'amebita-original': 'assets/images/pets/amebita.png',
@@ -579,9 +569,7 @@ export const BREEDING_CARE_BONUS_MAX = 3
  *  entry falls through to 'common'. Tunable. */
 export const BREEDING_RARITY_THRESHOLDS: [Rarity, number][] = [
   ['legendary', 10],
-  ['ultraRare', 8],
-  ['rare', 6],
-  ['uncommon', 4]
+  ['rare', 6]
 ]
 
 // ---------------------------------------------------------------------------
@@ -600,9 +588,7 @@ export const BREEDING_POTION_BONUS = 1.5
 export function rarityLabel(r: Rarity): string {
   const labels: Record<Rarity, string> = {
     common: 'Common',
-    uncommon: 'Uncommon',
     rare: 'Rare',
-    ultraRare: 'Ultra Rare',
     legendary: 'Legendary'
   }
   return labels[r] ?? labels.common
@@ -610,9 +596,7 @@ export function rarityLabel(r: Rarity): string {
 /** Color per rarity tier (RGB 0-1), used for the pet's floating rarity label. */
 export const RARITY_COLOR: Record<Rarity, { r: number; g: number; b: number }> = {
   common: { r: 0.95, g: 0.55, b: 0.72 }, // pink (pastel rose)
-  uncommon: { r: 0.4, g: 0.85, b: 0.45 }, // green
   rare: { r: 0.35, g: 0.62, b: 0.98 }, // blue
-  ultraRare: { r: 0.72, g: 0.42, b: 0.95 }, // purple
   legendary: { r: 1, g: 0.8, b: 0.2 } // gold
 }
 export const CARETAKER_XP_PER_ACTION = 5
@@ -647,7 +631,8 @@ export function growSize(size: number): number {
 // ---------------------------------------------------------------------------
 // Growth stages (Adopt-Me style): a pet's SIZE grows with cumulative care
 // (see sizeForCareCount) and crosses 3 thresholds over a couple of days. Each
-// stage renders at a fixed, chunky size, and its name shows in the health bar.
+// stage renders at a fixed, chunky size; the pet passport shows the current stage
+// and how close it is to the next one (see petGrowthFraction + the growth bar).
 // ---------------------------------------------------------------------------
 export type PetStage = 'JUNIOR' | 'TEENAGER' | 'ADULT'
 
@@ -662,12 +647,15 @@ export function petStage(size: number): PetStage {
   return 'JUNIOR'
 }
 
-/** User-facing label for a growth stage. */
-export function petStageLabel(size: number): string {
-  const stage = petStage(size)
-  if (stage === 'TEENAGER') return 'Teenager'
-  return stage.charAt(0) + stage.slice(1).toLowerCase()
+/** Overall growth 0..1 across the whole SIZE_BASE..ADULT range — 0 at a newborn,
+ *  1 once fully grown (ADULT). Drives the growth progress bar's fill. */
+export function petGrowthFraction(size: number): number {
+  return Math.max(0, Math.min(1, (size - SIZE_BASE) / (PET_STAGE_ADULT_SIZE - SIZE_BASE)))
 }
+
+/** Where the TEENAGER threshold sits along that 0..1 bar (so its label/marker can
+ *  be placed proportionally). Junior is at 0, Adult at 1. */
+export const PET_STAGE_TEEN_FRACTION = (PET_STAGE_TEEN_SIZE - SIZE_BASE) / (PET_STAGE_ADULT_SIZE - SIZE_BASE)
 
 // Each stage renders at one fixed size, so pets visibly snap between 3 sizes.
 // The range is deliberately wide so a JUNIOR reads as a tiny baby next to an ADULT.

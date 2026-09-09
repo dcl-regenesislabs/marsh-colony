@@ -17,13 +17,13 @@ import {
 } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { dailyClaimable, meteorAvailable } from './sim'
-import { showHint, clearHint } from './state'
+import { showHint } from './state'
 import { ui } from './ui'
 
 const MODEL = 'assets/scene/Models/meteor_gold.glb'
 const LANDING_CLIP = 'meteorLanding'
 const IDLE_CLIP = 'meteorStruckIdle'
-const FALL_DELAY = 20 // seconds after the scene loads before it falls
+const FALL_DELAY = 60 // seconds after the scene loads before it falls
 const LANDING_DURATION = 4.9 // seconds — from the GLB (meteorLanding ~4.83s)
 
 // Where the meteor lands. Tune freely (meters; scene is 480x480, base 0,0).
@@ -79,7 +79,7 @@ function spawnMeteor(): void {
       Animator.playSingleAnimation(meteor, LANDING_CLIP, true)
     } else if (phase === 1 && t >= LANDING_DURATION) {
       Animator.playSingleAnimation(meteor, IDLE_CLIP, false)
-      showHint('meteor', 'Go explore the meteorite for daily rewards and surprises!')
+      showHint('meteor', 'Go explore the meteorite for daily rewards and surprises!', 'reward')
       engine.removeSystem(timeline) // settled — nothing left to drive
     }
   }
@@ -93,7 +93,6 @@ function spawnMeteor(): void {
     () => {
       if (collected) return
       collected = true
-      clearHint('meteor') // they explored it
       ui.openMeteorReward() // opens the daily-reward ladder (client streak)
       engine.removeSystem(timeline)
       engine.removeEntity(meteor)

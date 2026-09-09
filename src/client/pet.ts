@@ -46,8 +46,8 @@ import {
   type PetClip
 } from '../shared/config'
 import type { PetData } from '../shared/types'
-import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, clearHint, hasPendingHatchling } from './state'
-import { applyCareLocal } from './sim'
+import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, hasPendingHatchling } from './state'
+import { startBathGame } from './bathGame'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
@@ -61,6 +61,18 @@ type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 let localPet: Entity | null = null
 let localSpecies = ''
 let localSkinKey = '' // species|rarity of the skin currently applied to localPet
+// A carry pick-up / put-down reparents localPet, and DCL reloads the GLTF instance
+// a few frames later — that reload DROPS the runtime skin override, so the held pet
+// renders textureless. GltfContainerLoadingState is NO help here: the GLB is already
+// cached, so a reparent re-instantiates the mesh without an asset load, and the
+// state never leaves FINISHED — there's no engine signal for when the reload lands.
+// So we re-assert the skin EVERY frame over a short budget after each reparent, so
+// it re-lands the instant the reload finishes (no delay). Not throttled: this is one
+// LOCAL pet, once per bath — the GltfNodeModifiers writes are client-side CRDT on a
+// single entity and never networked, so their cost is negligible next to the UX hit
+// a throttle's delay would add.
+let reskinTicks = 0 // frames left to keep re-asserting the skin after a reparent
+const RESKIN_TICKS = 150 // ~2.5 s of coverage @60fps for the async reparent-reload (covers slow devices)
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
 // pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
@@ -91,8 +103,8 @@ let bathSplashFrom = Vector3.Zero()
 const BATH_HOP_DURATION = 0.45 // seconds
 const BATH_HOP_DISTANCE = 1.2 // metres covered horizontally while hopping out
 const BATH_HOP_HEIGHT = 0.6 // metres, peak arc height
-const BATH_DURATION = 2.5 // seconds the pet stays in the tub
 const BATH_SPLASH_HEIGHT = 0.08
+const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-out (NOT the whole minigame)
 // The petting camera tracks this raised focus point instead of the pet's feet,
 // keeping the happy reaction centered rather than looking down at the ground.
 const PETTING_CAMERA_LOOK_LIFT = 0.55
@@ -464,7 +476,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.bathGame.active
 }
 
 /**
@@ -549,6 +561,7 @@ function ensureLocalPet(): void {
       localPet = null
       localSpecies = ''
       localSkinKey = ''
+      reskinTicks = 0
       localPetId = ''
     }
     if (localTag) {
@@ -584,7 +597,6 @@ function ensureLocalPet(): void {
         // Clicking the pet opens its control panel. (The "pet for happiness"
         // action is suspended for now — was: actions.petSelf() + petReact().)
         clientState.petPanelOpen = true
-        clearHint('firstPet') // they did it
         // Point them at the Breed button until the pet grows up.
         const ap = clientState.activePet
         if (ap && petStage(ap.size) !== 'ADULT') {
@@ -616,6 +628,12 @@ function ensureLocalPet(): void {
   if (localSkinKey !== skinKey) {
     localSkinKey = skinKey
     applyCreatureSkin(localPet, renderSpecies, pet.rarity)
+  }
+  // Carry reparent recovery: re-assert the skin every frame over a short budget so
+  // it re-lands the instant the reparent-triggered reload finishes, whenever that is.
+  if (reskinTicks > 0) {
+    applyCreatureSkin(localPet, pet.species, pet.rarity)
+    reskinTicks--
   }
   // Keep visual scale synced to growth. This runs before updateLocalPet's
   // interaction branches every frame, so carry behavior must only change the
@@ -895,6 +913,7 @@ function attachPetToHands(pet: PetData): void {
   t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(pet.species) + PET_HOLD_YAW, 0)
   setHeldPetPointerCollider(false)
   setLocalTagVisible(false)
+  reskinTicks = RESKIN_TICKS // reparent reloads the GLTF late; keep re-asserting the skin until it lands
 }
 
 /** Detach the pet back into world space (place at the tub, or cancel the carry); restore its tag.
@@ -916,6 +935,7 @@ function detachPetFromHands(): void {
   setHeldPetPointerCollider(true)
   setLocalTagVisible(true)
   if (carriedPetAnchor) AvatarAttach.deleteFrom(carriedPetAnchor) // stop riding the player's bone between baths
+  reskinTicks = RESKIN_TICKS // reparent back to the scene reloads the GLTF too — keep re-asserting the skin
 }
 
 /** Bath step 1: pick the pet up into the player's hands to carry it to the tub. */
@@ -929,6 +949,7 @@ export function startCarryPet(): void {
   attachPetToHands(clientState.activePet)
   playHoldPetEmote()
   showArrowTo(objectPosition(EntityNames.PetPool_glb), 'carryPet')
+  pushToast('Carry your pet to the bath!')
 }
 
 /** Cancel the bath carry (BACK): drop the flow, the pet just resumes following. */
@@ -940,7 +961,8 @@ export function cancelCarryPet(): void {
   hideArrow('carryPet')
 }
 
-/** Bath step 2: place the pet in the tub and run the clean action. */
+/** Bath step 2: place the pet in the tub and start the bubble minigame. The bath
+ *  reward + splash come from the minigame's RESULT (finishBath), not from here. */
 export function placePetAtStation(): void {
   if (!clientState.carryPet.active) return
   clientState.carryPet = { active: false, atStation: false }
@@ -953,19 +975,31 @@ export function placePetAtStation(): void {
     t.rotation = Quaternion.Identity()
     bathSplashFrom = t.position
   }
-  // Force the happy-splash pose directly rather than via petReact() — its
-  // `mode === 'goto'` guard exists to avoid interrupting an unrelated in-progress
-  // walk, but here the pet was just hard-teleported into the tub, so any stale
-  // 'goto' (e.g. a queued care action that was mid-walk when the carry started)
-  // is no longer relevant and must not be left to swallow the bathhop transition.
+  // A brief neutral interact just clears any stale 'goto' (e.g. a queued care
+  // action mid-walk when the carry started) so the pet doesn't wander off after
+  // the game. NO splash/countdown is armed here — the pet simply idles in the tub
+  // while the minigame runs (updateLocalPet holds it there), and only a WIN plays
+  // the splash + hop-out (finishBath). This is what stops a full bath animation
+  // from playing after a LOSS or BACK and reading as a successful bath.
   mode = 'interact'
   interactClip = 'gesture-positive'
-  interactTimer = BATH_DURATION
+  interactTimer = 0.5
   bathSplashT = 0
-  justBathed = true // hop out of the tub instead of walking straight through its rim
-  applyCareLocal('clean', false) // optimistic local effect
-  actions.care('clean', false) // server is authoritative
-  pushToast('Bath time!  +Hygiene')
+  justBathed = false
+  startBathGame()
+}
+
+/** Called by the bath minigame when it ends. On a WIN the pet plays the short
+ *  splash + hop-out-of-the-tub celebration; on a loss/BACK it just resumes — no
+ *  splash, no reward, so the outcome stays honest. */
+export function finishBath(won: boolean): void {
+  if (!localPet || !won) return
+  bathSplashFrom = Transform.get(localPet).position
+  mode = 'interact'
+  interactClip = 'gesture-positive'
+  interactTimer = BATH_SPLASH_SECONDS
+  bathSplashT = 0
+  justBathed = true // splash in place, then hop out of the tub (see updateLocalPet)
 }
 
 // ---------------------------------------------------------------------------
@@ -1093,7 +1127,9 @@ export function startCarryEgg(species: string, name: string, isBreed = false): v
 
   playHoldEmote() // pose the arms as if holding the egg
 
-  openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!')
+  openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!', () =>
+    pushToast('Take your egg home to hatch it!')
+  )
 }
 
 /** Per-frame while carrying: flag whether the player is home (drives the Hatch button). */
@@ -1364,6 +1400,14 @@ function updateLocalPet(dt: number): void {
   // icons would flash back on while it's talking.
   VisibilityComponent.createOrReplace(localPet, { visible: true })
   if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
+
+  // During the bubble-bath minigame the pet stays put in the tub (where
+  // placePetAtStation teleported it) and just idles — don't let the follow/roam
+  // logic below walk it away while the player is popping bubbles.
+  if (clientState.bathGame.active) {
+    setClip(localPet, 'idle')
+    return
+  }
 
   // While carrying a new egg (or hatching it, before the newborn emerges), send
   // the CURRENT pet to its home slot and park it there. This clears the hatch
@@ -1741,15 +1785,6 @@ function updateInactivePets(dt: number): void {
   }
 }
 
-/** Auto-clear hints whose action is done (the breed hint lives with the panel). */
-function updateHints(): void {
-  const h = clientState.hint
-  if (!h) return
-  if (h.id === 'breed' && !clientState.petPanelOpen) clearHint('breed')
-  // Safety: if the active pet reached Adult, the "grow to Adult" hint is moot.
-  if (h.id === 'breed' && clientState.activePet && petStage(clientState.activePet.size) === 'ADULT') clearHint('breed')
-}
-
 // ---------------------------------------------------------------------------
 // Sleep-lock countdown — a floating "M:SS" over the pet while its exhaustion nap
 // is locked (SLEEP_LOCK_MS). Sits just above the name tag; hidden otherwise.
@@ -1796,6 +1831,5 @@ export function setupPetSystems(): void {
     updateSleepCountdown()
     updateInactivePets(dt)
     updateRemotePets(dt)
-    updateHints()
   })
 }
