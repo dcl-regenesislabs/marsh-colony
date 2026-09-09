@@ -1647,7 +1647,7 @@ function JukeboxPanel() {
 // so it never covers the top coin bar, the right-rail buttons, or a modal. The
 // server `notify` kind picks the accent color (error/reward/progress/info).
 const TOAST_ENTER_MS = 240 // slide-in from the right
-const TOAST_HOLD_MS = 2600 // fully-shown dwell
+const TOAST_HOLD_MS = 3100 // fully-shown dwell
 const TOAST_EXIT_MS = 300 // retract back to the right
 const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
 // Notification pill, drawn in code (no image): a cream fill inside a brown border,
