@@ -1682,10 +1682,9 @@ const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 
 function Toasts() {
   const now = Date.now()
-  // Hold the queue while a panel/modal/dialog owns the screen: the toast sits at
-  // screen-center, so it would paint over the open UI — exactly the overlap
-  // complaint in #186 that the old off-to-the-side toast/HintBanner avoided.
-  // Nothing is shifted or shown until they close, then the queue resumes.
+  // Hold the queue while a panel/modal/dialog owns the screen, so a toast can't
+  // paint over open UI (the #186 overlap complaint). Nothing is shifted or shown
+  // until they close, then the queue resumes.
   const overlayOpen =
     uiState.panel !== 'none' ||
     clientState.dialog.open ||
@@ -1700,49 +1699,63 @@ function Toasts() {
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
 
-  // Drive slide (offset toward the right) + fade from elapsed/remaining time.
+  // Slide in from the LEFT edge + fade, resting anchored top-left just below where
+  // the BACK button sits (top ~25% + its S(90) height), so it never covers it.
+  // Enter: from off-screen left -> rest. Exit: retract back off the left + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
-  const offMax = S(560) // how far off to the right the pill starts/ends (hidden)
+  const w = S(400)
+  const h = S(58)
+  // Left inset: flush on desktop, nudged in on mobile so the native explorer's
+  // corner HUD doesn't clip the left edge (the point of #213). NOT as far in as the
+  // BackButton's S(210) — that reads too central for a notification; this is a
+  // middle ground. Bump it up if it collides with the native corner UI on device,
+  // down if it still feels too central. offMax must clear the resting inset + width.
+  const leftInset = mobile() ? S(96) : S(16)
+  const offMax = leftInset + w + S(20) // far enough left to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
     const e = easeOutCubic(elapsed / TOAST_ENTER_MS)
-    slide = offMax * (1 - e)
+    slide = -offMax * (1 - e)
     alpha = e
   } else if (remaining < TOAST_EXIT_MS) {
     const p = remaining / TOAST_EXIT_MS // 1 -> 0
-    slide = offMax * (1 - p)
+    slide = -offMax * (1 - p)
     alpha = p
   }
 
-  const w = S(360)
-  const h = S(54)
   const accent = toastAccent(t.kind)
+  // NOT wrapped in ScreenInsetArea: it sits in the same (non-inset) coordinate
+  // space as the BackButton and the rest of the HUD (getUiRendererConfig's
+  // screenInset:'none'), so the two use one frame of reference and the vertical
+  // gap to the BACK button is a constant S(104), not inset-dependent. The mobile
+  // leftInset + the 25% top already keep it clear of notches/rounded corners.
   return (
-    <ScreenInsetArea>
-      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <UiEntity
-          uiTransform={{
-            positionType: 'absolute',
-            position: { top: '46%', left: '50%' },
-            margin: { top: -h / 2, left: -w / 2 + slide },
-            width: w,
-            height: h,
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: { left: S(30), right: S(28) }, // clear the pill's rounded end caps
-            pointerFilter: 'none'
-          }}
-          // Cream pill art (transparent PNG). The white `color` tint just carries the
-          // enter/exit alpha so the whole pill fades with the animation.
-          uiBackground={{ texture: { src: TOAST_BG }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }}
-        >
-          <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
-          <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(82), height: h - S(12) }} />
-        </UiEntity>
+    // Position from main (top-left, below the BACK button, slide-in from the left),
+    // background from this branch (the cream pill PNG). No ScreenInsetArea — same
+    // coordinate space as the BackButton / rest of the HUD.
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: '25%', left: leftInset },
+          margin: { top: S(104), left: slide }, // top: clear the BACK button (S(90) + gap); left: slide-in offset
+          width: w,
+          height: h,
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: { left: S(34), right: S(44) }, // clear the pill's rounded end caps so text sits on the flat middle
+          pointerFilter: 'none'
+        }}
+        // Cream pill art (transparent PNG, cropped to the pill). The white `color`
+        // tint carries the enter/exit alpha so the whole pill fades with the animation.
+        uiBackground={{ texture: { src: TOAST_BG }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }}
+      >
+        <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
+        <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(114), height: h - S(12) }} />
       </UiEntity>
-    </ScreenInsetArea>
+    </UiEntity>
   )
 }
 
