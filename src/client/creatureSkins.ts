@@ -10,8 +10,7 @@
 // node -> mesh -> material); the "_head"/"_Head" casing is irregular in the source
 // art, which is exactly why these are listed literally instead of derived.
 
-import { AvatarAnchorPointType, AvatarAttach, Entity, GltfNodeModifiers, Material, MeshRenderer, Transform, engine, type PBMaterial } from '@dcl/sdk/ecs'
-import { Vector3 } from '@dcl/sdk/math'
+import { AssetLoad, AssetLoadLoadingState, Entity, GltfNodeModifiers, Material, engine, type PBMaterial } from '@dcl/sdk/ecs'
 import type { Rarity } from '../shared/types'
 import { FAMILIES, type Family } from '../shared/config'
 
@@ -94,50 +93,75 @@ const FILE_PREFIX: Record<Family, string> = {
   fluflito: 'Fluflito'
 }
 
-/** Which base-color variant a rarity uses. Three skins per family were delivered. */
+/** The base-color variant each rarity tier wears — the single source of truth for
+ *  both the runtime skin and the preload set, so the two can't drift apart. */
+const RARITY_VARIANT: Record<Rarity, string> = {
+  common: 'basecolor',
+  rare: 'basecolor2',
+  legendary: 'basecolorGold'
+}
 function variantForRarity(rarity: Rarity): string {
-  if (rarity === 'legendary') return 'basecolorGold'
-  if (rarity === 'rare') return 'basecolor2'
-  return 'basecolor' // common
+  return RARITY_VARIANT[rarity] ?? RARITY_VARIANT.common
 }
 
 function textureSrc(family: Family, rarity: Rarity): string {
   return `assets/textures/creatures/${FILE_PREFIX[family]}_${variantForRarity(rarity)}.png`
 }
 
-// Every base-color variant a creature can wear (one per rarity tier).
-const TEXTURE_VARIANTS = ['basecolor', 'basecolor2', 'basecolorGold']
-
-/** Every creature texture path (family × variant) — the full set a pet might need. */
+/** Every creature texture path (family × distinct variant) — the full set a pet of
+ *  any family/rarity might need, derived from RARITY_VARIANT (no separate list). */
 function allTextureSrcs(): string[] {
+  const variants = [...new Set(Object.values(RARITY_VARIANT))]
   const out: string[] = []
-  for (const fam of FAMILIES) for (const v of TEXTURE_VARIANTS) out.push(`assets/textures/creatures/${FILE_PREFIX[fam]}_${v}.png`)
+  for (const fam of FAMILIES) for (const v of variants) out.push(`assets/textures/creatures/${FILE_PREFIX[fam]}_${v}.png`)
   return out
 }
 
 let preloaded = false
+// AssetLoadLoadingState.currentState values (LoadingState enum) — kept as literals
+// so we don't depend on the const-enum export under isolatedModules.
+const LS_NOT_FOUND = 2
+const LS_FINISHED_WITH_ERROR = 3
+const LS_FINISHED = 4
+
 /**
- * Warm the texture cache up front. The GLBs ship textureless and get their skin
- * applied at runtime; without this the PNG downloads only WHEN a pet first needs
- * it, so the pet renders flat/untextured for a beat and then pops in (worst on
- * mobile). Here we spawn one tiny plane per texture and ATTACH each to the player
- * avatar: that keeps them in-bounds and right by the camera, so the renderer
- * actually draws them and uploads the textures to the GPU (a plane parked far
- * off/out-of-bounds may get culled on mobile and never upload). They're 1 cm, so
- * they're invisible in practice, and kept alive so the textures stay referenced
- * (not evicted). applyCreatureSkin then reuses the same src straight from cache.
- * Call once at client setup.
+ * Warm the texture cache up front via the SDK's AssetLoad component: the renderer
+ * pre-downloads and GPU-uploads the listed assets (paced by the engine, so it
+ * doesn't stampede the scene's GLBs at boot), so when applyCreatureSkin later uses
+ * the same src it's served from cache with no flat/untextured pop-in — the failure
+ * mode was worst on mobile. Call once at client setup.
+ *
+ * NOTE: this warms ALL family × rarity textures (~16 MB) up front, even though a
+ * given player may only need one — the trade for zero pop-in when a bred/swapped/
+ * remote pet of any family or rarity shows up. Scope it down here if that memory
+ * cost bites on low-end devices.
  */
 export function preloadCreatureTextures(): void {
   if (preloaded) return
   preloaded = true
-  for (const src of allTextureSrcs()) {
-    const e = engine.addEntity()
-    Transform.create(e, { scale: Vector3.create(0.01, 0.01, 0.01) })
-    MeshRenderer.setPlane(e)
-    Material.setBasicMaterial(e, { texture: Material.Texture.Common({ src }) })
-    AvatarAttach.create(e, { anchorPointId: AvatarAnchorPointType.AAPT_POSITION }) // ride the avatar: in-bounds + near camera so it really uploads
-  }
+  const e = engine.addEntity()
+  const assets = allTextureSrcs()
+  AssetLoad.create(e, { assets })
+  logPreloadProgress(e, assets.length)
+}
+
+/** Log the AssetLoad outcome once it settles, so a working preload can be told
+ *  apart from a silently failed one on device (the renderer sets the state). */
+function logPreloadProgress(entity: Entity, total: number): void {
+  const finished = new Set<string>()
+  const failed = new Set<string>()
+  let done = false
+  engine.addSystem(() => {
+    if (done || !AssetLoadLoadingState.has(entity)) return
+    for (const s of AssetLoadLoadingState.get(entity)) {
+      if (s.currentState === LS_FINISHED) finished.add(s.asset)
+      else if (s.currentState === LS_NOT_FOUND || s.currentState === LS_FINISHED_WITH_ERROR) failed.add(s.asset)
+    }
+    if (finished.size + failed.size >= total) {
+      done = true
+      console.log(`[creatureSkins] texture preload settled: ${finished.size}/${total} cached${failed.size ? `, ${failed.size} FAILED -> ${[...failed].join(', ')}` : ''}`)
+    }
+  })
 }
 
 /** An UNLIT material carrying just the base-color texture. Unlit shows the art
