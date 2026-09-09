@@ -3,7 +3,7 @@
 // walk to the object, do the animation for a beat, then a short rest before
 // the next. This stops the pet from teleport-spamming between stations.
 
-import { engine, pointerEventsSystem, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
+import { engine, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
 import { EntityNames } from '../../assets/scene/entity-names'
 import type { CareAction } from '../shared/types'
 import { formatLockCountdown, type PetClip } from '../shared/config'
@@ -11,8 +11,7 @@ import { actionObjectPosition } from './objects'
 import { isBusy, sendPetTo, canQueueCareAction, startCarryPet } from './pet'
 import { applyCareLocal, canPlayNow, sleepLockLeft } from './sim'
 import { startFeedTask } from './feed'
-import { startFruitGame } from './fruitGame'
-import { actions, clientState, debugGrowAdultLocal, pushToast, hasPendingHatchling } from './state'
+import { actions, clientState, pushToast, hasPendingHatchling } from './state'
 import { ui } from './ui'
 
 const ACTION_CLIP: Record<CareAction, PetClip> = {
@@ -106,40 +105,6 @@ function setupCareQueue(): void {
   })
 }
 
-// DEBUG hotkeys. NOTE: DCL exposes only number keys 1-4 (IA_ACTION_3..6);
-// there is no key "5". Key "1" (IA_ACTION_3) is currently unbound — it used
-// to drive the skybox height-teleport shortcut and, after that, the carried-
-// egg hand calibration panel (issue #178), neither of which are needed now.
-function setupDebugHotkeys(): void {
-  engine.addSystem(() => {
-    // "2": jump straight into the Feed tree minigame, skipping the walk-to-tree
-    // errand — for iterating on the minigame itself without the walk each time.
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) {
-      if (!clientState.activePet) {
-        pushToast('DEBUG: no active pet to feed')
-        return
-      }
-      startFruitGame(clientState.activePet.id)
-      pushToast('DEBUG: fruit minigame started')
-    }
-    // "3": toggle the fruit-game camera calibration panel (fruitGame.ts's
-    // debugCam*) — shows while the minigame is active, +/- buttons per axis.
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)) {
-      clientState.debugCamPanelOpen = !clientState.debugCamPanelOpen
-      pushToast(clientState.debugCamPanelOpen ? 'DEBUG: cam panel ON' : 'DEBUG: cam panel OFF')
-    }
-    // "4": grow the active pet to Adult + Lv5 (unlock breeding).
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_6, PointerEventType.PET_DOWN)) {
-      if (!clientState.activePet) {
-        pushToast('DEBUG: no active pet to grow')
-        return
-      }
-      debugGrowAdultLocal()
-      pushToast('DEBUG: pet grown to Adult (Lv 5) — breeding unlocked')
-    }
-  })
-}
-
 function onClick(name: string, hoverText: string, cb: () => void): void {
   const ent = engine.getEntityOrNullByName(name)
   if (!ent) {
@@ -164,5 +129,4 @@ export function setupInput(): void {
   // Caretaker click is handled in caretaker.ts (click collider, not the raw GLTF).
   // Shop is suspended for now — the object stays in the scene but isn't clickable.
   setupCareQueue()
-  setupDebugHotkeys()
 }

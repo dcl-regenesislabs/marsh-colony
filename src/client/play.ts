@@ -16,7 +16,7 @@ import { engine, Entity, Transform, MeshRenderer, Material, AvatarMask, AvatarAt
 import { Vector3, Quaternion, Color4 } from '@dcl/sdk/math'
 import { triggerSceneEmote } from '~system/RestrictedActions'
 import * as C from '../shared/config'
-import { getLocalPet, sendPetTo, getLogicalClip } from './pet'
+import { getLocalPet, sendPetTo, getLogicalClip, petReact } from './pet'
 import { applyCareLocal, canPlayNow } from './sim'
 import { actions, clientState, pushToast } from './state'
 import { FETCH_TOUCH_ACTION, showFetchTouchButton, hideFetchTouchButton } from './touchControls'
@@ -188,6 +188,7 @@ function beginThrow(power: number): void {
   const dir = flatForward(pt.rotation)
   triggerFetchHintFadeOut() // first-ever throw: fade the mobile "Hold to throw" hint out for good
   clientState.fetch.busy = true // block the Fetch button until the pet drops it
+  petReact() // celebrate the throw as well as the successful return below
   // Masked AM_UPPER_BODY on desktop (Bevy) plays correctly, but on mobile
   // (Godot) the masked version blends/plays wrong — confirmed by comparing
   // masked vs unmasked side by side — so mobile gets it unmasked (full body).
