@@ -1702,7 +1702,15 @@ function Toasts() {
   // Enter: from off-screen left -> rest. Exit: retract back off the left + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
-  const offMax = S(400) // how far off to the LEFT the pill starts/ends (hidden)
+  const w = S(360)
+  const h = S(54)
+  // Left inset: flush on desktop, nudged in on mobile so the native explorer's
+  // corner HUD doesn't clip the left edge (the point of #213). NOT as far in as the
+  // BackButton's S(210) — that reads too central for a notification; this is a
+  // middle ground. Bump it up if it collides with the native corner UI on device,
+  // down if it still feels too central. offMax must clear the resting inset + width.
+  const leftInset = mobile() ? S(96) : S(16)
+  const offMax = leftInset + w + S(20) // far enough left to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
@@ -1715,32 +1723,33 @@ function Toasts() {
     alpha = p
   }
 
-  const w = S(360)
-  const h = S(54)
   const accent = toastAccent(t.kind)
+  // NOT wrapped in ScreenInsetArea: it sits in the same (non-inset) coordinate
+  // space as the BackButton and the rest of the HUD (getUiRendererConfig's
+  // screenInset:'none'), so the two use one frame of reference and the vertical
+  // gap to the BACK button is a constant S(104), not inset-dependent. The mobile
+  // leftInset + the 25% top already keep it clear of notches/rounded corners.
   return (
-    <ScreenInsetArea>
-      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <UiEntity
-          uiTransform={{
-            positionType: 'absolute',
-            position: { top: '25%', left: S(16) },
-            margin: { top: S(104), left: slide }, // top: clear the BACK button (S(90) + gap); left: slide-in offset
-            width: w,
-            height: h,
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: { left: S(14), right: S(16) },
-            borderRadius: S(27),
-            pointerFilter: 'none'
-          }}
-          uiBackground={{ color: withAlpha({ r: 0.12, g: 0.1, b: 0.09, a: 0.97 }, alpha) }}
-        >
-          <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
-          <Label value={t.message} fontSize={S(15)} color={withAlpha(C.text, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(54), height: h - S(12) }} />
-        </UiEntity>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { top: '25%', left: leftInset },
+          margin: { top: S(104), left: slide }, // top: clear the BACK button (S(90) + gap); left: slide-in offset
+          width: w,
+          height: h,
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: { left: S(14), right: S(16) },
+          borderRadius: S(27),
+          pointerFilter: 'none'
+        }}
+        uiBackground={{ color: withAlpha({ r: 0.12, g: 0.1, b: 0.09, a: 0.97 }, alpha) }}
+      >
+        <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
+        <Label value={t.message} fontSize={S(15)} color={withAlpha(C.text, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(54), height: h - S(12) }} />
       </UiEntity>
-    </ScreenInsetArea>
+    </UiEntity>
   )
 }
 
