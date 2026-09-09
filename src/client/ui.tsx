@@ -1650,6 +1650,7 @@ const TOAST_ENTER_MS = 240 // slide-in from the right
 const TOAST_HOLD_MS = 2600 // fully-shown dwell
 const TOAST_EXIT_MS = 300 // retract back to the right
 const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
+const TOAST_BG = 'assets/images/notification-back.png' // cream pill art (transparent)
 
 // notify kind -> accent color. Positive/progress events read green, rewards
 // gold, failures red; everything else falls back to a calm blue.
@@ -1730,14 +1731,15 @@ function Toasts() {
             height: h,
             flexDirection: 'row',
             alignItems: 'center',
-            padding: { left: S(14), right: S(16) },
-            borderRadius: S(27),
+            padding: { left: S(30), right: S(28) }, // clear the pill's rounded end caps
             pointerFilter: 'none'
           }}
-          uiBackground={{ color: withAlpha({ r: 0.12, g: 0.1, b: 0.09, a: 0.97 }, alpha) }}
+          // Cream pill art (transparent PNG). The white `color` tint just carries the
+          // enter/exit alpha so the whole pill fades with the animation.
+          uiBackground={{ texture: { src: TOAST_BG }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }}
         >
           <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
-          <Label value={t.message} fontSize={S(15)} color={withAlpha(C.text, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(54), height: h - S(12) }} />
+          <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(82), height: h - S(12) }} />
         </UiEntity>
       </UiEntity>
     </ScreenInsetArea>
