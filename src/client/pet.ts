@@ -85,6 +85,8 @@ let interactClip: PetClip = 'idle'
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
+// See restartMoveClip() below.
+let moveClipRestartPending = false
 
 // Bath exit hop — placePetAtStation teleports the pet straight into the tub, which
 // sits above/inside walled geometry. Walking straight out afterward (normal 'follow'
@@ -400,6 +402,23 @@ function setClip(e: Entity, clip: PetClip): void {
  *  names. Undefined until setClip has been called at least once. */
 export function getLogicalClip(e: Entity): PetClip | undefined {
   return lastLogicalClip.get(e)
+}
+
+/** Force the active pet's currently-playing clip (walk/run while fetching,
+ *  most likely) to restart from frame 0 on the NEXT tick — used to phase-lock
+ *  a carried prop's own baked animation (the fetch ball's per-species "carried
+ *  in mouth" walk clip, play.ts, issue #221 — its clip runs the exact same
+ *  duration as the pet's own walk clip) to the pet's actual walk cycle at a
+ *  specific moment. setClip() no-ops when the resolved clip name hasn't
+ *  changed (see its curClip check above), so restarting an ALREADY-playing
+ *  clip needs this: drop it for one tick (clearing curClip so the very next
+ *  setClip call re-triggers a genuine stopped->playing edge) with
+ *  shouldReset armed, so the Animator snaps to frame 0 instead of resuming
+ *  mid-loop. Two-tick handoff (this call just flags it; movementTick applies
+ *  it) so the drop and the following setClip land in separate frames — doing
+ *  both within the same tick would collapse to no visible transition. */
+export function restartMoveClip(): void {
+  moveClipRestartPending = true
 }
 
 // ---------------------------------------------------------------------------
@@ -1532,7 +1551,20 @@ function updateLocalPet(dt: number): void {
 
   // Decide animation: interaction clip > movement > sleeping > idle.
   // (sleep only while standing still — a pet dozing mid-walk would just slide.)
-  if (mode === 'interact') setClip(localPet, interactClip)
+  // A pending restartMoveClip() wins this tick — drop whatever's playing and
+  // clear curClip so next tick's setClip below actually re-triggers it (see
+  // restartMoveClip's doc comment for why this can't happen in one tick).
+  if (moveClipRestartPending && Animator.has(localPet)) {
+    moveClipRestartPending = false
+    curClip.delete(localPet)
+    const a = Animator.getMutable(localPet)
+    for (const s of a.states) {
+      if (s.playing) {
+        s.playing = false
+        s.shouldReset = true
+      }
+    }
+  } else if (mode === 'interact') setClip(localPet, interactClip)
   else if (moved > 0.003) setClip(localPet, moveClip)
   else if (clientState.activePet?.sleeping) setClip(localPet, 'sleep')
   else setClip(localPet, 'idle')

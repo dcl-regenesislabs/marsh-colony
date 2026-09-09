@@ -1,22 +1,25 @@
-// Play action (Fetch): as soon as Fetch mode is opened, a ball (a plain
-// yellow sphere for now — see applyBallShape(), a placeholder for a real
-// tennis-ball texture later) appears attached to the player's right hand
-// (same AvatarAttach trick pet.ts uses to carry the egg). Holding the Throw
-// button charges a throw (clientState.fetch.charge ramps 0→1 over
-// CHARGE_TIME) — the ball just sits in the hand while charging, no animation
-// change — and releasing plays the throw emote (the ball stays in the hand
-// through the wind-up) and, right as the throw is finishing, swaps the held
-// ball for a free-flying one whose distance/arc/flight-time/bounce all scale
-// with how long it was charged. Then the pet runs to it, grabs it, carries it
-// back to the player and drops it — which applies the normal "play" reward,
-// and a fresh ball reappears in the hand for the next throw. (The old play
-// action — pet walks to the ball — is suspended; see input.ts / ui.tsx.)
+// Play action (Fetch): as soon as Fetch mode is opened, a ball (Ball01.glb —
+// see applyBallModel()) appears attached to the player's right hand (same
+// AvatarAttach trick pet.ts uses to carry the egg). Holding the Throw button
+// charges a throw (clientState.fetch.charge ramps 0→1 over CHARGE_TIME) — the
+// ball just sits in the hand while charging, no animation change — and
+// releasing plays the throw emote (the ball stays in the hand through the
+// wind-up) and, right as the throw is finishing, swaps the held ball for a
+// free-flying one whose distance/arc/flight-time/bounce all scale with how
+// long it was charged. Then the pet runs to it, grabs it, and carries it back
+// — for that leg only, the ball plays its per-species "carried in mouth"
+// walk clip (Ball_<Fam>_Walk, issue #221), matched to that species' walk
+// cycle by the artist; every other phase (held/flying/bouncing/waiting/
+// dropped) uses the static Ball_Base pose, since WE drive its position each
+// frame there instead. Dropping it applies the normal "play" reward, and a
+// fresh ball reappears in the hand for the next throw. (The old play action —
+// pet walks to the ball — is suspended; see input.ts / ui.tsx.)
 
-import { engine, Entity, Transform, MeshRenderer, Material, AvatarMask, AvatarAttach, AvatarAnchorPointType, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
-import { Vector3, Quaternion, Color4 } from '@dcl/sdk/math'
+import { engine, Entity, Transform, GltfContainer, Animator, AvatarMask, AvatarAttach, AvatarAnchorPointType, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
+import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { triggerSceneEmote } from '~system/RestrictedActions'
 import * as C from '../shared/config'
-import { getLocalPet, sendPetTo, getLogicalClip } from './pet'
+import { getLocalPet, sendPetTo, getLogicalClip, restartMoveClip } from './pet'
 import { applyCareLocal, canPlayNow } from './sim'
 import { actions, clientState, pushToast } from './state'
 import { FETCH_TOUCH_ACTION, showFetchTouchButton, hideFetchTouchButton } from './touchControls'
@@ -27,13 +30,24 @@ import { triggerFetchHintFadeOut } from './ui/anim'
 // (no "searching" swap) the whole time Fetch mode is open.
 const THROW_READY_ICON = 'assets/images/throwicon.png'
 
-const TENNIS_YELLOW = Color4.create(0.85, 0.98, 0.2, 1)
+const BALL_MODEL = 'assets/Models/Ball01.glb'
+// All 5 clips the GLB ships, declared as Animator states up front — which one
+// plays is switched via setBallClip, same idea as pet.ts's ensureAnimator/setClip.
+const BALL_CLIPS = [C.BALL_BASE_CLIP, ...C.FAMILIES.map((f) => C.ballWalkClip(`${f}-original`))]
 
-/** Placeholder ball look: a plain tennis-yellow sphere. Swap for a textured
- *  sphere (Material.Texture.Common) once real ball art lands. */
-export function applyBallShape(entity: Entity): void {
-  MeshRenderer.setSphere(entity)
-  Material.setPbrMaterial(entity, { albedoColor: TENNIS_YELLOW })
+/** Real ball look: Ball01.glb, defaulting to its static Ball_Base pose. */
+export function applyBallModel(entity: Entity): void {
+  GltfContainer.createOrReplace(entity, { src: BALL_MODEL })
+  Animator.createOrReplace(entity, {
+    states: BALL_CLIPS.map((clip) => ({ clip, playing: clip === C.BALL_BASE_CLIP, loop: true, speed: 1, weight: 1 }))
+  })
+}
+
+/** Switch the ball's currently-playing clip (Ball_Base, or a species' Ball_<Fam>_Walk). */
+function setBallClip(entity: Entity, clip: string): void {
+  if (!Animator.has(entity)) return
+  const a = Animator.getMutable(entity)
+  for (const s of a.states) s.playing = s.clip === clip
 }
 
 // Scene emotes must end in '_emote.glb' (Unity enforces this naming
@@ -68,44 +82,76 @@ const MIN_ARC_HEIGHT = 2.0
 const MAX_ARC_HEIGHT = 4.8
 const SPIN_SPEED = 540 // deg/sec tumble while flying
 const LINGER = 2.0 // seconds resting on the ground if there's no pet to fetch
-export const SCALE = 0.14 // ball diameter in metres — was 0.35 (tuned for the old meteorite mesh), way too big for a primitive sphere at scale 1 = 1m
-const GROUND_REST_Y = SCALE / 2 // ball's centre height when resting on the ground (its radius) — was a flat 0.35/0.2 tuned for the old, bigger mesh; floated well above the floor once the ball shrank
+// Ball01.glb's own node already bakes in a real-world scale (~0.06m radius,
+// ~0.12m diameter) — this multiplies on top of that, so 1 = trust the art.
+export const SCALE = 1
+const BALL_RADIUS = 0.06 * SCALE
+const GROUND_REST_Y = BALL_RADIUS // ball's centre height when resting on the ground
 
 // Pet-carry offset (where the ball sits relative to the pet while it's
 // bringing it back) — PER SPECIES, since the 4 pets have different body
 // proportions (see Cfg.SPECIES_SCALE) and one fixed offset didn't fit all of
-// them — AND per animation state (idle vs walk), since a walk cycle's bob
-// shifts the mouth/hold point vs standing still. Calibrated in-client;
-// species/state combos not yet tuned fall back to DEFAULT_CARRY_OFFSET, and
-// the 3 sprout-family breeding variants share sprout-original's entry (same
-// rig/proportions, see Cfg.SPROUT_SPECIES). In practice the real "pet carries
-// the ball back" sequence is in 'walk' almost the whole time (it's actively
-// walking home), so 'walk' is the default state when unspecified.
+// them; per animation state (idle vs walk), since a walk cycle's bob shifts
+// the mouth/hold point vs standing still; AND per growth stage (Junior/
+// Teenager/Adult), since the offset is deliberately NOT scaled by the pet's
+// own render size (see carryWorldPos) — it's a fixed real-world distance, and
+// a fixed distance that reads right on an Adult reads wrong on a tiny Junior.
+// Calibrated in-client; species/state/stage combos not yet tuned fall back to
+// DEFAULT_CARRY_OFFSET, and the 3 sprout-family breeding variants share
+// sprout-original's entry (same rig/proportions, see Cfg.SPROUT_SPECIES). In
+// practice the real "pet carries the ball back" sequence is in 'walk' almost
+// the whole time (it's actively walking home), so 'walk' is the default state
+// when unspecified, and 'ADULT' the default stage (most commonly tested).
 export type AnimState = 'idle' | 'walk'
 export type CarryOffset = { forward: number; right: number; height: number }
 export const DEFAULT_CARRY_OFFSET: CarryOffset = { forward: 0.6, right: 0, height: 0.45 }
-export const CARRY_OFFSET_BY_SPECIES: Partial<Record<string, Partial<Record<AnimState, CarryOffset>>>> = {
+type StageCarryOffsets = Partial<Record<C.PetStage, CarryOffset>>
+/** Same offset for all 3 stages — the starting point before per-stage tuning. */
+function sameForAllStages(off: CarryOffset): StageCarryOffsets {
+  return { JUNIOR: off, TEENAGER: off, ADULT: off }
+}
+export const CARRY_OFFSET_BY_SPECIES: Partial<Record<string, Partial<Record<AnimState, StageCarryOffsets>>>> = {
   'sprout-original': {
-    idle: { forward: 0.18, right: -0.5, height: 0.49 },
-    walk: { forward: 0.1, right: -0.58, height: 0.59 }
+    idle: {
+      JUNIOR: { forward: 0.11, right: -0.22, height: 0.24 },
+      TEENAGER: { forward: 0.18, right: -0.5, height: 0.49 },
+      ADULT: { forward: 0.18, right: -0.5, height: 0.49 }
+    },
+    walk: {
+      JUNIOR: { forward: 0.01, right: 0.03, height: 0.02 },
+      TEENAGER: { forward: 0.1, right: -0.02, height: 0.16 },
+      ADULT: { forward: 0.1, right: -0.3, height: 0.38 }
+    }
   },
   'pepito-original': {
-    idle: { forward: 0.16, right: -0.38, height: 0.43 },
-    walk: { forward: -0.28, right: -0.3, height: 0.35 }
+    idle: sameForAllStages({ forward: 0.16, right: -0.38, height: 0.43 }),
+    walk: {
+      JUNIOR: { forward: 0.01, right: -0.05, height: -0.01 },
+      TEENAGER: { forward: -0.01, right: -0.1, height: 0.03 },
+      ADULT: { forward: -0.09, right: -0.2, height: 0.17 }
+    }
   },
   'amebita-original': {
-    idle: { forward: 0.1, right: -0.4, height: 0.53 },
-    walk: { forward: -0.14, right: -0.54, height: 0.71 }
+    idle: sameForAllStages({ forward: 0.1, right: -0.4, height: 0.53 }),
+    walk: {
+      JUNIOR: { forward: -0.03, right: -0.05, height: 0.1 },
+      TEENAGER: { forward: -0.02, right: -0.1, height: 0.22 },
+      ADULT: { forward: 0.11, right: -0.29, height: 0.62 }
+    }
   },
   'fluflito-original': {
-    idle: { forward: 0.14, right: -0.46, height: 0.59 },
-    walk: { forward: -0.08, right: -0.44, height: 0.63 }
+    idle: sameForAllStages({ forward: 0.14, right: -0.46, height: 0.59 }),
+    walk: {
+      JUNIOR: { forward: -0.03, right: -0.02, height: 0.05 },
+      TEENAGER: { forward: 0.02, right: -0.04, height: 0.11 },
+      ADULT: { forward: 0.05, right: -0.25, height: 0.29 }
+    }
   }
 }
 
-export function carryOffsetForSpecies(species: string, state: AnimState = 'walk'): CarryOffset {
+export function carryOffsetForSpecies(species: string, state: AnimState = 'walk', stage: C.PetStage = 'ADULT'): CarryOffset {
   const key = C.SPROUT_SPECIES.includes(species) ? C.SPROUT_BASE : species
-  return CARRY_OFFSET_BY_SPECIES[key]?.[state] ?? DEFAULT_CARRY_OFFSET
+  return CARRY_OFFSET_BY_SPECIES[key]?.[state]?.[stage] ?? DEFAULT_CARRY_OFFSET
 }
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 
@@ -225,7 +271,7 @@ function launchMeteor(dir: Vector3, power: number): void {
 
   const entity = engine.addEntity()
   Transform.createOrReplace(entity, { position: from, scale: Vector3.scale(Vector3.One(), SCALE) })
-  applyBallShape(entity)
+  applyBallModel(entity)
   flight = {
     entity,
     from,
@@ -273,7 +319,8 @@ function carryWorldPos(petTransform: { position: Vector3; rotation: Quaternion }
 function carryPose(pet: Entity, species: string): Vector3 {
   const t = Transform.get(pet)
   const state: AnimState = getLogicalClip(pet) === 'idle' ? 'idle' : 'walk'
-  return carryWorldPos(t, carryOffsetForSpecies(species, state))
+  const stage = C.petStage(clientState.activePet?.size ?? 0)
+  return carryWorldPos(t, carryOffsetForSpecies(species, state, stage))
 }
 
 /** Pet reached the player: drop the ball on the floor, grant the play reward,
@@ -283,6 +330,7 @@ function dropFetch(): void {
   const pet = getLocalPet()
   const at = pet ? Transform.get(pet).position : flight.to
   Transform.getMutable(flight.entity).position = Vector3.create(at.x, C.PET_BASE_Y + GROUND_REST_Y, at.z)
+  setBallClip(flight.entity, C.BALL_BASE_CLIP) // carry's species walk clip -> resting pose
   flight.phase = 'dropped'
   flight.t = 0
   clientState.fetch.busy = false // ready to throw again
@@ -343,7 +391,16 @@ function flightSystem(dt: number): void {
     }
   } else if (flight.phase === 'carry') {
     const pet = getLocalPet()
-    if (pet) Transform.getMutable(flight.entity).position = carryPose(pet, clientState.activePet?.species ?? '')
+    if (pet) {
+      const t = Transform.getMutable(flight.entity)
+      t.position = carryPose(pet, clientState.activePet?.species ?? '')
+      // The Walk clip's baked bob animates the ball's own local node, so the
+      // ball entity needs the pet's rotation too — without it, that bob plays
+      // along raw world axes instead of the pet's actual forward/right, and
+      // swings a different way depending only on which way the pet happens
+      // to be facing.
+      t.rotation = Transform.get(pet).rotation
+    }
   } else if (flight.phase === 'dropped') {
     if (flight.t >= LINGER) {
       engine.removeEntity(flight.entity)
@@ -382,6 +439,12 @@ function landed(): void {
     () => {
       if (!flight) return
       flight.phase = 'carry'
+      // Grabbed it — switch to this species' "carried in mouth" walk clip
+      // (issue #221) for the walk back; dropFetch() switches it back once
+      // dropped. syncCarryClips also restarts the pet's own walk clip (see
+      // its doc comment) so the two 1.208s loops stay phase-locked instead
+      // of drifting.
+      syncCarryClips(flight.entity, clientState.activePet?.species ?? '', restartMoveClip)
       // Leg 2: carry it back to where the player is now, then drop it on the floor.
       const player = Transform.getOrNull(engine.PlayerEntity)
       const home = player ? Vector3.create(player.position.x, C.PET_BASE_Y, player.position.z) : landingPos
@@ -419,7 +482,7 @@ function carryBallSystem(): void {
       position: Vector3.create(HAND_BALL_X, HAND_BALL_Y, HAND_BALL_Z),
       scale: Vector3.scale(Vector3.One(), SCALE)
     })
-    applyBallShape(handBall)
+    applyBallModel(handBall)
   } else if (!wantBall && handBall) {
     engine.removeEntity(handBall)
     handBall = null
@@ -447,6 +510,17 @@ function fetchTouchInputSystem(): void {
     hideFetchTouchButton()
     touchButtonShown = false
   }
+}
+
+/** Starts the ball's species walk clip and restarts the carrying pet's own
+ *  walk clip in the same tick — both run the exact same 1.208s duration
+ *  (baked in by the artist), so starting them together keeps the two loops
+ *  phase-locked instead of drifting (the pet's own walk/run clip has been
+ *  playing uninterrupted since before the catch, so without this it'd
+ *  already be mid-cycle here). */
+function syncCarryClips(ballEntity: Entity, species: string, restartPetClip: () => void): void {
+  restartPetClip()
+  setBallClip(ballEntity, C.ballWalkClip(species))
 }
 
 export function setupPlay(): void {

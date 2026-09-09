@@ -2220,7 +2220,6 @@ function DebugCamPanel() {
   )
 }
 
-
 // ---------------------------------------------------------------------------
 // Feed tree minigame overlay (fruitGame.ts): "how to play" + arrows during
 // arrival/intro (before the player can move freely to catch anything), then a

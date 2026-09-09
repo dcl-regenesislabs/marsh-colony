@@ -298,6 +298,16 @@ export function yawOffsetForSpecies(species: string): number {
   return SPECIES_YAW_OFFSET[species] ?? 0
 }
 
+// Ball01.glb (the fetch-minigame ball, client/play.ts) ships one static
+// "Ball_Base" pose plus a per-family "carried in mouth while walking" clip —
+// Ball_<Fam>_Walk — keyed off the pet's HEAD family, same convention crosses
+// use for their own SPECIES_CLIPS above (the head family "wins").
+export const BALL_BASE_CLIP = 'Ball_Base'
+
+export function ballWalkClip(species: string): string {
+  return `Ball_${cap(speciesParts(species).head)}_Walk`
+}
+
 // Optional thumbnail shown in the adoption card circle. Add image paths as the
 // art lands; species without one fall back to a colored disc.
 const SPECIES_IMAGE: Record<string, string> = {
@@ -659,6 +669,7 @@ const STAGE_SCALE: Record<PetStage, number> = { JUNIOR: 0.7, TEENAGER: 0.9, ADUL
 export function stageScaleFor(size: number): number {
   return STAGE_SCALE[petStage(size)]
 }
+
 
 // Caretaker level -> reward table (data-driven; stubbed rewards).
 export interface LevelReward {

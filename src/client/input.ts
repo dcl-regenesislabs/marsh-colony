@@ -108,8 +108,8 @@ function setupCareQueue(): void {
 
 // DEBUG hotkeys. NOTE: DCL exposes only number keys 1-4 (IA_ACTION_3..6);
 // there is no key "5". Key "1" (IA_ACTION_3) is currently unbound — it used
-// to drive the skybox height-teleport shortcut and, after that, the carried-
-// egg hand calibration panel (issue #178), neither of which are needed now.
+// to drive the fetch-ball calibration panel (issue #221), removed now that
+// the ball's per-species/stage carry offsets are calibrated and hardcoded.
 function setupDebugHotkeys(): void {
   engine.addSystem(() => {
     // "2": jump straight into the Feed tree minigame, skipping the walk-to-tree
