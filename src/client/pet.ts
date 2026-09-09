@@ -476,7 +476,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.bathGame.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active
 }
 
 /**
@@ -586,6 +586,10 @@ function ensureLocalPet(): void {
     pointerEventsSystem.onPointerDown(
       { entity: localPet, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
       () => {
+        // Feed owns the pet's transform, camera and input while it is active.
+        // The staged pet remains visible beside the catch lane, but must not
+        // reopen its action panel from a world click during that sequence.
+        if (clientState.feedGame.active) return
         // While a freshly hatched pet is still awaiting the Keep/Discard decision,
         // the actions panel must stay closed: opening it lets the player run care
         // actions on a pet that isn't accepted into a slot yet, which bugs out.

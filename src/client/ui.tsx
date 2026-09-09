@@ -369,7 +369,7 @@ function PetPanel() {
   // Never show the actions panel while a hatchling is still pending Keep/Discard —
   // its actions would run on a pet that isn't accepted into a slot yet (bug). The
   // Keep/Discard modal owns this moment.
-  if (!pet || !clientState.petPanelOpen || hasPendingHatchling()) return <UiEntity />
+  if (!pet || !clientState.petPanelOpen || hasPendingHatchling() || clientState.feedGame.active) return <UiEntity />
 
   const care = (a: CareAction) => triggerCare(a)
   const contentW = S(700) - S(30) * 2 // LightModal inner width (card minus padding)
@@ -2089,7 +2089,6 @@ function MoveArrowButton(props: { side: 'left' | 'right' }) {
   )
 }
 
-const RESULTS_COUNT_MS = 1500
 function FeedEatingPanel() {
   const st = clientState.feedGame
   const isMobile = mobile()
@@ -2144,66 +2143,13 @@ function FeedEatingPanel() {
   )
 }
 
-function FeedResultsPanel() {
-  const st = clientState.feedGame
-  const elapsed = Date.now() - st.resultsAt
-  const progress = Math.max(0, Math.min(1, RESULTS_COUNT_MS > 0 ? elapsed / RESULTS_COUNT_MS : 1))
-  const shown = Math.round(progress * st.caught)
-  const fillFrac = Math.max(0, Math.min(1, (st.caught * Cfg.FEED_HUNGER_PER_FRUIT) / 100))
-  const barPct = Math.round(progress * fillFrac * 100)
-  const cardW = S(460)
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
-      uiBackground={{ color: C.scrim }}
-    >
-      <UiEntity
-        uiTransform={{
-          width: cardW,
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: S(24),
-          padding: { top: S(28), bottom: S(28), left: S(24), right: S(24) },
-          pointerFilter: 'block'
-        }}
-        uiBackground={{ color: C.panelBg }}
-      >
-        <OutlineLabel value="Fruits caught!" fontSize={S(28)} color={C.gold} width={cardW - S(48)} height={S(40)} textAlign="middle-center" />
-        <Label
-          value={`${shown}`}
-          fontSize={S(64)}
-          color={C.hunger}
-          textAlign="middle-center"
-          uiTransform={{ width: '100%', height: S(80), margin: { top: S(8) } }}
-        />
-        <Label value="Pet fed" fontSize={S(16)} color={C.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20), margin: { bottom: S(6) } }} />
-        <UiEntity uiTransform={{ width: cardW - S(80), height: S(24), borderRadius: S(12), margin: { bottom: S(26) } }} uiBackground={{ color: C.trackBg }}>
-          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: S(12) }} uiBackground={{ color: C.hunger }} />
-        </UiEntity>
-        <TactileButton
-          id="feed_results_exit"
-          label="Exit"
-          width={S(220)}
-          height={S(70)}
-          bg={C.green}
-          textColor={C.outline}
-          fontSize={S(26)}
-          radius={S(24)}
-          onClick={() => exitFeedResults()}
-        />
-      </UiEntity>
-    </UiEntity>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Feed tree minigame overlay (fruitGame.ts): "how to play" + arrows during
 // arrival/intro (before the player can move freely to catch anything), then a
 // fruit counter + countdown while catching (plus, on mobile, the custom
 // left/right move buttons in place of the native joystick). BACK bails early,
 // submitting whatever was caught so far (same as a natural timeout). Once the
-// round ends, FeedResultsPanel takes over instead (see below).
+// round ends, FeedEatingPanel presents the count-up and hunger bar.
 // ---------------------------------------------------------------------------
 
 // The feed HUD art is a 1024px sheet. Crop each card at its native aspect so

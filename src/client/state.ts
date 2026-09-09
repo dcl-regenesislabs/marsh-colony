@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, speciesLabel, type SpinReward } from '../shared/config'
 
 export type DialogState = {
   open: boolean
@@ -86,7 +86,6 @@ export const clientState: {
     resultsAt: number
     petSitPos: { x: number; y: number; z: number } | null
     petSitLook: { x: number; y: number; z: number } | null
-    hungerStart: number
     hungerTarget: number
     // Driven by fruitGame's tick while the final eat beat plays. Keeping it in
     // state makes the HUD fill continuous and tied to the cinematic clock.
@@ -148,7 +147,7 @@ export const clientState: {
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
-  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerStart: 0, hungerTarget: 0, hungerFillProgress: 0 },
+  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
@@ -421,21 +420,5 @@ export const actions = {
   },
   breed(partnerPetId: string, name = '', usePotion = false): void {
     room.send('breed', { partnerPetId, name, usePotion })
-  },
-  debugGrowAdult(): void {
-    room.send('debugGrowAdult', {})
   }
-}
-
-/** DEBUG/testing: grow the active pet to Adult + Lv5 instantly (optimistic +
- *  server). Bound to a hotkey in input.ts so breeding can be tested fast. */
-export function debugGrowAdultLocal(): void {
-  const pet = clientState.activePet
-  if (!pet) return
-  pet.careCount = Math.max(pet.careCount, 70)
-  pet.size = SIZE_MAX
-  pet.petXp = Math.max(pet.petXp, xpForLevel(5))
-  pet.petLevel = levelForXp(pet.petXp)
-  if (clientState.player) clientState.player.currency = Math.max(clientState.player.currency, slotPrice(clientState.player.petSlots))
-  actions.debugGrowAdult()
 }

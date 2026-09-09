@@ -517,7 +517,11 @@ function setFeedingAvatarHidden(hidden: boolean): void {
 }
 
 function fruitHandCalibrationForSpecies(species: string): FruitHandCalibration {
-  return FRUIT_HAND_PRESETS[species] ?? DEFAULT_FRUIT_HAND
+  // Bred pets play the animation of their HEAD family, so they share the
+  // matching original's hand-to-mouth calibration rather than falling back to
+  // an unrelated generic trajectory.
+  const { head } = Cfg.speciesParts(species)
+  return FRUIT_HAND_PRESETS[`${head}-original`] ?? DEFAULT_FRUIT_HAND
 }
 
 function fruitHandCalibration(): FruitHandCalibration | null {
@@ -528,7 +532,7 @@ function fruitHandCalibration(): FruitHandCalibration | null {
 function usesHeldFruitAnimation(species: string | undefined): boolean {
   // Pepito's baked eat action takes its head into the crate, which already
   // communicates the bite much better than a separate floating fruit.
-  return species !== 'pepito-original'
+  return !species || Cfg.speciesParts(species).head !== 'pepito'
 }
 
 function setDrawerFruitForCurrentBite(heldFruitVisible: boolean): void {
@@ -1108,6 +1112,10 @@ function showResults(): void {
   // Keep the completed card on screen. The feed-owned eat loop remains active
   // until Exit releases the complete feeding scene. Its reveal clock stays at
   // the beginning so the card never replays its entrance.
+  // A zero-catch result has no feeding phase to establish this reveal clock.
+  // Stamp it here so BACK and a natural zero-catch timeout use the same smooth
+  // card entrance instead of rendering at an unbounded elapsed time.
+  if (clientState.feedGame.resultsAt === 0) clientState.feedGame.resultsAt = Date.now()
   phase = 'results'
   clientState.feedGame.phase = 'results'
 }
@@ -1165,7 +1173,6 @@ function applyResults(): void {
   phaseAt = clock
   clientState.feedGame.phase = 'feeding'
   clientState.feedGame.resultsAt = Date.now()
-  clientState.feedGame.hungerStart = hungerStart
   clientState.feedGame.hungerTarget = hungerTarget
   clientState.feedGame.hungerFillProgress = 0
 }
@@ -1493,7 +1500,6 @@ export function startFruitGame(mascotaId: string): void {
     resultsAt: 0,
     petSitPos,
     petSitLook: laneMid,
-    hungerStart: 0,
     hungerTarget: 0,
     hungerFillProgress: 0
   }
