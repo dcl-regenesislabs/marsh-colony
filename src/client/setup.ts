@@ -30,6 +30,7 @@ import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
+import { preloadCreatureTextures } from './creatureSkins'
 import { setupPetSpeech } from './speech'
 import { setupNav } from './nav'
 
@@ -176,6 +177,7 @@ export function setupClient(): void {
   setupUi()
   applyDefaultTouchControls()
   setupInput()
+  preloadCreatureTextures() // warm the creature-skin PNG cache so runtime skins don't pop in
   setupPetSystems() // renders + simulates remote pets from server `presence`
   setupPlay() // Play action: throw an animated meteorite forward
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
