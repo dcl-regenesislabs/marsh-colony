@@ -2394,9 +2394,34 @@ function BathGameOverlay() {
           {getBubbles().map((b) => (
             <BathBubble key={`bub-${b.id}`} b={b} />
           ))}
-          {/* HUD: counter+timer / countdown / intro instructions */}
+          {/* HUD: counter+timer / countdown / intro instructions. Same layout as
+              the feed minigame — the live counter sits top-right (responsive,
+              mobile-friendly), intro/countdown are centered. */}
           <UiEntity
-            uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(220) }, width: S(440), height: popping ? S(70) : S(120), alignItems: 'center', justifyContent: 'center', borderRadius: S(20), pointerFilter: 'none' }}
+            uiTransform={
+              popping
+                ? {
+                    positionType: 'absolute',
+                    position: { top: S(160), right: S(24) },
+                    width: S(320),
+                    height: S(70),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: S(20),
+                    pointerFilter: 'none'
+                  }
+                : {
+                    positionType: 'absolute',
+                    position: { top: S(90), left: '50%' },
+                    margin: { left: -S(220) },
+                    width: S(440),
+                    height: S(120),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: S(20),
+                    pointerFilter: 'none'
+                  }
+            }
             uiBackground={{ color: C.panelBg }}
           >
             {popping ? (
