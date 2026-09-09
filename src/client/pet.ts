@@ -61,11 +61,18 @@ type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 let localPet: Entity | null = null
 let localSpecies = ''
 let localSkinKey = '' // species|rarity of the skin currently applied to localPet
-// After a reparent (carry pick-up / put-down) DCL reloads the GLTF instance a few
-// frames late and that reload drops the runtime skin override. Re-assert the skin
-// every frame until this ms deadline so it re-applies once the reload lands.
-let skinReassertUntil = 0
-const SKIN_REASSERT_MS = 1500
+// A carry pick-up / put-down reparents localPet, and DCL reloads the GLTF instance
+// a few frames later — that reload DROPS the runtime skin override, so the held pet
+// renders textureless. GltfContainerLoadingState is NO help here: the GLB is already
+// cached, so a reparent re-instantiates the mesh without an asset load, and the
+// state never leaves FINISHED — there's no engine signal for when the reload lands.
+// So we re-assert the skin EVERY frame over a short budget after each reparent, so
+// it re-lands the instant the reload finishes (no delay). Not throttled: this is one
+// LOCAL pet, once per bath — the GltfNodeModifiers writes are client-side CRDT on a
+// single entity and never networked, so their cost is negligible next to the UX hit
+// a throttle's delay would add.
+let reskinTicks = 0 // frames left to keep re-asserting the skin after a reparent
+const RESKIN_TICKS = 150 // ~2.5 s of coverage @60fps for the async reparent-reload (covers slow devices)
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
 // pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
@@ -546,6 +553,7 @@ function ensureLocalPet(): void {
       localPet = null
       localSpecies = ''
       localSkinKey = ''
+      reskinTicks = 0
       localPetId = ''
     }
     if (localTag) {
@@ -608,9 +616,15 @@ function ensureLocalPet(): void {
   // Re-skin on species OR rarity change (a same-species roster switch reuses the
   // entity but may need a different rarity skin).
   const skinKey = `${pet.species}|${pet.rarity}`
-  if (localSkinKey !== skinKey || Date.now() < skinReassertUntil) {
+  if (localSkinKey !== skinKey) {
     localSkinKey = skinKey
     applyCreatureSkin(localPet, pet.species, pet.rarity)
+  }
+  // Carry reparent recovery: re-assert the skin every frame over a short budget so
+  // it re-lands the instant the reparent-triggered reload finishes, whenever that is.
+  if (reskinTicks > 0) {
+    applyCreatureSkin(localPet, pet.species, pet.rarity)
+    reskinTicks--
   }
   // Keep visual scale synced to growth. This runs before updateLocalPet's
   // interaction branches every frame, so carry behavior must only change the
@@ -836,7 +850,7 @@ function attachPetToHands(pet: PetData): void {
   t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(pet.species) + PET_HOLD_YAW, 0)
   setHeldPetPointerCollider(false)
   setLocalTagVisible(false)
-  skinReassertUntil = Date.now() + SKIN_REASSERT_MS // reparent reloads the GLTF late; keep re-asserting the skin
+  reskinTicks = RESKIN_TICKS // reparent reloads the GLTF late; keep re-asserting the skin until it lands
 }
 
 /** Detach the pet back into world space (place at the tub, or cancel the carry); restore its tag.
@@ -858,7 +872,7 @@ function detachPetFromHands(): void {
   setHeldPetPointerCollider(true)
   setLocalTagVisible(true)
   if (carriedPetAnchor) AvatarAttach.deleteFrom(carriedPetAnchor) // stop riding the player's bone between baths
-  skinReassertUntil = Date.now() + SKIN_REASSERT_MS // reparent back to the scene reloads the GLTF too — re-assert the skin
+  reskinTicks = RESKIN_TICKS // reparent back to the scene reloads the GLTF too — keep re-asserting the skin
 }
 
 /** Bath step 1: pick the pet up into the player's hands to carry it to the tub. */

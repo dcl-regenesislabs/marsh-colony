@@ -1647,35 +1647,15 @@ function JukeboxPanel() {
 // so it never covers the top coin bar, the right-rail buttons, or a modal. The
 // server `notify` kind picks the accent color (error/reward/progress/info).
 const TOAST_ENTER_MS = 240 // slide-in from the right
-const TOAST_HOLD_MS = 2600 // fully-shown dwell
+const TOAST_HOLD_MS = 3100 // fully-shown dwell
 const TOAST_EXIT_MS = 300 // retract back to the right
 const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
+// Notification pill, drawn in code (no image): a cream fill inside a brown border,
+// both fully rounded. TOAST_BORDER is pre-S (applied with S() at render).
+const TOAST_BORDER = 5 // border thickness (pre-S)
+const TOAST_BORDER_COLOR: Color = { r: 0.525, g: 0.318, b: 0.173, a: 1 } // #86512C brown
+const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cream
 
-// notify kind -> accent color. Positive/progress events read green, rewards
-// gold, failures red; everything else falls back to a calm blue.
-const TOAST_ACCENT: Record<string, Color> = {
-  error: { r: 0.95, g: 0.42, b: 0.38, a: 1 },
-  cooldown: { r: 0.95, g: 0.42, b: 0.38, a: 1 },
-  reward: C.gold,
-  spin: C.gold,
-  meteor: C.gold,
-  daily: C.gold,
-  streak: C.gold,
-  giving: C.gold,
-  adopt: C.green,
-  breed: C.green,
-  level: C.green,
-  achievement: C.green,
-  feed: C.green,
-  roster: C.blue,
-  shop: C.blue,
-  swap: C.blue,
-  sleep: C.blue,
-  energy: C.blue
-}
-function toastAccent(kind: string): Color {
-  return TOAST_ACCENT[kind] ?? C.blue
-}
 const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
 const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 
@@ -1703,8 +1683,8 @@ function Toasts() {
   // Enter: from off-screen left -> rest. Exit: retract back off the left + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
-  const w = S(360)
-  const h = S(54)
+  const w = S(500)
+  const h = S(92)
   // Left inset: flush on desktop, nudged in on mobile so the native explorer's
   // corner HUD doesn't clip the left edge (the point of #213). NOT as far in as the
   // BackButton's S(210) — that reads too central for a notification; this is a
@@ -1724,13 +1704,16 @@ function Toasts() {
     alpha = p
   }
 
-  const accent = toastAccent(t.kind)
   // NOT wrapped in ScreenInsetArea: it sits in the same (non-inset) coordinate
   // space as the BackButton and the rest of the HUD (getUiRendererConfig's
   // screenInset:'none'), so the two use one frame of reference and the vertical
   // gap to the BACK button is a constant S(104), not inset-dependent. The mobile
   // leftInset + the 25% top already keep it clear of notches/rounded corners.
+  const border = S(TOAST_BORDER)
   return (
+    // Top-left, below the BACK button, slide-in from the left. Same coordinate space
+    // as the BackButton / rest of the HUD (no ScreenInsetArea). The pill is drawn in
+    // code: a brown border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiEntity
         uiTransform={{
@@ -1739,16 +1722,28 @@ function Toasts() {
           margin: { top: S(104), left: slide }, // top: clear the BACK button (S(90) + gap); left: slide-in offset
           width: w,
           height: h,
-          flexDirection: 'row',
+          padding: border, // this padding IS the visible brown border
+          borderRadius: h / 2,
           alignItems: 'center',
-          padding: { left: S(14), right: S(16) },
-          borderRadius: S(27),
+          justifyContent: 'center',
           pointerFilter: 'none'
         }}
-        uiBackground={{ color: withAlpha({ r: 0.12, g: 0.1, b: 0.09, a: 0.97 }, alpha) }}
+        uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, alpha) }}
       >
-        <UiEntity uiTransform={{ width: S(12), height: S(12), borderRadius: S(6), margin: { right: S(12) } }} uiBackground={{ color: withAlpha(accent, alpha) }} />
-        <Label value={t.message} fontSize={S(15)} color={withAlpha(C.text, alpha)} textAlign="middle-left" uiTransform={{ width: w - S(54), height: h - S(12) }} />
+        <UiEntity
+          uiTransform={{
+            width: '100%',
+            height: '100%',
+            borderRadius: h / 2 - border,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: { left: S(44), right: S(44) } // clear the rounded caps so text sits on the flat middle
+          }}
+          uiBackground={{ color: withAlpha(TOAST_CREAM, alpha) }}
+        >
+          <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
+        </UiEntity>
       </UiEntity>
     </UiEntity>
   )
