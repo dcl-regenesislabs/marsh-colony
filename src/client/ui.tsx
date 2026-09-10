@@ -38,7 +38,7 @@ import {
 } from './fruitGame'
 import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
-import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible } from './ui/anim'
+import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible, getPress, triggerPress } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
 import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './ui/dialog'
 import { endCaretakerIntroLock } from './caretaker'
@@ -1086,6 +1086,37 @@ function ShopPanel() {
 // is TAPPED to buy (enabled while affordable). Same art/size for all three so the
 // row stays uniform — the potion reuses the Magic Kibble bowl image as a stand-in.
 // Narrow enough that three fit inside the original inventory modal.
+// Illustrated BUY button — a 3-state horizontal sprite strip (0 = normal,
+// 1 = pressed, 2 = disabled). Sits under each inventory food card so a player can
+// restock the item they'd otherwise only be able to feed. Shares the tap-bounce
+// press system with TactileButton, swapping to the pressed frame while held.
+const BUY_BTN_SHEET = 'assets/images/revamp/buy_button_states.png'
+const BUY_BTN_FRAMES = 3
+const BUY_BTN_ASPECT = 660 / 214 // one state's cell aspect (~3.08)
+function BuyButton(props: { key?: string; id: string; width: number; enabled: boolean; onClick: () => void }) {
+  const height = Math.round(props.width / BUY_BTN_ASPECT)
+  const scale = props.enabled ? getPress(props.id) : 1
+  const frame = !props.enabled ? 2 : scale < 0.995 ? 1 : 0 // pressed frame during the tap bounce
+  const w = Math.round(props.width * scale)
+  const h = Math.round(height * scale)
+  return (
+    <UiEntity uiTransform={{ width: props.width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: props.enabled ? 'block' : 'none' }}>
+      <UiEntity
+        uiTransform={{ width: w, height: h }}
+        uiBackground={{ texture: { src: BUY_BTN_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(frame, BUY_BTN_FRAMES) }}
+        onMouseDown={
+          props.enabled
+            ? () => {
+                triggerPress(props.id)
+                props.onClick()
+              }
+            : undefined
+        }
+      />
+    </UiEntity>
+  )
+}
+
 function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: number[]; bowlSrc?: string; bowlAspect: number; bowlScale?: number; bowlTop?: number; count: number; enabled: boolean; onClick: () => void }) {
   const cardW = S(180)
   const cardH = Math.round(cardW / INV_CARD_ASPECT)
@@ -1128,21 +1159,59 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
   )
 }
 
+// One inventory column: the food/consumable card with a BUY button stacked
+// beneath it (or a matching-height spacer for cards bought by tapping, so the
+// columns bottom-align). Sized EXPLICITLY (width+height) so the row is laid out
+// deterministically — an auto-sized column left the button height ambiguous under
+// flex and it could collapse/clip; a fixed box always reserves its space.
+function InvColumn(props: { key?: string; width: number; height: number; children?: any }) {
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height, flexDirection: 'column', alignItems: 'center' }}>{props.children}</UiEntity>
+  )
+}
+
 function InventoryPanel() {
   const p = clientState.player
   const t1 = p?.inventory.tier1 ?? 0
   const t2 = p?.inventory.tier2 ?? 0
   const potions = p?.inventory.rarityPotions ?? 0
+  const coins = p?.currency ?? 0
   // The Rarity Potion is the only way to buy the breeding consumable while the
   // Shop is suspended (SideButtons() is empty). It's TAPPED to buy (150 coins) —
   // it's spent later by the breed that toggles it on, not "used" from here.
-  const canAffordPotion = (p?.currency ?? 0) >= Cfg.RARITY_POTION_PRICE
+  const canAffordPotion = coins >= Cfg.RARITY_POTION_PRICE
+  const price1 = Cfg.SHOP_ITEMS[0].price
+  const price2 = Cfg.SHOP_ITEMS[1].price
+  // Column geometry, computed here so the row is deterministic (see InvColumn).
+  const cardW = S(180)
+  const cardH = Math.round(cardW / INV_CARD_ASPECT)
+  const buyW = S(150)
+  const buyH = Math.round(buyW / BUY_BTN_ASPECT)
+  const colGap = S(10) // gap between a card and its BUY button
+  const colW = cardW + S(12) // card art + its own S(6) side margins
+  const colH = cardH + S(12) + colGap + buyH // card + margins + gap + button
+  const buy = (tier: number) => () => {
+    if (buyItemLocal(tier)) pushToast(`Bought ${Cfg.SHOP_ITEMS[tier - 1].label}!`)
+    else pushToast('Not enough coins!')
+    actions.buyItem(tier) // server is authoritative
+  }
   return (
-    <PetHudModal title="Inventory" subtitle="Tap food to feed your pet, or tap the potion to buy one for breeding." width={S(660)} height={S(500)} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
-        <InvCard key="inv-1" id="use_1" title={Cfg.SHOP_ITEMS[0].label} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { if (useItemLocal(1)) pushToast('Fed your pet!'); actions.useItem(1) }} />
-        <InvCard key="inv-2" id="use_2" title={Cfg.SHOP_ITEMS[1].label} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { if (useItemLocal(2)) pushToast('Fed your pet!'); actions.useItem(2) }} />
-        <InvCard key="inv-potion" id="buy_potion" title={`${Cfg.RARITY_POTION_LABEL}  ${Cfg.RARITY_POTION_PRICE}`} bowlSrc="assets/images/revamp/potion.png" bowlAspect={1} bowlScale={0.56} bowlTop={0.18} count={potions} enabled={canAffordPotion} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
+    <PetHudModal title="Inventory" subtitle="Tap food to feed your pet, or hit BUY to stock up." width={S(660)} height={S(520)} onClose={() => ui.close()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
+        <InvColumn width={colW} height={colH}>
+          <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { if (useItemLocal(1)) pushToast('Fed your pet!'); actions.useItem(1) }} />
+          <BuyButton id="buy_1" width={buyW} enabled={coins >= price1} onClick={buy(1)} />
+        </InvColumn>
+        <InvColumn width={colW} height={colH}>
+          <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { if (useItemLocal(2)) pushToast('Fed your pet!'); actions.useItem(2) }} />
+          <BuyButton id="buy_2" width={buyW} enabled={coins >= price2} onClick={buy(2)} />
+        </InvColumn>
+        <InvColumn width={colW} height={colH}>
+          {/* Potion is bought (never "used" from here — it's spent by breeding), so it
+              buys via its BUY button like the food, not by tapping the card. */}
+          <InvCard key="inv-potion" id="use_potion" title={`${Cfg.RARITY_POTION_LABEL}  ${Cfg.RARITY_POTION_PRICE}`} bowlSrc="assets/images/revamp/potion.png" bowlAspect={1} bowlScale={0.56} bowlTop={0.18} count={potions} enabled={potions > 0} onClick={() => pushToast('Rarity Potions are used when breeding')} />
+          <BuyButton id="buy_potion" width={buyW} enabled={canAffordPotion} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
+        </InvColumn>
       </UiEntity>
     </PetHudModal>
   )
