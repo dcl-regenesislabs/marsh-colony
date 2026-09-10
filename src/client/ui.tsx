@@ -41,7 +41,7 @@ import {
   debugCamIsClosePreview,
   debugCamPrint
 } from './fruitGame'
-import { getBubbles, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, type Bubble } from './bathGame'
+import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
@@ -2330,31 +2330,55 @@ function FeedGameOverlay() {
 // time to get the pet clean. Bubble positions/sizes come straight from the module
 // bubble list (getBubbles), which the bath tick mutates every frame.
 // ---------------------------------------------------------------------------
-const BUBBLE_FILL = { r: 0.5, g: 0.8, b: 0.98, a: 0.82 } // celeste
-const BUBBLE_SHINE = { r: 1, g: 1, b: 1, a: 0.55 }
-
 function BathBubble(props: { key?: string; b: Bubble }) {
   const b = props.b
   const size = S(b.r * 2)
+  // The floating bubble IS frame 0 of the pop sprite (a centered glossy bubble that
+  // fills ~96% of its cell), so tapping it flows straight into the pop animation.
   return (
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
         position: { left: `${b.x * 100}%`, top: `${b.y * 100}%` },
-        margin: { left: -size / 2, top: -size / 2 }, // center the circle on (x,y)
+        margin: { left: -size / 2, top: -size / 2 }, // center on (x,y)
         width: size,
         height: size,
-        borderRadius: size / 2
+        pointerFilter: 'block'
       }}
-      uiBackground={{ color: BUBBLE_FILL }}
+      uiBackground={{ texture: { src: BUBBLE_POP_SHEET }, textureMode: 'stretch', uvs: popFrameUvs(0, BUBBLE_POP_FRAMES) }}
       onMouseDown={() => popBubble(b.id)}
-    >
-      {/* little highlight so it reads as a bubble, not a flat disc */}
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { left: size * 0.22, top: size * 0.18 }, width: size * 0.26, height: size * 0.26, borderRadius: size * 0.13 }}
-        uiBackground={{ color: BUBBLE_SHINE }}
-      />
-    </UiEntity>
+    />
+  )
+}
+
+// Pop-splash: a short sprite-sheet animation played where a bubble burst. The
+// sheet is one horizontal row of BUBBLE_POP_FRAMES frames; we crop the current
+// frame's UVs by elapsed time. Sized a bit bigger than the bubble so the splash
+// reads as expanding outward.
+const BUBBLE_POP_SHEET = 'assets/images/bubbleFrame/spritesheet_6x1_512.png'
+const POP_SCALE = 1.6 // splash footprint vs the bubble diameter (sprays a bit beyond it)
+function popFrameUvs(i: number, total: number): number[] {
+  const uL = i / total
+  const uR = (i + 1) / total
+  return [uL, 0, uL, 1, uR, 1, uR, 0] // [bl, tl, tr, br] — full frame height, one column
+}
+function BathPop(props: { key?: string; p: PopFx }) {
+  const p = props.p
+  const t = (Date.now() - p.startAt) / BUBBLE_POP_MS // 0..1
+  const frame = Math.min(BUBBLE_POP_FRAMES - 1, Math.max(0, Math.floor(t * BUBBLE_POP_FRAMES)))
+  const size = S(p.r * 2 * POP_SCALE)
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { left: `${p.x * 100}%`, top: `${p.y * 100}%` },
+        margin: { left: -size / 2, top: -size / 2 }, // center the splash on the burst point
+        width: size,
+        height: size,
+        pointerFilter: 'none'
+      }}
+      uiBackground={{ texture: { src: BUBBLE_POP_SHEET }, textureMode: 'stretch', uvs: popFrameUvs(frame, BUBBLE_POP_FRAMES) }}
+    />
   )
 }
 
@@ -2403,6 +2427,10 @@ function BathGameOverlay() {
           {/* the bubbles — only score during 'popping', but they float during intro/countdown too */}
           {getBubbles().map((b) => (
             <BathBubble key={`bub-${b.id}`} b={b} />
+          ))}
+          {/* pop-splash sprite animations at each burst point */}
+          {getPops().map((p) => (
+            <BathPop key={`pop-${p.id}`} p={p} />
           ))}
           {/* HUD: counter+timer / countdown / intro instructions. Same layout as
               the feed minigame — the live counter sits top-right (responsive,
