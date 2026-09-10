@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, speciesLabel, type SpinReward } from '../shared/config'
 
 export type DialogState = {
   open: boolean
@@ -52,7 +52,7 @@ export const clientState: {
   lastTreatSentAt: number
   // Hold-to-pet gesture: active while the overlay is up; progress 0..1 fills
   // while the pointer is held and ebbs back when released.
-  petting: { active: boolean; progress: number }
+  petting: { active: boolean; progress: number; celebrationUntil: number }
   // Carrying an egg home: on adoption the egg is attached to the avatar and the
   // player must walk it home (`atHome` true within HOME_RADIUS) to hatch it.
   carryEgg: { active: boolean; species: string; name: string; atHome: boolean }
@@ -71,19 +71,25 @@ export const clientState: {
   // Feed tree minigame (fruitGame.ts): 'arrival' tracks the zoom-in cinematic,
   // 'intro' is the freeze+emote reveal beat where the player waits (parked)
   // until they tap Start, 'countdown' is the 3-2-1 after Start, 'catching' is
-  // the timed fruit-catching phase the HUD counter/timer reads from, 'results'
-  // is the post-round reveal (count-up + feed bar) before the player taps
-  // Exit. catchFlashUntil (Date.now() ms) briefly pulses the counter each time
-  // a fruit is caught; countdownAt/resultsAt (Date.now() ms) mark when those
-  // phases began, driving their respective animations.
+  // the timed fruit-catching phase the HUD counter/timer reads from, 'feeding'
+  // is the short pet-eating cinematic, and 'results' is the post-round reveal
+  // (count-up + feed bar) before the player taps Exit. catchFlashUntil
+  // (Date.now() ms) briefly pulses the counter each time a fruit is caught;
+  // countdownAt/resultsAt (Date.now() ms) mark the animated phases.
   feedGame: {
     active: boolean
-    phase: 'arrival' | 'intro' | 'countdown' | 'catching' | 'results'
+    phase: 'arrival' | 'intro' | 'countdown' | 'catching' | 'feeding' | 'results'
     caught: number
     timeLeft: number
     catchFlashUntil: number
     countdownAt: number
     resultsAt: number
+    petSitPos: { x: number; y: number; z: number } | null
+    petSitLook: { x: number; y: number; z: number } | null
+    hungerTarget: number
+    // Driven by fruitGame's tick while the final eat beat plays. Keeping it in
+    // state makes the HUD fill continuous and tied to the cinematic clock.
+    hungerFillProgress: number
   }
   // Bubble-bath minigame (see client/bathGame.ts). `popped` counts popped
   // bubbles, `timeLeft` the popping-phase clock; popFlashUntil (Date.now() ms)
@@ -120,9 +126,6 @@ export const clientState: {
   colonyPopulation: number
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
-  // DEBUG: fruit game camera calibration panel (fruitGame.ts's debugCam*),
-  // toggled by a debug hotkey while the minigame is active.
-  debugCamPanelOpen: boolean
 } = {
   myAddress: '',
   player: null,
@@ -139,12 +142,12 @@ export const clientState: {
   viewingPetAddress: null,
   incomingSwap: null,
   lastTreatSentAt: 0,
-  petting: { active: false, progress: 0 },
+  petting: { active: false, progress: 0, celebrationUntil: 0 },
   carryEgg: { active: false, species: '', name: '', atHome: false },
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
-  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
+  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
@@ -153,8 +156,7 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
-  leaderboard: [],
-  debugCamPanelOpen: false
+  leaderboard: []
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
@@ -418,21 +420,5 @@ export const actions = {
   },
   breed(partnerPetId: string, name = '', usePotion = false): void {
     room.send('breed', { partnerPetId, name, usePotion })
-  },
-  debugGrowAdult(): void {
-    room.send('debugGrowAdult', {})
   }
-}
-
-/** DEBUG/testing: grow the active pet to Adult + Lv5 instantly (optimistic +
- *  server). Bound to a hotkey in input.ts so breeding can be tested fast. */
-export function debugGrowAdultLocal(): void {
-  const pet = clientState.activePet
-  if (!pet) return
-  pet.careCount = Math.max(pet.careCount, 70)
-  pet.size = SIZE_MAX
-  pet.petXp = Math.max(pet.petXp, xpForLevel(5))
-  pet.petLevel = levelForXp(pet.petXp)
-  if (clientState.player) clientState.player.currency = Math.max(clientState.player.currency, slotPrice(clientState.player.petSlots))
-  actions.debugGrowAdult()
 }

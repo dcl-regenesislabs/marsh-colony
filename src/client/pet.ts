@@ -61,11 +61,18 @@ type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 let localPet: Entity | null = null
 let localSpecies = ''
 let localSkinKey = '' // species|rarity of the skin currently applied to localPet
-// After a reparent (carry pick-up / put-down) DCL reloads the GLTF instance a few
-// frames late and that reload drops the runtime skin override. Re-assert the skin
-// every frame until this ms deadline so it re-applies once the reload lands.
-let skinReassertUntil = 0
-const SKIN_REASSERT_MS = 1500
+// A carry pick-up / put-down reparents localPet, and DCL reloads the GLTF instance
+// a few frames later — that reload DROPS the runtime skin override, so the held pet
+// renders textureless. GltfContainerLoadingState is NO help here: the GLB is already
+// cached, so a reparent re-instantiates the mesh without an asset load, and the
+// state never leaves FINISHED — there's no engine signal for when the reload lands.
+// So we re-assert the skin EVERY frame over a short budget after each reparent, so
+// it re-lands the instant the reload finishes (no delay). Not throttled: this is one
+// LOCAL pet, once per bath — the GltfNodeModifiers writes are client-side CRDT on a
+// single entity and never networked, so their cost is negligible next to the UX hit
+// a throttle's delay would add.
+let reskinTicks = 0 // frames left to keep re-asserting the skin after a reparent
+const RESKIN_TICKS = 150 // ~2.5 s of coverage @60fps for the async reparent-reload (covers slow devices)
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
 // pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
@@ -75,9 +82,16 @@ let target = Vector3.create(199.2, 0, 231.8)
 let onArrive: (() => void) | null = null
 let interactTimer = 0
 let interactClip: PetClip = 'idle'
+// Feed owns the pet until its explicit Exit. The results card can outlive the
+// timed hunger-fill, so a duration alone must never make the eat loop fall
+// back to idle underneath that card.
+let eatCinematicActive = false
+let eatPlaybackSpeed = 1
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
+// See restartMoveClip() below.
+let moveClipRestartPending = false
 
 // Bath exit hop — placePetAtStation teleports the pet straight into the tub, which
 // sits above/inside walled geometry. Walking straight out afterward (normal 'follow'
@@ -93,6 +107,9 @@ const BATH_HOP_DISTANCE = 1.2 // metres covered horizontally while hopping out
 const BATH_HOP_HEIGHT = 0.6 // metres, peak arc height
 const BATH_SPLASH_HEIGHT = 0.08
 const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-out (NOT the whole minigame)
+// The petting camera tracks this raised focus point instead of the pet's feet,
+// keeping the happy reaction centered rather than looking down at the ground.
+const PETTING_CAMERA_LOOK_LIFT = 0.55
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -395,6 +412,23 @@ export function getLogicalClip(e: Entity): PetClip | undefined {
   return lastLogicalClip.get(e)
 }
 
+/** Force the active pet's currently-playing clip (walk/run while fetching,
+ *  most likely) to restart from frame 0 on the NEXT tick — used to phase-lock
+ *  a carried prop's own baked animation (the fetch ball's per-species "carried
+ *  in mouth" walk clip, play.ts, issue #221 — its clip runs the exact same
+ *  duration as the pet's own walk clip) to the pet's actual walk cycle at a
+ *  specific moment. setClip() no-ops when the resolved clip name hasn't
+ *  changed (see its curClip check above), so restarting an ALREADY-playing
+ *  clip needs this: drop it for one tick (clearing curClip so the very next
+ *  setClip call re-triggers a genuine stopped->playing edge) with
+ *  shouldReset armed, so the Animator snaps to frame 0 instead of resuming
+ *  mid-loop. Two-tick handoff (this call just flags it; movementTick applies
+ *  it) so the drop and the following setClip land in separate frames — doing
+ *  both within the same tick would collapse to no visible transition. */
+export function restartMoveClip(): void {
+  moveClipRestartPending = true
+}
+
 // ---------------------------------------------------------------------------
 // Movement
 // ---------------------------------------------------------------------------
@@ -461,7 +495,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.bathGame.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active
 }
 
 /**
@@ -546,6 +580,7 @@ function ensureLocalPet(): void {
       localPet = null
       localSpecies = ''
       localSkinKey = ''
+      reskinTicks = 0
       localPetId = ''
     }
     if (localTag) {
@@ -554,6 +589,7 @@ function ensureLocalPet(): void {
     }
     return
   }
+  const renderSpecies = pet.species
   if (!localPet) {
     localPet = engine.addEntity()
     // Reconnecting while the pet was left sleeping: resume it AT the bed,
@@ -565,10 +601,14 @@ function ensureLocalPet(): void {
       spawnPos = sleepRestPos(pet, spawnPos)
       mode = 'asleep'
     }
-    Transform.create(localPet, { position: spawnPos, scale: petScale(pet.species, stageScaleFor(pet.size)) })
+    Transform.create(localPet, { position: spawnPos, scale: petScale(renderSpecies, stageScaleFor(pet.size)) })
     pointerEventsSystem.onPointerDown(
       { entity: localPet, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
       () => {
+        // Feed owns the pet's transform, camera and input while it is active.
+        // The staged pet remains visible beside the catch lane, but must not
+        // reopen its action panel from a world click during that sequence.
+        if (clientState.feedGame.active) return
         // While a freshly hatched pet is still awaiting the Keep/Discard decision,
         // the actions panel must stay closed: opening it lets the player run care
         // actions on a pet that isn't accepted into a slot yet, which bugs out.
@@ -600,23 +640,29 @@ function ensureLocalPet(): void {
     reanchorLocalPet(pet)
   }
   localPetId = pet.id
-  if (localSpecies !== pet.species) {
-    localSpecies = pet.species
-    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
-    ensureAnimator(localPet, pet.species)
+  if (localSpecies !== renderSpecies) {
+    localSpecies = renderSpecies
+    GltfContainer.createOrReplace(localPet, { src: modelForSpecies(renderSpecies), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+    ensureAnimator(localPet, renderSpecies)
   }
   // Re-skin on species OR rarity change (a same-species roster switch reuses the
   // entity but may need a different rarity skin).
-  const skinKey = `${pet.species}|${pet.rarity}`
-  if (localSkinKey !== skinKey || Date.now() < skinReassertUntil) {
+  const skinKey = `${renderSpecies}|${pet.rarity}`
+  if (localSkinKey !== skinKey) {
     localSkinKey = skinKey
+    applyCreatureSkin(localPet, renderSpecies, pet.rarity)
+  }
+  // Carry reparent recovery: re-assert the skin every frame over a short budget so
+  // it re-lands the instant the reparent-triggered reload finishes, whenever that is.
+  if (reskinTicks > 0) {
     applyCreatureSkin(localPet, pet.species, pet.rarity)
+    reskinTicks--
   }
   // Keep visual scale synced to growth. This runs before updateLocalPet's
   // interaction branches every frame, so carry behavior must only change the
   // parent/pose and must never write a competing carry-specific scale.
   const t = Transform.getMutable(localPet)
-  const s = petScale(pet.species, stageScaleFor(pet.size))
+  const s = petScale(renderSpecies, stageScaleFor(pet.size))
   if (t.scale.x !== s.x) t.scale = s
 }
 
@@ -638,12 +684,61 @@ export function petReact(): void {
   interactTimer = 0.9
 }
 
+/** Restart the baked eating clip and explicitly keep it looping for the full
+ * Feed cinematic. `playSingleAnimation` supplies the reset-to-frame-zero; the
+ * state update below prevents the clip from stopping after its first pass. */
+function restartEatAnimation(): boolean {
+  if (!localPet || !Animator.has(localPet)) return false
+  const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
+  curClip.set(localPet, eatClip)
+  lastLogicalClip.set(localPet, 'eat')
+  Animator.playSingleAnimation(localPet, eatClip, true)
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === eatClip)
+  if (state) {
+    state.playing = true
+    state.loop = true
+    state.speed = eatPlaybackSpeed
+  }
+  return true
+}
+
+/** Sprout's baked clip needs an explicit loop boundary for the feed path. */
+export function restartFeedEatCycle(): boolean {
+  return restartEatAnimation()
+}
+
+/** End the feed-owned eat loop immediately when its results card is dismissed. */
+export function stopEatCinematic(): void {
+  eatCinematicActive = false
+  if (mode === 'interact' && interactClip === 'eat') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+}
+
+/** Place the pet in a short, in-world eating beat after a successful fruit run. */
+export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: number, playbackSpeed = 1): void {
+  if (!localPet) return
+  const t = Transform.getMutable(localPet)
+  t.position = Vector3.create(position.x, position.y, position.z)
+  t.rotation = yawToward(position, lookAt, yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'eat'
+  interactTimer = duration
+  eatCinematicActive = true
+  eatPlaybackSpeed = Math.max(0.1, Math.min(3, playbackSpeed))
+  restartEatAnimation()
+}
+
 // ---------------------------------------------------------------------------
 // Pet gesture (Adopt-Me style): lock the camera on the pet, then swipe left/right
 // across the screen (the pet is centered, so it reads as petting it) for a few
 // seconds. A dedicated virtual camera frames the pet; the avatar is frozen.
 // ---------------------------------------------------------------------------
 let petCam: Entity | null = null
+let petCamFocus: Entity | null = null
 
 /** Enter petting mode: frame the pet, face it to camera, freeze the avatar. */
 export function startPetting(): void {
@@ -652,15 +747,18 @@ export function startPetting(): void {
     pushToast(clientState.activePet.sleeping ? 'Your pet is asleep!' : 'Your pet is busy right now!')
     return
   }
-  clientState.petting.active = true
-  clientState.petting.progress = 0
+  clientState.petting = { active: true, progress: 0, celebrationUntil: 0 }
 
   const petPos = Transform.get(localPet).position
   // Camera sits a few metres out and slightly up, looking straight at the pet.
   const camPos = Vector3.create(petPos.x, petPos.y + 1.15, petPos.z + 2.8)
   if (!petCam) petCam = engine.addEntity()
+  if (!petCamFocus) petCamFocus = engine.addEntity()
+  Transform.createOrReplace(petCamFocus, {
+    position: Vector3.create(petPos.x, petPos.y + PETTING_CAMERA_LOOK_LIFT, petPos.z)
+  })
   Transform.createOrReplace(petCam, { position: camPos })
-  VirtualCamera.createOrReplace(petCam, { lookAtEntity: localPet })
+  VirtualCamera.createOrReplace(petCam, { lookAtEntity: petCamFocus })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
 
   // Turn the pet to face the camera so we see its front, and freeze it there.
@@ -676,21 +774,19 @@ function releasePettingView(): void {
 
 /** Leave petting mode without completing (BACK button). */
 export function cancelPetting(): void {
-  clientState.petting.active = false
-  clientState.petting.progress = 0
+  clientState.petting = { active: false, progress: 0, celebrationUntil: 0 }
   releasePettingView()
 }
 
-/** Finish petting: reward happiness, restore the view, exit petting mode. */
+/** Finish petting: reward happiness, then linger on the happy reaction. */
 function completePetting(): void {
   const st = clientState.petting
-  st.active = false
-  st.progress = 0
-  releasePettingView()
+  if (st.celebrationUntil > 0) return
+  st.progress = 1
+  st.celebrationUntil = Date.now() + C.PETTING_HAPPY_CINEMATIC_S * 1000
   const pet = clientState.activePet
   if (pet) pet.happiness = Math.min(100, pet.happiness + C.PET_SELF_HAPPINESS)
   actions.petSelf() // server is authoritative; this is the "happiness" action
-  petReact()
   pushToast('Your pet loved that!  +Happy')
 }
 
@@ -700,7 +796,7 @@ function completePetting(): void {
  */
 export function petTap(): void {
   const st = clientState.petting
-  if (!st.active) return
+  if (!st.active || st.celebrationUntil > 0) return
   st.progress += C.PET_TAP_FILL
   if (st.progress >= 1) completePetting()
 }
@@ -731,6 +827,10 @@ function updatePetting(dt: number): void {
   if (!st.active) return
   if (!clientState.activePet || !localPet) {
     cancelPetting()
+    return
+  }
+  if (st.celebrationUntil > 0) {
+    if (Date.now() >= st.celebrationUntil) cancelPetting()
     return
   }
   st.progress = gestureFill(st.progress, dt)
@@ -836,7 +936,7 @@ function attachPetToHands(pet: PetData): void {
   t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(pet.species) + PET_HOLD_YAW, 0)
   setHeldPetPointerCollider(false)
   setLocalTagVisible(false)
-  skinReassertUntil = Date.now() + SKIN_REASSERT_MS // reparent reloads the GLTF late; keep re-asserting the skin
+  reskinTicks = RESKIN_TICKS // reparent reloads the GLTF late; keep re-asserting the skin until it lands
 }
 
 /** Detach the pet back into world space (place at the tub, or cancel the carry); restore its tag.
@@ -858,7 +958,7 @@ function detachPetFromHands(): void {
   setHeldPetPointerCollider(true)
   setLocalTagVisible(true)
   if (carriedPetAnchor) AvatarAttach.deleteFrom(carriedPetAnchor) // stop riding the player's bone between baths
-  skinReassertUntil = Date.now() + SKIN_REASSERT_MS // reparent back to the scene reloads the GLTF too — re-assert the skin
+  reskinTicks = RESKIN_TICKS // reparent back to the scene reloads the GLTF too — keep re-asserting the skin
 }
 
 /** Bath step 1: pick the pet up into the player's hands to carry it to the tub. */
@@ -1299,10 +1399,20 @@ function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
 
-  // Hidden entirely during the Feed tree minigame — it just gets in the way
-  // while the player is dodging around to catch fruit.
-  if (clientState.feedGame.active) {
-    VisibilityComponent.createOrReplace(localPet, { visible: false })
+  // During the tree game the pet waits beside the lane, sitting and watching
+  // rather than disappearing. The final feeding shot takes over separately.
+  if (clientState.feedGame.active && clientState.feedGame.phase !== 'feeding' && clientState.feedGame.phase !== 'results') {
+    const sit = clientState.feedGame.petSitPos
+    if (sit) {
+      VisibilityComponent.createOrReplace(localPet, { visible: true })
+      const transform = Transform.getMutable(localPet)
+      transform.position = Vector3.create(sit.x, C.PET_BASE_Y, sit.z)
+      const look = clientState.feedGame.petSitLook ?? sit
+      transform.rotation = yawToward(transform.position, Vector3.create(look.x, C.PET_BASE_Y, look.z), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+      setClip(localPet, 'sit')
+    } else {
+      VisibilityComponent.createOrReplace(localPet, { visible: false })
+    }
     if (localTag) setTagVisible(localTag, false)
     return
   }
@@ -1469,6 +1579,7 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
+      if (interactClip === 'eat' && eatCinematicActive) break
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {
@@ -1518,7 +1629,20 @@ function updateLocalPet(dt: number): void {
 
   // Decide animation: interaction clip > movement > sleeping > idle.
   // (sleep only while standing still — a pet dozing mid-walk would just slide.)
-  if (mode === 'interact') setClip(localPet, interactClip)
+  // A pending restartMoveClip() wins this tick — drop whatever's playing and
+  // clear curClip so next tick's setClip below actually re-triggers it (see
+  // restartMoveClip's doc comment for why this can't happen in one tick).
+  if (moveClipRestartPending && Animator.has(localPet)) {
+    moveClipRestartPending = false
+    curClip.delete(localPet)
+    const a = Animator.getMutable(localPet)
+    for (const s of a.states) {
+      if (s.playing) {
+        s.playing = false
+        s.shouldReset = true
+      }
+    }
+  } else if (mode === 'interact') setClip(localPet, interactClip)
   else if (moved > 0.003) setClip(localPet, moveClip)
   else if (clientState.activePet?.sleeping) setClip(localPet, 'sleep')
   else setClip(localPet, 'idle')

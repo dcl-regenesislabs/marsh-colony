@@ -146,10 +146,10 @@ export function speciesLabel(species: string): string {
 // them. Species with no entry here are assumed to use the logical names as-is
 // (that's the alien models), with `sleep` falling back to idle.
 // ---------------------------------------------------------------------------
-export type PetClip = 'idle' | 'walk' | 'run' | 'eat' | 'dance' | 'gesture-positive' | 'gesture-negative' | 'sleep'
+export type PetClip = 'idle' | 'walk' | 'run' | 'eat' | 'dance' | 'gesture-positive' | 'gesture-negative' | 'sleep' | 'sit'
 
 /** Every logical clip, in the order the Animator states are declared. */
-export const PET_CLIPS: PetClip[] = ['idle', 'walk', 'run', 'eat', 'dance', 'gesture-positive', 'gesture-negative', 'sleep']
+export const PET_CLIPS: PetClip[] = ['idle', 'walk', 'run', 'eat', 'dance', 'gesture-positive', 'gesture-negative', 'sleep', 'sit']
 
 // All four families share one rig LAYOUT — the same seven clips, each just
 // prefixed with the family name: <Fam>_Idle / _Walk / _Eat / _Happy / _SitIdle
@@ -164,7 +164,8 @@ function familyClips(prefix: string): Record<PetClip, string> {
     dance: `${prefix}_Happy`,
     'gesture-positive': `${prefix}_Happy`,
     'gesture-negative': `${prefix}_Sad`,
-    sleep: `${prefix}_Sleep`
+    sleep: `${prefix}_Sleep`,
+    sit: `${prefix}_SitIdle`
   }
 }
 
@@ -183,7 +184,7 @@ const SPECIES_CLIPS: Record<string, Partial<Record<PetClip, string>>> = {
 export function clipForSpecies(species: string, clip: PetClip): string {
   const map = SPECIES_CLIPS[species]
   if (map) return map[clip] ?? map.idle ?? 'idle'
-  return clip === 'sleep' ? 'idle' : clip // default convention: logical name IS the clip name
+  return clip === 'sleep' || clip === 'sit' ? 'idle' : clip // default convention: logical name IS the clip name
 }
 
 /** Distinct GLB clip names for a species — what its Animator states are built from. */
@@ -296,6 +297,16 @@ const SPECIES_YAW_OFFSET: Record<string, number> = {}
 
 export function yawOffsetForSpecies(species: string): number {
   return SPECIES_YAW_OFFSET[species] ?? 0
+}
+
+// Ball01.glb (the fetch-minigame ball, client/play.ts) ships one static
+// "Ball_Base" pose plus a per-family "carried in mouth while walking" clip —
+// Ball_<Fam>_Walk — keyed off the pet's HEAD family, same convention crosses
+// use for their own SPECIES_CLIPS above (the head family "wins").
+export const BALL_BASE_CLIP = 'Ball_Base'
+
+export function ballWalkClip(species: string): string {
+  return `Ball_${cap(speciesParts(species).head)}_Walk`
 }
 
 // Optional thumbnail shown in the adoption card circle. Add image paths as the
@@ -417,6 +428,9 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
+/** Three deliberately unhurried bites; the pet and fruit path slow together. */
+export const FEED_EAT_CINEMATIC_S = 6.6
+
 /** Server-side per-action cooldown (ms) to stop spam. */
 export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {
   feed: 8000,
@@ -476,6 +490,8 @@ export const PET_SELF_COOLDOWN_MS = 1500
 export const PET_GESTURE_SECONDS = 3 // swipe time to fill from empty to full
 export const PET_GESTURE_DECAY_FACTOR = 0.5 // ebb rate (× fill rate) while idle
 export const PET_SWIPE_EPS = 2 // min |screenDelta.x| (px) counted as swiping
+/** Celebration beat after completing the petting gesture. */
+export const PETTING_HAPPY_CINEMATIC_S = 3
 // Mobile fallback: the app has no cursor-drag yet, so the bar fills by TAPPING
 // the pet instead of swiping. Each tap adds this much (≈ 1/PET_TAP_FILL taps).
 export const PET_TAP_FILL = 0.16
@@ -659,6 +675,7 @@ const STAGE_SCALE: Record<PetStage, number> = { JUNIOR: 0.7, TEENAGER: 0.9, ADUL
 export function stageScaleFor(size: number): number {
   return STAGE_SCALE[petStage(size)]
 }
+
 
 // Caretaker level -> reward table (data-driven; stubbed rewards).
 export interface LevelReward {

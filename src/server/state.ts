@@ -504,20 +504,6 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   return { notes: [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!` }], rarity, species: child.species, name: child.name }
 }
 
-/** DEBUG/testing: grow the active pet straight to Adult + level 5 so breeding
- *  can be tested without days of care. Sets careCount/size and XP to match. */
-export function debugGrowAdult(p: PlayerData): Notify[] {
-  const pet = activePet(p)
-  if (!pet) return [{ kind: 'error', message: 'No active pet' }]
-  pet.careCount = Math.max(pet.careCount, 70) // keeps size maxed even after care
-  pet.size = C.SIZE_MAX // Adult (>= PET_STAGE_ADULT_SIZE)
-  pet.petXp = Math.max(pet.petXp, C.xpForLevel(5))
-  pet.petLevel = C.levelForXp(pet.petXp)
-  const nextSlot = C.slotPrice(p.petSlots)
-  p.currency = Math.max(p.currency, nextSlot) // enough to unlock the next pet slot
-  return [{ kind: 'adopt', message: `DEBUG: ${pet.name} is now Adult (Lv ${pet.petLevel}), ${nextSlot} coins — breeding + slot ${p.petSlots + 1} unlocked.` }]
-}
-
 /** Shared tail for a completed (non-sleep) care action: apply the stat effects,
  *  grow/level/reward the pet + caretaker, and check achievements. Shared by
  *  careAction and feedFromMinigame so this logic can't drift between them. */
