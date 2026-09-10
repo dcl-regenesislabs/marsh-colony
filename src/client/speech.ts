@@ -48,26 +48,37 @@ const LINE_H = FONT_SIZE * M_PER_FONT * 1.22
 const MAX_TEXT_W = 1.6
 const MIN_TEXT_W = 0.6
 
-// Custom cloud bubble art (hand-drawn: scalloped outline + a tail at the bottom,
-// white opaque interior on transparent). Organic edges rule out 9-slicing, so it
-// renders as ONE stretched plane — clouds tolerate stretch well, and the tail is
-// baked in (no separate tail planes anymore).
-const BUBBLE_SRC = 'assets/images/bubble.png'
-// The writable belly is only part of the PNG's bounding box: the scalloped rim
-// eats the sides, and the tail eats the bottom. Grow the plane so the wrapped
-// text fits INSIDE that belly, and lift the text up so it clears the tail.
-const INTERIOR_W = 0.6 // text width uses ~60% of the plane width
-const INTERIOR_H = 0.46 // text height uses ~46% of the plane height
-const TEXT_RISE = 0.1 // lift the text this fraction of the plane height (clear the tail)
+// Rounded-rect bubble art with a tail (1247x705 native), NOT the old organic
+// cloud — flat edges mean it does NOT tolerate non-uniform stretch the way
+// the cloud did, so unlike the old art this renders as a plane that always
+// keeps the image's own aspect ratio (BUBBLE_ASPECT), growing uniformly
+// around the text instead of stretching W and H independently.
+// Horizontally-flipped copy of the source art (new_bubble.png) — the tail in
+// the original sits right-of-center, which put the bubble body to the LEFT
+// of the pet; flipping the actual PNG (rather than a negative Transform
+// scale, which risks silently backface-culling a single-sided plane) puts
+// the tail left-of-center instead, so the body ends up on the pet's RIGHT.
+const BUBBLE_SRC = 'assets/images/new_bubble_flipped.png'
+const BUBBLE_ASPECT = 1247 / 705
+// The writable interior is only part of the PNG's bounding box: the border
+// eats a thin margin on the sides/top, and the tail hangs below the rounded
+// rect eating a big chunk of the bottom. Measured directly off the PNG
+// (interior cream fill: x=[63,1186] of 1247, y=[53,508] of 705, well clear of
+// the tail which only starts past y=528) then given a bit of padding.
+const INTERIOR_W_FRAC = 0.8 // fraction of the plane's width usable for text
+const INTERIOR_H_FRAC = 0.5 // fraction of the plane's height usable for text (well under the measured cream fraction — the tail eats the rest of the bounding box)
+// Lift the text this fraction of the plane's height so it centers on the
+// RECT BODY, not the plane's own bounding-box center (which sits lower,
+// since that box also includes the tail hanging below the rect).
+const TEXT_RISE = 0.1
 const MIN_PLANE_W = 1.0
-const MIN_PLANE_H = 0.9
 
 // Depth order: the camera sits on the -Z side of a billboarded entity, so a
-// smaller z is closer to the viewer. The cloud sits behind the text.
+// smaller z is closer to the viewer. The bubble art sits behind the text.
 const Z_BODY = 0.02
 const Z_TEXT = -0.05
 
-const COL_TEXT = Color4.create(0.18, 0.14, 0.12, 1)
+const COL_TEXT = Color4.create(0.33, 0.235, 0.19, 1) // brown, matches the bubble art's own border ink
 
 // Pop animation + how the bubble sits above the pet.
 const IN_TIME = 0.22
@@ -98,11 +109,15 @@ const MOBILE_SCALE = 1.35
 // offsetting the ROOT in world-X only lines the tail up from one angle. Instead we
 // slide the PLANE sideways in its OWN local X until the baked tail tip sits
 // centered under the root (the pet's head) — then it points at the pet from every
-// angle, with the cloud body floating off to that side. This fraction of the plane
-// width, and the vertical nudge below, were dialed in live over a test bubble.
-const bubbleXFrac = 0.284
-// Extra vertical nudge (world metres, scaled with the bubble). Negative lowers it.
-const bubbleYOffset = -0.7
+// angle, with the bubble body floating off to that side. Flipping the art (see
+// BUBBLE_SRC) also flips which side that lands on: the tail's now left-of-
+// center, so this is positive to slide the plane RIGHT and recenter it — puts
+// the body on the pet's right instead of its left. Above the mirrored estimate
+// (~+0.18) on top, nudged further right on request.
+const bubbleXFrac = 0.26
+// Extra vertical nudge (world metres, scaled with the bubble). Negative lowers
+// it. Raised a bit from the original -0.7 (dialed in over the old cloud bubble).
+const bubbleYOffset = -0.5
 
 // ---------------------------------------------------------------------------
 // Text measuring / wrapping
@@ -215,10 +230,15 @@ function layout(b: Bubble, text: string): void {
   const { lines, width } = wrap(text)
   const textW = width
   const textH = lines.length * LINE_H
-  // Grow the cloud so the text fits inside the writable belly (the scalloped rim
-  // and the tail take up the rest of the PNG's bounding box).
-  const w = Math.max(textW / INTERIOR_W, MIN_PLANE_W)
-  const h = Math.max(textH / INTERIOR_H, MIN_PLANE_H)
+  // Uniform-aspect sizing (BUBBLE_ASPECT) — unlike the old cloud art, this
+  // bubble keeps its own proportions at any size. Work out how wide the plane
+  // would need to be to satisfy EACH dimension on its own (height converted to
+  // an equivalent width via the fixed aspect), then take the larger — that's
+  // the smallest plane that fits the text in both directions at once.
+  const wForWidth = textW / INTERIOR_W_FRAC
+  const wForHeight = (textH / INTERIOR_H_FRAC) * BUBBLE_ASPECT
+  const w = Math.max(MIN_PLANE_W, wForWidth, wForHeight)
+  const h = w / BUBBLE_ASPECT
   b.w = w
   b.h = h
   Transform.getMutable(b.img).scale = Vector3.create(w, h, 1)
@@ -228,12 +248,12 @@ function layout(b: Bubble, text: string): void {
   // Slack around the measured block: centered alignment keeps it on the origin.
   t.width = textW + 0.6
   t.height = textH + 0.4
-  // Slide the cloud + its text sideways so the tail centers under the root, and
-  // lift the text into the belly, clear of the tail baked into the PNG's bottom.
+  // Slide the bubble + its text sideways so the tail centers under the root,
+  // and lift the text onto the rect body, clear of the tail hanging below it.
   reapplyX(b)
 }
 
-/** Position the cloud + text in the root's local X so the tail centers under it. */
+/** Position the bubble art + text in the root's local X so the tail centers under it. */
 function reapplyX(b: Bubble): void {
   Transform.getMutable(b.img).position = Vector3.create(bubbleXFrac * b.w, 0, Z_BODY)
   Transform.getMutable(b.label).position = Vector3.create(bubbleXFrac * b.w, b.h * TEXT_RISE, Z_TEXT)

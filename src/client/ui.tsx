@@ -639,6 +639,13 @@ const KEEP_BUTTON_ICON = 'assets/images/revamp/keepbutton.png'
 const DISCARD_BUTTON_ICON = 'assets/images/revamp/discardbutton.png'
 const KEEP_DISCARD_ASPECT = 443 / 336
 
+// Hatch/Bath action button art — same idea, sized off each image's own native
+// ratio (hatch is 671x323, bath is 812x323) so neither gets stretched.
+const HATCH_BUTTON_ICON = 'assets/images/hatch_button.png'
+const BATH_BUTTON_ICON = 'assets/images/bath button.png'
+const HATCH_BUTTON_ASPECT = 671 / 323
+const BATH_BUTTON_ASPECT = 812 / 323
+
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
@@ -2845,11 +2852,11 @@ function CarryHatchButton() {
   // While walking home there's no fixed banner — the "take your egg home"
   // guidance now rides the toast pipeline (fired when the flow starts).
   if (!st.atHome) return <UiEntity />
-  const bw = S(300)
   const bh = S(92)
+  const bw = Math.round(bh * HATCH_BUTTON_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
-      <TactileButton id="carry_hatch" label="Hatch" width={bw} height={bh} bg={C.green} textColor={C.outline} fontSize={S(34)} radius={S(26)} pulse onClick={() => beginHatchFromCarry()} />
+      <TactileButton id="carry_hatch" label="" texture={HATCH_BUTTON_ICON} width={bw} height={bh} pulse onClick={() => beginHatchFromCarry()} />
     </UiEntity>
   )
 }
@@ -2859,8 +2866,8 @@ function CarryHatchButton() {
 function BathButton() {
   const st = clientState.carryPet
   if (!st.active) return <UiEntity />
-  const bw = S(300)
   const bh = S(92)
+  const bw = Math.round(bh * BATH_BUTTON_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {/* BACK — cancel the bath and just keep the pet following */}
@@ -2872,7 +2879,7 @@ function BathButton() {
       ) : (
         // At the tub — place the pet.
         <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
-          <TactileButton id="place_bath" label="Bath" width={bw} height={bh} bg={C.hygiene} textColor={C.outline} fontSize={S(34)} radius={S(26)} pulse onClick={() => placePetAtStation()} />
+          <TactileButton id="place_bath" label="" texture={BATH_BUTTON_ICON} width={bw} height={bh} pulse onClick={() => placePetAtStation()} />
         </UiEntity>
       )}
     </UiEntity>
