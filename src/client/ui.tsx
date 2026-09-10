@@ -143,6 +143,14 @@ export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 
   Object.assign(uiState, patch)
 }
 
+// True while any big modal/panel owns the screen (inventory, animal actions,
+// swap offer, passport, adopt, shop, etc.) — used to hold off the toast queue
+// (#186) and to hide the bottom nav so its icons don't poke through under/over
+// whatever's open.
+function bigUiOpen(): boolean {
+  return uiState.panel !== 'none' || clientState.dialog.open || clientState.petPanelOpen || clientState.viewingPetAddress !== null || clientState.incomingSwap !== null
+}
+
 // ---------------------------------------------------------------------------
 // Top HUD bars — name+level, coins, colony pets count. Three separate pills
 // using the hud.png sprites, laid out in a row. Tapping the name/level bar
@@ -339,7 +347,7 @@ function StageProgress(props: { size: number; color: Color }) {
 // Snapshot + rarity + growth stage — shared by the owner's PetPanel and the
 // read-only RemotePetPanel so both "passports" look consistent. `name`/`level`
 // are optional: PetPanel passes them to show its header inline (the hud2 card has
-// no separate title bar); RemotePetPanel leaves them off since its LightModal
+// no separate title bar); RemotePetPanel leaves them off since its PetHudModal
 // title already shows the name/level.
 function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; width: number; name?: string; level?: number }) {
   const img = Cfg.speciesImage(props.species)
@@ -546,7 +554,7 @@ function RemotePetPanel() {
   if (!entry) return <UiEntity />
   const contentW = S(560) - S(30) * 2
   return (
-    <LightModal title={`${entry.name}  ·  Lv ${entry.level}`} width={S(560)} height={S(470)} onClose={() => (clientState.viewingPetAddress = null)}>
+    <PetHudModal title={`${entry.name}  ·  Lv ${entry.level}`} width={S(560)} height={S(470)} onClose={() => (clientState.viewingPetAddress = null)}>
       <PetIdentityRow species={entry.species} rarity={entry.rarity} size={entry.size} width={contentW} />
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'column', margin: { top: S(4) } }}>
         <StatRow label="Mood" value={entry.mood} color={C.happy} width={contentW} />
@@ -592,7 +600,7 @@ function RemotePetPanel() {
           clientState.viewingPetAddress = null
         }}
       />
-    </LightModal>
+    </PetHudModal>
   )
 }
 
@@ -608,7 +616,7 @@ function SwapOfferPanel() {
     clientState.incomingSwap = null
   }
   return (
-    <LightModal title="Swap Offer!" width={S(600)} height={S(560)} onClose={() => respond(false)}>
+    <PetHudModal title="Swap Offer!" width={S(600)} height={S(560)} onClose={() => respond(false)}>
       <Label
         value={`${offer.fromName} offers their pet for your ${offer.wantedPetName}`}
         fontSize={S(17)}
@@ -628,7 +636,7 @@ function SwapOfferPanel() {
         <TactileButton id="swap_decline" label="Decline" width={S(200)} height={S(64)} bg={LOC.rose} textColor={LOC.white} fontSize={S(22)} radius={S(18)} margin={{ right: S(10) }} onClick={() => respond(false)} />
         <TactileButton id="swap_accept" label="Accept" width={S(200)} height={S(64)} bg={LOC.green} textColor={LOC.white} fontSize={S(22)} radius={S(18)} pulse margin={{ left: S(10) }} onClick={() => respond(true)} />
       </UiEntity>
-    </LightModal>
+    </PetHudModal>
   )
 }
 
@@ -651,10 +659,11 @@ const BATH_BUTTON_ASPECT = 812 / 323
 // ---------------------------------------------------------------------------
 function BottomNav() {
   const p = clientState.player
-  // Hidden while a dialog is open — the dialog sits where these buttons are.
-  // Also hidden in Fetch mode, while carrying an egg or the pet, and during the
-  // hatch animation (so Keep/Discard only appears once the newborn has emerged).
-  if (!p || clientState.dialog.open || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) return <UiEntity />
+  // Hidden while any big panel/dialog is open (bigUiOpen) — it sits where these
+  // buttons are, or on top of them. Also hidden in Fetch mode, while carrying an
+  // egg or the pet, and during the hatch animation (so Keep/Discard only appears
+  // once the newborn has emerged).
+  if (!p || bigUiOpen() || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) return <UiEntity />
   const bh = Sbtn(72)
 
   // Just hatched: a new pet is waiting on a Keep/Discard decision. It takes over
@@ -1696,13 +1705,7 @@ function Toasts() {
   // Hold the queue while a panel/modal/dialog owns the screen, so a toast can't
   // paint over open UI (the #186 overlap complaint). Nothing is shifted or shown
   // until they close, then the queue resumes.
-  const overlayOpen =
-    uiState.panel !== 'none' ||
-    clientState.dialog.open ||
-    clientState.petPanelOpen ||
-    clientState.viewingPetAddress !== null ||
-    clientState.incomingSwap !== null
-  if (overlayOpen) return <UiEntity />
+  if (bigUiOpen()) return <UiEntity />
   if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
     const next = clientState.toasts.shift()!
     clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }
@@ -2969,16 +2972,18 @@ const Root = () => {
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <TopBars />
-        <RemotePetPanel />
-        <SwapOfferPanel />
         <SideButtons />
         <BottomNav />
         <FetchOverlay />
         <CarryHatchButton />
         <BathButton />
         <FeedErrandOverlay />
-        {/* Rendered after the HUD chrome (side buttons, bottom nav) so it paints
-            on top of them instead of the nav icons poking through over it. */}
+        {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
+            on top of it instead of the nav icons poking through over them. Moot
+            now that bigUiOpen() hides the nav while these are open, but keeps
+            the same defensive ordering PetPanel already relies on. */}
+        <RemotePetPanel />
+        <SwapOfferPanel />
         <PetPanel />
         {uiState.panel === 'adopt' && <AdoptPanel />}
         {uiState.panel === 'breedName' && <BreedNamePanel />}
