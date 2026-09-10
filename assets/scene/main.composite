@@ -58,27 +58,6 @@
         "serializationType": "transform"
       },
       "data": {
-        "512": {
-          "json": {
-            "position": {
-              "x": 203.96754,
-              "y": 0,
-              "z": 228.6513
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "rotation": {
-              "w": 1,
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "parent": 0
-          }
-        },
         "513": {
           "json": {
             "position": {
@@ -1895,12 +1874,6 @@
         "protocolBuffer": "PBGltfContainer"
       },
       "data": {
-        "512": {
-          "json": {
-            "src": "models/meteorite_animated.glb",
-            "visibleMeshesCollisionMask": 3
-          }
-        },
         "513": {
           "json": {
             "src": "assets/scene/Models/Caretaker.glb",
@@ -2441,11 +2414,6 @@
         "serializationType": "map"
       },
       "data": {
-        "512": {
-          "json": {
-            "value": "meteorite_animated"
-          }
-        },
         "513": {
           "json": {
             "value": "Caretaker.glb"
@@ -2964,7 +2932,6 @@
                 "entity": 0,
                 "open": true,
                 "children": [
-                  512,
                   522,
                   525,
                   527,
@@ -3006,10 +2973,6 @@
                   590,
                   592
                 ]
-              },
-              {
-                "entity": 512,
-                "children": []
               },
               {
                 "entity": 522,

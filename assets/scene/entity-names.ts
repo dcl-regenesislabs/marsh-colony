@@ -77,7 +77,6 @@ export enum EntityNames {
   lane_2 = "lane_2",
   lane_3 = "lane_3",
   lane_4 = "lane_4",
-  meteorite_animated = "meteorite_animated",
   mountain01_glb = "mountain01.glb",
   mountain01_glb_2 = "mountain01.glb_2",
   mountain01_glb_3 = "mountain01.glb_3",

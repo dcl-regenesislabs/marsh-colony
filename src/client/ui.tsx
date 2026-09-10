@@ -9,7 +9,7 @@ import ReactEcs, { ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } f
 import { engine, InputAction } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
-import { actions, clientState, discardHatchling, keepHatchling, pushToast, serverConnected, switchActivePet, hasPendingHatchling } from './state'
+import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
   setFollow,
   startPetting,
@@ -1403,45 +1403,6 @@ function SpinPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Server connection indicator — dev/debug. Green while the authoritative server
-// is answering; a red warning when it goes quiet (we're on local sim only, so
-// nothing persists).
-// ---------------------------------------------------------------------------
-const WARN_RED: Color = { r: 0.9, g: 0.26, b: 0.2, a: 1 }
-
-function ServerStatus() {
-  const ok = serverConnected()
-  return (
-    <UiEntity
-      uiTransform={{
-        positionType: 'absolute',
-        position: { bottom: S(10), right: S(12) },
-        height: S(30),
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: { left: S(8), right: S(12) },
-        borderRadius: S(15),
-        pointerFilter: 'none'
-      }}
-      uiBackground={{ color: ok ? C.panelBg : WARN_RED }}
-    >
-      <UiEntity
-        uiTransform={{ width: S(10), height: S(10), borderRadius: S(5), margin: { right: S(7) } }}
-        uiBackground={{ color: ok ? C.green : C.text }}
-      />
-      <Label
-        value={ok ? 'Server' : 'Server offline — not saving'}
-        fontSize={S(12)}
-        color={C.text}
-        textAlign="middle-left"
-        textWrap="nowrap"
-        uiTransform={{ height: S(20) }}
-      />
-    </UiEntity>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Daily reward — a login-streak ladder shown when you crack open the meteor.
 // TODAY is claimable; the following days preview what you'd get if you keep
 // coming back. Claim! gives the reward; Watch Ad grants 2x (ad is a stub).
@@ -1742,9 +1703,18 @@ function Toasts() {
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
 
+  // Toasts only ever mount in Root's default branch (petting/hatch/feedGame/
+  // bathGame each own the whole screen instead), where a BackButton shows up
+  // in exactly these three spots — FetchOverlay, BathButton (carry-to-bath),
+  // FeedErrandOverlay. When one's actually up, rest BELOW it so the two never
+  // overlap; otherwise sit AT the same height the button would be, instead of
+  // leaving that vertical space empty.
+  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active
+
   // Slide in from the LEFT edge + fade, resting anchored top-left just below where
-  // the BACK button sits (top ~25% + its S(90) height), so it never covers it.
-  // Enter: from off-screen left -> rest. Exit: retract back off the left + fade.
+  // the BACK button sits (top ~25% + its S(90) height) when one's showing, so it
+  // never covers it. Enter: from off-screen left -> rest. Exit: retract back off
+  // the left + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
   const w = S(500)
@@ -1783,7 +1753,7 @@ function Toasts() {
         uiTransform={{
           positionType: 'absolute',
           position: { top: '25%', left: leftInset },
-          margin: { top: S(104), left: slide }, // top: clear the BACK button (S(90) + gap); left: slide-in offset
+          margin: { top: backButtonVisible ? S(96) : 0, left: slide }, // top: clear the BACK button (S(90) + gap) when it's showing, else sit at its height; left: slide-in offset
           width: w,
           height: h,
           padding: border, // this padding IS the visible brown border
@@ -2991,7 +2961,6 @@ const Root = () => {
       </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <ServerStatus />
         <TopBars />
         <RemotePetPanel />
         <SwapOfferPanel />
