@@ -1969,7 +1969,7 @@ function HatchOverlay() {
 // Throw button's exact screen position isn't something we control/know
 // precisely, so these were found by testing on-device.
 const bubbleBottomRaw = 180
-const bubbleRightRaw = 250
+const bubbleRightRaw = 290
 const barBottomRaw = 320
 const barRightRaw = 240
 

@@ -318,15 +318,23 @@ function updateTag(tag: HealthTag, pos: Vector3, species: string | null, growthS
 
 /**
  * Show/hide a tag as a whole. This is the ONLY place tag visibility is written,
- * because hiding one takes two steps: the icons' plane meshes respect the
- * propagated VisibilityComponent, but TextShape does NOT — the name has to be
- * cleared directly, and `name` reset so updateTag's diff-check re-writes it when
- * the tag comes back.
+ * because hiding one takes more than flipping the root: `propagateToChildren`
+ * only cascades down to a mood icon's plane once something touches that
+ * icon's OWN components again (updateTag only rewrites an icon when its stat
+ * crosses a color band) — so relying on propagation alone meant the icons
+ * stayed visible for however long it took the next stat tick to happen to
+ * touch them, instead of hiding the instant the bubble opened. Setting
+ * VisibilityComponent directly on the label and every icon (not just the
+ * root) makes it immediate. TextShape also ignores visibility outright, so
+ * the name has to be cleared directly too — `name` reset so updateTag's
+ * diff-check re-writes it when the tag comes back.
  */
 function setTagVisible(tag: HealthTag, visible: boolean): void {
   if (tag.hidden === !visible) return
   tag.hidden = !visible
   VisibilityComponent.createOrReplace(tag.root, { visible, propagateToChildren: true })
+  VisibilityComponent.createOrReplace(tag.label, { visible })
+  for (const icon of tag.icons) VisibilityComponent.createOrReplace(icon, { visible })
   if (!visible) {
     TextShape.getMutable(tag.label).text = ''
     tag.name = ''
