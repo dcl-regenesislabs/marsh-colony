@@ -571,6 +571,41 @@ function reanchorLocalPet(pet: PetData): void {
   wanderPause = 1
 }
 
+/** Click-to-open handler for the local pet — pulled out of ensureLocalPet so
+ *  startPetting()/cancelPetting() can strip and restore it: while petting is
+ *  active the camera is locked on the pet for the swipe gesture, and the
+ *  world-space full-screen blocker over it (ui.tsx's PettingOverlay) already
+ *  swallows every click, so this handler's own click never actually fires —
+ *  but the pointer-event REGISTRATION itself still drives the "Open" hover
+ *  tooltip/cursor, which just sits there doing nothing and reads as broken. */
+function registerPetOpenClick(entity: Entity): void {
+  pointerEventsSystem.onPointerDown(
+    { entity, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
+    () => {
+      // Feed owns the pet's transform, camera and input while it is active.
+      // The staged pet remains visible beside the catch lane, but must not
+      // reopen its action panel from a world click during that sequence.
+      if (clientState.feedGame.active) return
+      // While a freshly hatched pet is still awaiting the Keep/Discard decision,
+      // the actions panel must stay closed: opening it lets the player run care
+      // actions on a pet that isn't accepted into a slot yet, which bugs out.
+      // The Keep/Discard modal owns this moment until they decide.
+      if (hasPendingHatchling()) {
+        pushToast('Keep or discard your new pet first!')
+        return
+      }
+      // Clicking the pet opens its control panel. (The "pet for happiness"
+      // action is suspended for now — was: actions.petSelf() + petReact().)
+      clientState.petPanelOpen = true
+      // Point them at the Breed button until the pet grows up.
+      const ap = clientState.activePet
+      if (ap && petStage(ap.size) !== 'ADULT') {
+        showHint('breed', 'Grow your pet to Adult in order to BREED amazing creatures!')
+      }
+    }
+  )
+}
+
 function ensureLocalPet(): void {
   const pet = clientState.activePet
   if (!pet) {
@@ -602,31 +637,7 @@ function ensureLocalPet(): void {
       mode = 'asleep'
     }
     Transform.create(localPet, { position: spawnPos, scale: petScale(renderSpecies, stageScaleFor(pet.size)) })
-    pointerEventsSystem.onPointerDown(
-      { entity: localPet, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
-      () => {
-        // Feed owns the pet's transform, camera and input while it is active.
-        // The staged pet remains visible beside the catch lane, but must not
-        // reopen its action panel from a world click during that sequence.
-        if (clientState.feedGame.active) return
-        // While a freshly hatched pet is still awaiting the Keep/Discard decision,
-        // the actions panel must stay closed: opening it lets the player run care
-        // actions on a pet that isn't accepted into a slot yet, which bugs out.
-        // The Keep/Discard modal owns this moment until they decide.
-        if (hasPendingHatchling()) {
-          pushToast('Keep or discard your new pet first!')
-          return
-        }
-        // Clicking the pet opens its control panel. (The "pet for happiness"
-        // action is suspended for now — was: actions.petSelf() + petReact().)
-        clientState.petPanelOpen = true
-        // Point them at the Breed button until the pet grows up.
-        const ap = clientState.activePet
-        if (ap && petStage(ap.size) !== 'ADULT') {
-          showHint('breed', 'Grow your pet to Adult in order to BREED amazing creatures!')
-        }
-      }
-    )
+    registerPetOpenClick(localPet)
     localTag = makeTag(true) // owner's own pet — show mood icons
     // A pet can be (re)built mid-sentence — start the fresh tag in whatever state
     // the flow and the speech bubble currently agree on, not blindly visible.
@@ -748,6 +759,11 @@ export function startPetting(): void {
     return
   }
   clientState.petting = { active: true, progress: 0, celebrationUntil: 0 }
+  // The full-screen blocker over the pet during this overlay already
+  // swallows clicks, so the "Open" hover/cursor feedback would just sit
+  // there doing nothing for the whole gesture — strip it for now,
+  // cancelPetting() puts it back once the overlay closes.
+  pointerEventsSystem.removeOnPointerDown(localPet)
 
   const petPos = Transform.get(localPet).position
   // Camera sits a few metres out and slightly up, looking straight at the pet.
@@ -776,6 +792,7 @@ function releasePettingView(): void {
 export function cancelPetting(): void {
   clientState.petting = { active: false, progress: 0, celebrationUntil: 0 }
   releasePettingView()
+  if (localPet) registerPetOpenClick(localPet) // restore the "Open" click startPetting() stripped
 }
 
 /** Finish petting: reward happiness, then linger on the happy reaction. */
