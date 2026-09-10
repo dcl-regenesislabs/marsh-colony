@@ -2361,29 +2361,126 @@ function BathPop(props: { key?: string; p: PopFx }) {
   )
 }
 
+// The bath HUD art is a single 1024px sheet holding every card of the minigame:
+// the intro/Start card, the timer + counter pills, and the results card. Crop
+// each at its native aspect (same feedHud pattern) so the illustrated borders
+// and icons never get stretched by the responsive UI.
+const BATH_HUD_SHEET = 'assets/images/revamp/bath_hud.png'
+const BATH_HUD_W = 1024
+const BATH_HUD_H = 1024
+function bathHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
+  const uL = x0 / BATH_HUD_W
+  const uR = x1 / BATH_HUD_W
+  const vTop = 1 - y0 / BATH_HUD_H
+  const vBottom = 1 - y1 / BATH_HUD_H
+  return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
+}
+// Pixel boxes of each piece within bath_hud.png (measured off the source art).
+const BATH_START_BOX = { x0: 19, y0: 6, x1: 731, y1: 394 }
+const BATH_TIMER_BOX = { x0: 12, y0: 471, x1: 384, y1: 626 }
+const BATH_COUNT_BOX = { x0: 13, y0: 661, x1: 381, y1: 812 }
+const BATH_RESULTS_BOX = { x0: 402, y0: 397, x1: 908, y1: 833 }
+const BATH_START_UVS = bathHudUvRect(BATH_START_BOX.x0, BATH_START_BOX.y0, BATH_START_BOX.x1, BATH_START_BOX.y1)
+const BATH_TIMER_UVS = bathHudUvRect(BATH_TIMER_BOX.x0, BATH_TIMER_BOX.y0, BATH_TIMER_BOX.x1, BATH_TIMER_BOX.y1)
+const BATH_COUNT_UVS = bathHudUvRect(BATH_COUNT_BOX.x0, BATH_COUNT_BOX.y0, BATH_COUNT_BOX.x1, BATH_COUNT_BOX.y1)
+const BATH_RESULTS_UVS = bathHudUvRect(BATH_RESULTS_BOX.x0, BATH_RESULTS_BOX.y0, BATH_RESULTS_BOX.x1, BATH_RESULTS_BOX.y1)
+const BATH_START_ASPECT = (BATH_START_BOX.x1 - BATH_START_BOX.x0) / (BATH_START_BOX.y1 - BATH_START_BOX.y0)
+const BATH_TIMER_ASPECT = (BATH_TIMER_BOX.x1 - BATH_TIMER_BOX.x0) / (BATH_TIMER_BOX.y1 - BATH_TIMER_BOX.y0)
+const BATH_COUNT_ASPECT = (BATH_COUNT_BOX.x1 - BATH_COUNT_BOX.x0) / (BATH_COUNT_BOX.y1 - BATH_COUNT_BOX.y0)
+const BATH_RESULTS_ASPECT = (BATH_RESULTS_BOX.x1 - BATH_RESULTS_BOX.x0) / (BATH_RESULTS_BOX.y1 - BATH_RESULTS_BOX.y0)
+
+// Intro card: the whole illustrated card ("Tap the bubbles…" + a drawn Start
+// button) is one big tappable button, exactly like the feed minigame's start card.
+function BathStartCard() {
+  const width = S(540)
+  const height = Math.round(width / BATH_START_ASPECT)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
+      <TactileButton id="bath_start" label="" texture={BATH_HUD_SHEET} uvs={BATH_START_UVS} width={width} height={height} onClick={() => startBathCountdown()} />
+    </UiEntity>
+  )
+}
+
+// One HUD pill (timer or bubble counter): the illustrated pill sprite with the
+// live value dropped into the empty cream area to the right of its baked-in icon.
+function BathRoundPill(props: { kind: 'timer' | 'count'; value: string; width: number; countdown?: boolean }) {
+  const width = props.width
+  const aspect = props.kind === 'timer' ? BATH_TIMER_ASPECT : BATH_COUNT_ASPECT
+  const height = Math.round(width / aspect)
+  const uvs = props.kind === 'timer' ? BATH_TIMER_UVS : BATH_COUNT_UVS
+  const fontSize = props.countdown ? S(28) : S(22)
+  const labelLeft = Math.round(width * 0.4)
+  const labelWidth = Math.round(width * 0.55)
+  return (
+    <UiEntity uiTransform={{ width, height, pointerFilter: 'none' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs }}>
+      <Label
+        value={`<b>${props.value}</b>`}
+        fontSize={fontSize}
+        color={PET_UI.ink}
+        textAlign="middle-center"
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: labelLeft }, width: labelWidth, height }}
+      />
+    </UiEntity>
+  )
+}
+
+// Top-center HUD: timer + bubble counter while popping; during the 3-2-1 it
+// collapses to just the timer pill showing the countdown number (feed pattern).
+function BathRoundHud(props: { timeLeft: number; popped: number; countdown?: number }) {
+  const timerWidth = S(150)
+  const timerHeight = Math.round(timerWidth / BATH_TIMER_ASPECT)
+  const countWidth = Math.round(timerHeight * BATH_COUNT_ASPECT) // match heights; count is a touch wider
+  const gap = S(10)
+  const showCount = props.countdown === undefined
+  const width = showCount ? timerWidth + gap + countWidth : timerWidth
+  const timerValue = props.countdown === undefined ? `${Math.ceil(props.timeLeft)}s` : `${props.countdown}`
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(12), left: '50%' }, margin: { left: -width / 2 }, width, height: S(86), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
+      <BathRoundPill kind="timer" value={timerValue} width={timerWidth} countdown={props.countdown !== undefined} />
+      {showCount ? <UiEntity uiTransform={{ width: gap }} /> : null}
+      {showCount ? <BathRoundPill kind="count" value={`${props.popped}/${BUBBLE_GOAL}`} width={countWidth} /> : null}
+    </UiEntity>
+  )
+}
+
+// Results card fill animation — a celebratory 0 → clean% sweep on the illustrated
+// "Pet clean" track, kicked off a beat after the card appears (resultsAt).
+const BATH_RESULTS_FILL_DELAY_S = 0.3
+const BATH_RESULTS_FILL_DUR_S = 0.9
 function BathResultsPanel() {
   const st = clientState.bathGame
   const clean = st.popped >= BUBBLE_GOAL
+  const cardW = S(400)
+  const cardH = Math.round(cardW / BATH_RESULTS_ASPECT)
+  // Inner "Pet clean" track bounds, as fractions of the illustrated card.
+  const barLeft = Math.round(cardW * 0.103)
+  const barTop = Math.round(cardH * 0.516)
+  const barW = Math.round(cardW * 0.796)
+  const barH = Math.round(cardH * 0.106)
+  const elapsed = Math.max(0, (Date.now() - st.resultsAt) / 1000 - BATH_RESULTS_FILL_DELAY_S)
+  const raw = Math.max(0, Math.min(1, elapsed / BATH_RESULTS_FILL_DUR_S))
+  const eased = raw * raw * (3 - 2 * raw) // smoothstep
+  const target = clean ? 1 : Math.min(1, st.popped / BUBBLE_GOAL)
+  const barPct = Math.max(0, Math.min(100, target * eased * 100))
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: C.scrim }}
     >
       <UiEntity
-        uiTransform={{ width: S(480), height: S(310), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: S(24) }}
-        uiBackground={{ color: C.panelBg }}
+        uiTransform={{ width: cardW, height: cardH, pointerFilter: 'block' }}
+        uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}
       >
-        <Label value={clean ? 'Squeaky clean!' : 'Almost!'} fontSize={S(40)} color={clean ? C.hygiene : C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(52) }} />
-        <Label value={`You popped ${st.popped} bubbles`} fontSize={S(24)} color={C.text} textAlign="middle-center" uiTransform={{ width: '100%', height: S(38), margin: { top: S(8), bottom: S(14) } }} />
-        <Label
-          value={clean ? '+Hygiene' : `Pop ${BUBBLE_GOAL} to get your pet clean — try again!`}
-          fontSize={S(20)}
-          color={C.dim}
-          textAlign="middle-center"
-          textWrap="wrap"
-          uiTransform={{ width: S(420), height: S(46), margin: { bottom: S(18) } }}
+        {/* hygiene fill overlaid on the illustrated progress track */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
+          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: barH / 2 }} uiBackground={{ color: C.hygiene }} />
+        </UiEntity>
+        {/* invisible clickable hotspot over the illustrated Exit button */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.727), left: Math.round(cardW * 0.215) }, width: Math.round(cardW * 0.573), height: Math.round(cardH * 0.172), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => exitBathResults()}
         />
-        <TactileButton id="bath_exit" label={clean ? 'Done' : 'Close'} width={S(200)} height={S(64)} bg={C.green} textColor={C.outline} fontSize={S(26)} radius={S(22)} pulse onClick={() => exitBathResults()} />
       </UiEntity>
     </UiEntity>
   )
@@ -2396,7 +2493,6 @@ function BathGameOverlay() {
   const popping = st.phase === 'popping'
   const intro = st.phase === 'intro'
   const countdown = st.phase === 'countdown'
-  const flashing = Date.now() < st.popFlashUntil
   const countdownNum = Math.max(1, Math.min(BATH_COUNTDOWN_S, Math.ceil(BATH_COUNTDOWN_S - (Date.now() - st.countdownAt) / 1000)))
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
@@ -2411,62 +2507,11 @@ function BathGameOverlay() {
           {getPops().map((p) => (
             <BathPop key={`pop-${p.id}`} p={p} />
           ))}
-          {/* HUD: counter+timer / countdown / intro instructions. Same layout as
-              the feed minigame — the live counter sits top-right (responsive,
-              mobile-friendly), intro/countdown are centered. */}
-          <UiEntity
-            uiTransform={
-              popping
-                ? {
-                    positionType: 'absolute',
-                    position: { top: S(160), right: S(24) },
-                    width: S(320),
-                    height: S(70),
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: S(20),
-                    pointerFilter: 'none'
-                  }
-                : {
-                    positionType: 'absolute',
-                    position: { top: S(90), left: '50%' },
-                    margin: { left: -S(220) },
-                    width: S(440),
-                    height: S(120),
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: S(20),
-                    pointerFilter: 'none'
-                  }
-            }
-            uiBackground={{ color: C.panelBg }}
-          >
-            {popping ? (
-              <Label
-                value={`Bubbles: ${st.popped}/${BUBBLE_GOAL}    ${Math.ceil(st.timeLeft)}s`}
-                fontSize={flashing ? S(34) : S(28)}
-                color={flashing ? C.gold : C.hygiene}
-                textAlign="middle-center"
-                uiTransform={{ width: '100%', height: S(36) }}
-              />
-            ) : countdown ? (
-              <Label value={`${countdownNum}`} fontSize={S(72)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
-            ) : (
-              <Label
-                value={`Tap the bubbles to scrub your pet clean!\nPop ${BUBBLE_GOAL} before time runs out.`}
-                fontSize={S(22)}
-                color={C.text}
-                textAlign="middle-center"
-                textWrap="wrap"
-                uiTransform={{ width: S(400), height: S(100) }}
-              />
-            )}
-          </UiEntity>
-          {intro ? (
-            <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(230), left: '50%' }, margin: { left: -S(110) }, width: S(220), height: S(70), pointerFilter: 'none' }}>
-              <TactileButton id="bath_start" label="Start" width={S(220)} height={S(70)} bg={C.green} textColor={C.outline} fontSize={S(28)} radius={S(24)} pulse onClick={() => startBathCountdown()} />
-            </UiEntity>
-          ) : null}
+          {/* Illustrated HUD (bath_hud.png): timer+counter pills while popping,
+              timer-only during the 3-2-1, and the full Start card during intro —
+              the same sprite-card presentation as the revamped feed minigame. */}
+          {popping || countdown ? <BathRoundHud timeLeft={st.timeLeft} popped={st.popped} countdown={countdown ? countdownNum : undefined} /> : null}
+          {intro ? <BathStartCard /> : null}
         </UiEntity>
       </ScreenInsetArea>
     </UiEntity>
