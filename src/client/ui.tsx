@@ -1745,25 +1745,38 @@ function Toasts() {
 }
 
 // Gamified reward popup — a quick "+XP  +coins" burst after a care action.
-// Two rounded pills (star XP + coin), center-screen, auto-expiring.
+// Two illustrated chips (star XP + coin), center-screen, auto-expiring. Each chip
+// is a 4-frame horizontal sprite strip with the badge + pill baked in; we cycle
+// the frames for a constant shimmer and drop the value into the flat area to the
+// right of the badge.
+const CHIP_XP_SHEET = 'assets/images/revamp/chip_xp_4frames.png'
+const CHIP_COIN_SHEET = 'assets/images/revamp/chip_coins_4frames.png'
+const CHIP_FRAMES = 4
+const CHIP_ASPECT = 512 / 192 // one frame's cell aspect (~2.667)
+const CHIP_FRAME_MS = 150 // shimmer speed (ms per frame)
+const CHIP_TEXT_OUTLINE = { r: 0.25, g: 0.15, b: 0.1, a: 1 } as Color // dark brown, matches the baked border
 function RewardPopup() {
   const r = clientState.reward
   if (!r || r.until <= Date.now()) {
     if (r) clientState.reward = null // expired: clear it
     return <UiEntity />
   }
-  const pill = (icon: string, text: string, bg: Color) => (
-    <UiEntity
-      uiTransform={{ width: S(190), height: S(64), alignItems: 'center', justifyContent: 'center', borderRadius: S(32), margin: { left: S(8), right: S(8) } }}
-      uiBackground={{ color: bg }}
-    >
-      <Label value={`${icon} ${text}`} fontSize={S(26)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: S(182), height: S(42) }} />
+  const uvs = stripFrameUvs(Math.floor(Date.now() / CHIP_FRAME_MS) % CHIP_FRAMES, CHIP_FRAMES)
+  const chipW = S(210)
+  const chipH = Math.round(chipW / CHIP_ASPECT)
+  const textLeft = Math.round(chipW * 0.34) // clear the baked badge on the left
+  const textW = Math.round(chipW * 0.58) // the flat pill area to its right
+  const chip = (sheet: string, text: string) => (
+    <UiEntity uiTransform={{ width: chipW, height: chipH, margin: { left: S(6), right: S(6) } }} uiBackground={{ texture: { src: sheet }, textureMode: 'stretch', uvs }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: textLeft }, width: textW, height: chipH, alignItems: 'center', justifyContent: 'center' }}>
+        <OutlineLabel value={`<b>${text}</b>`} fontSize={S(24)} color={LOC.white} outlineColor={CHIP_TEXT_OUTLINE} width={textW} height={chipH} textAlign="middle-center" />
+      </UiEntity>
     </UiEntity>
   )
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '28%', left: '50%' }, margin: { left: -S(220) }, width: S(440), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      {pill('⭐', `+${r.xp} XP`, LOC.violet)}
-      {pill('🪙', `+${r.coins}`, LOC.orange)}
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '28%', left: '50%' }, margin: { left: -(chipW + S(12)) }, width: chipW * 2 + S(24), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+      {chip(CHIP_XP_SHEET, `+${r.xp} xp`)}
+      {chip(CHIP_COIN_SHEET, `+${r.coins} coin`)}
     </UiEntity>
   )
 }
@@ -2361,7 +2374,9 @@ function bubbleArtUvs(): number[] {
 // the bubble's size and then expand outward as later frames fill their cell (up to
 // ~1.7x). A larger scale here double-counts that growth and oversizes the splash.
 const POP_SCALE = 1.0
-function popFrameUvs(i: number, total: number): number[] {
+// Crop frame `i` of `total` from a horizontal sprite strip (one row, full height).
+// Shared by the bath pop-splash and the animated XP/coin reward chips.
+function stripFrameUvs(i: number, total: number): number[] {
   const uL = i / total
   const uR = (i + 1) / total
   return [uL, 0, uL, 1, uR, 1, uR, 0] // [bl, tl, tr, br] — full frame height, one column
@@ -2381,7 +2396,7 @@ function BathPop(props: { key?: string; p: PopFx }) {
         height: size,
         pointerFilter: 'none'
       }}
-      uiBackground={{ texture: { src: BUBBLE_POP_SHEET }, textureMode: 'stretch', uvs: popFrameUvs(frame, BUBBLE_POP_FRAMES) }}
+      uiBackground={{ texture: { src: BUBBLE_POP_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(frame, BUBBLE_POP_FRAMES) }}
     />
   )
 }

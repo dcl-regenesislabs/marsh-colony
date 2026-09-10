@@ -16,6 +16,8 @@ const STATIC_UI_ASSETS = [
   'assets/images/revamp/fruit_caught.png',
   'assets/images/revamp/bath_hud.png',
   'assets/images/bubbleFrame/spritesheet_6x1_512.png',
+  'assets/images/revamp/chip_xp_4frames.png',
+  'assets/images/revamp/chip_coins_4frames.png',
   'assets/images/revamp/bubble.png',
   'assets/images/bubble.png',
   'assets/images/petmoods.png',
