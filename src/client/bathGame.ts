@@ -19,6 +19,8 @@ export const BUBBLE_GOAL = 12 // pops needed for the pet to count as clean
 export const BATH_COUNTDOWN_S = 3 // 3-2-1 before popping starts
 const MAX_BUBBLES = 9 // bubbles alive on screen at once
 const SPAWN_STAGGER_S = 0.22 // min gap between spawns so they don't appear in clumps
+export const BUBBLE_POP_FRAMES = 6 // frames in the pop-splash sprite sheet (one horizontal row)
+export const BUBBLE_POP_MS = 340 // total pop-splash duration (~57 ms/frame)
 
 export interface Bubble {
   id: number
@@ -32,16 +34,31 @@ export interface Bubble {
   wobblePhase: number
 }
 
+/** A transient pop-splash at a popped bubble's spot, animated through the sprite sheet. */
+export interface PopFx {
+  id: number
+  x: number // 0..1 screen fraction (center), captured from the bubble when it popped
+  y: number
+  r: number // the popped bubble's radius (pre-S) — sizes the splash
+  startAt: number // Date.now() ms
+}
+
 type Phase = 'idle' | 'intro' | 'countdown' | 'popping' | 'results'
 let phase: Phase = 'idle'
 let clock = 0
 let spawnAcc = 0
 let nextId = 1
 let bubbles: Bubble[] = []
+let pops: PopFx[] = []
 
 /** The live bubble list, read by BathGameOverlay each render. */
 export function getBubbles(): Bubble[] {
   return bubbles
+}
+
+/** Active pop-splash effects, read by BathGameOverlay each render. */
+export function getPops(): PopFx[] {
+  return pops
 }
 
 function rand(lo: number, hi: number): number {
@@ -54,7 +71,7 @@ function resetBubble(b: Bubble): void {
   b.baseX = rand(0.12, 0.88)
   b.x = b.baseX
   b.y = rand(1.05, 1.28) // staggered starts below the screen
-  b.r = rand(24, 46) // varied sizes
+  b.r = rand(30, 56) // varied sizes
   b.speed = rand(0.1, 0.28) // varied rise speed -> crosses in ~4-10s
   b.wobbleAmp = rand(0.02, 0.09)
   b.wobbleFreq = rand(1.4, 4.2)
@@ -71,6 +88,7 @@ function makeBubble(): Bubble {
 export function startBathGame(): void {
   if (phase !== 'idle') return
   bubbles = []
+  pops = []
   spawnAcc = 0
   clock = 0
   clientState.bathGame = { active: true, phase: 'intro', popped: 0, timeLeft: BATH_DURATION_S, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
@@ -97,6 +115,7 @@ export function popBubble(id: number): void {
   if (phase !== 'popping') return
   const b = bubbles.find((x) => x.id === id)
   if (!b) return
+  pops.push({ id: nextId++, x: b.x, y: b.y, r: b.r, startAt: Date.now() }) // splash where it burst
   resetBubble(b) // burst -> a new bubble rises in its place
   clientState.bathGame.popped += 1
   clientState.bathGame.popFlashUntil = Date.now() + 300
@@ -122,6 +141,7 @@ export function exitBathResults(): void {
   clientState.bathGame.active = false
   phase = 'idle'
   bubbles = []
+  pops = []
   // Play the win splash + hop-out only if the pet actually came out clean.
   finishBath(clientState.bathGame.popped >= BUBBLE_GOAL)
 }
@@ -132,10 +152,13 @@ export function cancelBathGame(): void {
   clientState.bathGame.active = false
   phase = 'idle'
   bubbles = []
+  pops = []
   pushToast('Bath cancelled') // BACK: acknowledge like every other step of the carry flow
 }
 
 function tick(dt: number): void {
+  const now = Date.now()
+  if (pops.length) pops = pops.filter((p) => now - p.startAt < BUBBLE_POP_MS) // retire finished splashes
   if (phase === 'idle') return
   clock += dt
   const st = clientState.bathGame

@@ -36,7 +36,7 @@ import {
   FEED_RESULTS_FOCUS_S,
   feedResultsCounterDurationMs
 } from './fruitGame'
-import { getBubbles, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, type Bubble } from './bathGame'
+import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
@@ -1745,25 +1745,38 @@ function Toasts() {
 }
 
 // Gamified reward popup — a quick "+XP  +coins" burst after a care action.
-// Two rounded pills (star XP + coin), center-screen, auto-expiring.
+// Two illustrated chips (star XP + coin), center-screen, auto-expiring. Each chip
+// is a 4-frame horizontal sprite strip with the badge + pill baked in; we cycle
+// the frames for a constant shimmer and drop the value into the flat area to the
+// right of the badge.
+const CHIP_XP_SHEET = 'assets/images/revamp/chip_xp_4frames.png'
+const CHIP_COIN_SHEET = 'assets/images/revamp/chip_coins_4frames.png'
+const CHIP_FRAMES = 4
+const CHIP_ASPECT = 512 / 192 // one frame's cell aspect (~2.667)
+const CHIP_FRAME_MS = 150 // shimmer speed (ms per frame)
+const CHIP_TEXT_OUTLINE = { r: 0.25, g: 0.15, b: 0.1, a: 1 } as Color // dark brown, matches the baked border
 function RewardPopup() {
   const r = clientState.reward
   if (!r || r.until <= Date.now()) {
     if (r) clientState.reward = null // expired: clear it
     return <UiEntity />
   }
-  const pill = (icon: string, text: string, bg: Color) => (
-    <UiEntity
-      uiTransform={{ width: S(190), height: S(64), alignItems: 'center', justifyContent: 'center', borderRadius: S(32), margin: { left: S(8), right: S(8) } }}
-      uiBackground={{ color: bg }}
-    >
-      <Label value={`${icon} ${text}`} fontSize={S(26)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: S(182), height: S(42) }} />
+  const uvs = stripFrameUvs(Math.floor(Date.now() / CHIP_FRAME_MS) % CHIP_FRAMES, CHIP_FRAMES)
+  const chipW = S(210)
+  const chipH = Math.round(chipW / CHIP_ASPECT)
+  const textLeft = Math.round(chipW * 0.34) // clear the baked badge on the left
+  const textW = Math.round(chipW * 0.58) // the flat pill area to its right
+  const chip = (sheet: string, text: string) => (
+    <UiEntity uiTransform={{ width: chipW, height: chipH, margin: { left: S(6), right: S(6) } }} uiBackground={{ texture: { src: sheet }, textureMode: 'stretch', uvs }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: textLeft }, width: textW, height: chipH, alignItems: 'center', justifyContent: 'center' }}>
+        <OutlineLabel value={`<b>${text}</b>`} fontSize={S(24)} color={LOC.white} outlineColor={CHIP_TEXT_OUTLINE} width={textW} height={chipH} textAlign="middle-center" />
+      </UiEntity>
     </UiEntity>
   )
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '28%', left: '50%' }, margin: { left: -S(220) }, width: S(440), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      {pill('⭐', `+${r.xp} XP`, LOC.violet)}
-      {pill('🪙', `+${r.coins}`, LOC.orange)}
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '28%', left: '50%' }, margin: { left: -(chipW + S(12)) }, width: chipW * 2 + S(24), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+      {chip(CHIP_XP_SHEET, `+${r.xp} xp`)}
+      {chip(CHIP_COIN_SHEET, `+${r.coins} coin`)}
     </UiEntity>
   )
 }
@@ -2152,17 +2165,24 @@ function FeedEatingPanel() {
 // round ends, FeedEatingPanel presents the count-up and hunger bar.
 // ---------------------------------------------------------------------------
 
+// Crop an axis-aligned pixel box out of a sprite sheet into DCL's UV order
+// (bottom-left, then clockwise). Shared by the feed and bath illustrated HUDs,
+// which both pack their cards into a single sheet.
+function sheetUvRect(x0: number, y0: number, x1: number, y1: number, w: number, h: number): number[] {
+  const uL = x0 / w
+  const uR = x1 / w
+  const vTop = 1 - y0 / h
+  const vBottom = 1 - y1 / h
+  return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
+}
+
 // The feed HUD art is a 1024px sheet. Crop each card at its native aspect so
 // the illustrated borders and icons never get stretched by the responsive UI.
 const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud.png'
 const FEED_HUD_W = 1024
 const FEED_HUD_H = 1024
 function feedHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
-  const uL = x0 / FEED_HUD_W
-  const uR = x1 / FEED_HUD_W
-  const vTop = 1 - y0 / FEED_HUD_H
-  const vBottom = 1 - y1 / FEED_HUD_H
-  return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
+  return sheetUvRect(x0, y0, x1, y1, FEED_HUD_W, FEED_HUD_H)
 }
 
 // End above the results card, whose top-left corner starts at y=400.
@@ -2309,58 +2329,208 @@ function FeedGameOverlay() {
 // time to get the pet clean. Bubble positions/sizes come straight from the module
 // bubble list (getBubbles), which the bath tick mutates every frame.
 // ---------------------------------------------------------------------------
-const BUBBLE_FILL = { r: 0.5, g: 0.8, b: 0.98, a: 0.82 } // celeste
-const BUBBLE_SHINE = { r: 1, g: 1, b: 1, a: 0.55 }
-
 function BathBubble(props: { key?: string; b: Bubble }) {
   const b = props.b
-  const size = S(b.r * 2)
+  // Frame 0's glossy bubble only fills the center ~58% of its cell (the rest is
+  // transparent). Crop the UV to that bbox and size the box to the bubble itself,
+  // so the tappable area wraps the *visible* bubble exactly — a full-cell box would
+  // be ~3x too big, overlap its neighbours, and pop the wrong bubble on a near miss.
+  const size = S(b.r * 2 * BUBBLE_ART_FRAC)
   return (
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
         position: { left: `${b.x * 100}%`, top: `${b.y * 100}%` },
-        margin: { left: -size / 2, top: -size / 2 }, // center the circle on (x,y)
+        margin: { left: -size / 2, top: -size / 2 }, // center on (x,y)
         width: size,
         height: size,
-        borderRadius: size / 2
+        pointerFilter: 'block'
       }}
-      uiBackground={{ color: BUBBLE_FILL }}
+      uiBackground={{ texture: { src: BUBBLE_POP_SHEET }, textureMode: 'stretch', uvs: bubbleArtUvs() }}
       onMouseDown={() => popBubble(b.id)}
-    >
-      {/* little highlight so it reads as a bubble, not a flat disc */}
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { left: size * 0.22, top: size * 0.18 }, width: size * 0.26, height: size * 0.26, borderRadius: size * 0.13 }}
-        uiBackground={{ color: BUBBLE_SHINE }}
+    />
+  )
+}
+
+// Pop-splash: a short sprite-sheet animation played where a bubble burst. The
+// sheet is one horizontal row of BUBBLE_POP_FRAMES frames; we crop the current
+// frame's UVs by elapsed time.
+const BUBBLE_POP_SHEET = 'assets/images/bubbleFrame/spritesheet_6x1_512.png'
+// Frame-0 bubble bbox within its 512px cell (measured off the sheet). The splash
+// frames grow from this to fill the whole cell, so the visible bubble occupies
+// BUBBLE_ART_FRAC of its own box.
+const BUBBLE_ART = { x0: 107, y0: 107, x1: 405, y1: 405, cell: 512 }
+const BUBBLE_ART_FRAC = (BUBBLE_ART.x1 - BUBBLE_ART.x0) / BUBBLE_ART.cell // ~0.582 of the cell
+function bubbleArtUvs(): number[] {
+  const sheetW = BUBBLE_POP_FRAMES * BUBBLE_ART.cell
+  const uL = BUBBLE_ART.x0 / sheetW
+  const uR = BUBBLE_ART.x1 / sheetW
+  const vBottom = 1 - BUBBLE_ART.y1 / BUBBLE_ART.cell
+  const vTop = 1 - BUBBLE_ART.y0 / BUBBLE_ART.cell
+  return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
+}
+// Splash box == the bubble's full cell (2r). Since the pop's frame 0 is the same
+// 58% art as the floating bubble, POP_SCALE 1.0 makes the burst start exactly at
+// the bubble's size and then expand outward as later frames fill their cell (up to
+// ~1.7x). A larger scale here double-counts that growth and oversizes the splash.
+const POP_SCALE = 1.0
+// Crop frame `i` of `total` from a horizontal sprite strip (one row, full height).
+// Shared by the bath pop-splash and the animated XP/coin reward chips.
+function stripFrameUvs(i: number, total: number): number[] {
+  const uL = i / total
+  const uR = (i + 1) / total
+  return [uL, 0, uL, 1, uR, 1, uR, 0] // [bl, tl, tr, br] — full frame height, one column
+}
+function BathPop(props: { key?: string; p: PopFx }) {
+  const p = props.p
+  const t = (Date.now() - p.startAt) / BUBBLE_POP_MS // 0..1
+  const frame = Math.min(BUBBLE_POP_FRAMES - 1, Math.max(0, Math.floor(t * BUBBLE_POP_FRAMES)))
+  const size = S(p.r * 2 * POP_SCALE)
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { left: `${p.x * 100}%`, top: `${p.y * 100}%` },
+        margin: { left: -size / 2, top: -size / 2 }, // center the splash on the burst point
+        width: size,
+        height: size,
+        pointerFilter: 'none'
+      }}
+      uiBackground={{ texture: { src: BUBBLE_POP_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(frame, BUBBLE_POP_FRAMES) }}
+    />
+  )
+}
+
+// The bath HUD art is a single 1024px sheet holding every card of the minigame:
+// the intro/Start card, the timer + counter pills, and the results card. Crop
+// each at its native aspect (same feedHud pattern) so the illustrated borders
+// and icons never get stretched by the responsive UI.
+const BATH_HUD_SHEET = 'assets/images/revamp/bath_hud.png'
+const BATH_HUD_W = 1024
+const BATH_HUD_H = 1024
+function bathHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
+  return sheetUvRect(x0, y0, x1, y1, BATH_HUD_W, BATH_HUD_H)
+}
+// Pixel boxes of each piece within bath_hud.png (measured off the source art).
+const BATH_START_BOX = { x0: 19, y0: 6, x1: 731, y1: 394 }
+const BATH_TIMER_BOX = { x0: 12, y0: 471, x1: 384, y1: 626 }
+const BATH_COUNT_BOX = { x0: 13, y0: 661, x1: 381, y1: 812 }
+const BATH_RESULTS_BOX = { x0: 402, y0: 397, x1: 908, y1: 833 }
+const BATH_START_UVS = bathHudUvRect(BATH_START_BOX.x0, BATH_START_BOX.y0, BATH_START_BOX.x1, BATH_START_BOX.y1)
+const BATH_TIMER_UVS = bathHudUvRect(BATH_TIMER_BOX.x0, BATH_TIMER_BOX.y0, BATH_TIMER_BOX.x1, BATH_TIMER_BOX.y1)
+const BATH_COUNT_UVS = bathHudUvRect(BATH_COUNT_BOX.x0, BATH_COUNT_BOX.y0, BATH_COUNT_BOX.x1, BATH_COUNT_BOX.y1)
+const BATH_RESULTS_UVS = bathHudUvRect(BATH_RESULTS_BOX.x0, BATH_RESULTS_BOX.y0, BATH_RESULTS_BOX.x1, BATH_RESULTS_BOX.y1)
+const BATH_START_ASPECT = (BATH_START_BOX.x1 - BATH_START_BOX.x0) / (BATH_START_BOX.y1 - BATH_START_BOX.y0)
+const BATH_TIMER_ASPECT = (BATH_TIMER_BOX.x1 - BATH_TIMER_BOX.x0) / (BATH_TIMER_BOX.y1 - BATH_TIMER_BOX.y0)
+const BATH_COUNT_ASPECT = (BATH_COUNT_BOX.x1 - BATH_COUNT_BOX.x0) / (BATH_COUNT_BOX.y1 - BATH_COUNT_BOX.y0)
+const BATH_RESULTS_ASPECT = (BATH_RESULTS_BOX.x1 - BATH_RESULTS_BOX.x0) / (BATH_RESULTS_BOX.y1 - BATH_RESULTS_BOX.y0)
+
+// Intro card: the whole illustrated card ("Tap the bubbles…" + a drawn Start
+// button) is one big tappable button, exactly like the feed minigame's start card.
+function BathStartCard() {
+  const width = S(540)
+  const height = Math.round(width / BATH_START_ASPECT)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
+      <TactileButton id="bath_start" label="" texture={BATH_HUD_SHEET} uvs={BATH_START_UVS} width={width} height={height} onClick={() => startBathCountdown()} />
+    </UiEntity>
+  )
+}
+
+// One HUD pill (timer or bubble counter): the illustrated pill sprite with the
+// live value dropped into the empty cream area to the right of its baked-in icon.
+function BathRoundPill(props: { kind: 'timer' | 'count'; value: string; width: number; countdown?: boolean; flashing?: boolean }) {
+  const width = props.width
+  const aspect = props.kind === 'timer' ? BATH_TIMER_ASPECT : BATH_COUNT_ASPECT
+  const height = Math.round(width / aspect)
+  const uvs = props.kind === 'timer' ? BATH_TIMER_UVS : BATH_COUNT_UVS
+  // Brief gold pop on the counter each time a bubble bursts (popFlashUntil).
+  const fontSize = props.countdown ? S(28) : props.flashing ? S(27) : S(22)
+  const labelLeft = Math.round(width * 0.4)
+  const labelWidth = Math.round(width * 0.55)
+  return (
+    <UiEntity uiTransform={{ width, height, pointerFilter: 'none' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs }}>
+      <Label
+        value={`<b>${props.value}</b>`}
+        fontSize={fontSize}
+        color={props.flashing ? C.gold : PET_UI.ink}
+        textAlign="middle-center"
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: labelLeft }, width: labelWidth, height }}
       />
     </UiEntity>
   )
 }
 
+// Top-center HUD: timer + bubble counter while popping; during the 3-2-1 it
+// collapses to just the timer pill showing the countdown number (feed pattern).
+function BathRoundHud(props: { timeLeft: number; popped: number; countdown?: number; flashing?: boolean }) {
+  const timerWidth = S(150)
+  const timerHeight = Math.round(timerWidth / BATH_TIMER_ASPECT)
+  const countWidth = Math.round(timerHeight * BATH_COUNT_ASPECT) // match heights; count is a touch wider
+  const gap = S(10)
+  const showCount = props.countdown === undefined
+  const width = showCount ? timerWidth + gap + countWidth : timerWidth
+  const timerValue = props.countdown === undefined ? `${Math.ceil(props.timeLeft)}s` : `${props.countdown}`
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(12), left: '50%' }, margin: { left: -width / 2 }, width, height: S(86), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
+      <BathRoundPill kind="timer" value={timerValue} width={timerWidth} countdown={props.countdown !== undefined} />
+      {showCount ? <UiEntity uiTransform={{ width: gap }} /> : null}
+      {showCount ? <BathRoundPill kind="count" value={`${props.popped}/${BUBBLE_GOAL}`} width={countWidth} flashing={props.flashing} /> : null}
+    </UiEntity>
+  )
+}
+
+// Results card fill animation — a celebratory 0 → clean% sweep on the illustrated
+// "Pet clean" track, kicked off a beat after the card appears (resultsAt).
+const BATH_RESULTS_FILL_DELAY_S = 0.3
+const BATH_RESULTS_FILL_DUR_S = 0.9
 function BathResultsPanel() {
   const st = clientState.bathGame
   const clean = st.popped >= BUBBLE_GOAL
+  const cardW = S(400)
+  const cardH = Math.round(cardW / BATH_RESULTS_ASPECT)
+  // Inner "Pet clean" track bounds, as fractions of the illustrated card.
+  const barLeft = Math.round(cardW * 0.103)
+  const barTop = Math.round(cardH * 0.516)
+  const barW = Math.round(cardW * 0.796)
+  const barH = Math.round(cardH * 0.106)
+  const elapsed = Math.max(0, (Date.now() - st.resultsAt) / 1000 - BATH_RESULTS_FILL_DELAY_S)
+  const raw = Math.max(0, Math.min(1, elapsed / BATH_RESULTS_FILL_DUR_S))
+  const eased = raw * raw * (3 - 2 * raw) // smoothstep
+  const target = clean ? 1 : Math.min(1, st.popped / BUBBLE_GOAL)
+  const barPct = Math.max(0, Math.min(100, target * eased * 100))
+  // The illustrated card's text ("Bubbles popped! / Pet clean") is baked and fixed,
+  // so the win/lose outcome, the pop count and the retry nudge — all lost when the
+  // old code-drawn panel was replaced — ride on a caption below the card and the
+  // bar's colour (blue = clean, amber = fell short) instead of fighting the art.
+  const caption = clean ? `Squeaky clean!   ${st.popped} bubbles popped` : `Popped ${st.popped}/${BUBBLE_GOAL} — try again!`
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: C.scrim }}
     >
       <UiEntity
-        uiTransform={{ width: S(480), height: S(310), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: S(24) }}
-        uiBackground={{ color: C.panelBg }}
+        uiTransform={{ width: cardW, height: cardH, pointerFilter: 'block' }}
+        uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}
       >
-        <Label value={clean ? 'Squeaky clean!' : 'Almost!'} fontSize={S(40)} color={clean ? C.hygiene : C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(52) }} />
-        <Label value={`You popped ${st.popped} bubbles`} fontSize={S(24)} color={C.text} textAlign="middle-center" uiTransform={{ width: '100%', height: S(38), margin: { top: S(8), bottom: S(14) } }} />
-        <Label
-          value={clean ? '+Hygiene' : `Pop ${BUBBLE_GOAL} to get your pet clean — try again!`}
-          fontSize={S(20)}
-          color={C.dim}
-          textAlign="middle-center"
-          textWrap="wrap"
-          uiTransform={{ width: S(420), height: S(46), margin: { bottom: S(18) } }}
+        {/* hygiene fill overlaid on the illustrated progress track */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
+          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: barH / 2 }} uiBackground={{ color: clean ? C.hygiene : C.gold }} />
+        </UiEntity>
+        {/* invisible clickable hotspot over the illustrated Exit button */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.727), left: Math.round(cardW * 0.215) }, width: Math.round(cardW * 0.573), height: Math.round(cardH * 0.172), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => exitBathResults()}
         />
-        <TactileButton id="bath_exit" label={clean ? 'Done' : 'Close'} width={S(200)} height={S(64)} bg={C.green} textColor={C.outline} fontSize={S(26)} radius={S(22)} pulse onClick={() => exitBathResults()} />
       </UiEntity>
+      <Label
+        value={caption}
+        fontSize={S(22)}
+        color={clean ? C.hygiene : C.gold}
+        textAlign="middle-center"
+        uiTransform={{ width: cardW, height: S(34), margin: { top: S(14) } }}
+      />
     </UiEntity>
   )
 }
@@ -2372,7 +2542,7 @@ function BathGameOverlay() {
   const popping = st.phase === 'popping'
   const intro = st.phase === 'intro'
   const countdown = st.phase === 'countdown'
-  const flashing = Date.now() < st.popFlashUntil
+  const flashing = Date.now() < st.popFlashUntil // brief counter pop on each burst
   const countdownNum = Math.max(1, Math.min(BATH_COUNTDOWN_S, Math.ceil(BATH_COUNTDOWN_S - (Date.now() - st.countdownAt) / 1000)))
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
@@ -2383,62 +2553,15 @@ function BathGameOverlay() {
           {getBubbles().map((b) => (
             <BathBubble key={`bub-${b.id}`} b={b} />
           ))}
-          {/* HUD: counter+timer / countdown / intro instructions. Same layout as
-              the feed minigame — the live counter sits top-right (responsive,
-              mobile-friendly), intro/countdown are centered. */}
-          <UiEntity
-            uiTransform={
-              popping
-                ? {
-                    positionType: 'absolute',
-                    position: { top: S(160), right: S(24) },
-                    width: S(320),
-                    height: S(70),
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: S(20),
-                    pointerFilter: 'none'
-                  }
-                : {
-                    positionType: 'absolute',
-                    position: { top: S(90), left: '50%' },
-                    margin: { left: -S(220) },
-                    width: S(440),
-                    height: S(120),
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: S(20),
-                    pointerFilter: 'none'
-                  }
-            }
-            uiBackground={{ color: C.panelBg }}
-          >
-            {popping ? (
-              <Label
-                value={`Bubbles: ${st.popped}/${BUBBLE_GOAL}    ${Math.ceil(st.timeLeft)}s`}
-                fontSize={flashing ? S(34) : S(28)}
-                color={flashing ? C.gold : C.hygiene}
-                textAlign="middle-center"
-                uiTransform={{ width: '100%', height: S(36) }}
-              />
-            ) : countdown ? (
-              <Label value={`${countdownNum}`} fontSize={S(72)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
-            ) : (
-              <Label
-                value={`Tap the bubbles to scrub your pet clean!\nPop ${BUBBLE_GOAL} before time runs out.`}
-                fontSize={S(22)}
-                color={C.text}
-                textAlign="middle-center"
-                textWrap="wrap"
-                uiTransform={{ width: S(400), height: S(100) }}
-              />
-            )}
-          </UiEntity>
-          {intro ? (
-            <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(230), left: '50%' }, margin: { left: -S(110) }, width: S(220), height: S(70), pointerFilter: 'none' }}>
-              <TactileButton id="bath_start" label="Start" width={S(220)} height={S(70)} bg={C.green} textColor={C.outline} fontSize={S(28)} radius={S(24)} pulse onClick={() => startBathCountdown()} />
-            </UiEntity>
-          ) : null}
+          {/* pop-splash sprite animations at each burst point */}
+          {getPops().map((p) => (
+            <BathPop key={`pop-${p.id}`} p={p} />
+          ))}
+          {/* Illustrated HUD (bath_hud.png): timer+counter pills while popping,
+              timer-only during the 3-2-1, and the full Start card during intro —
+              the same sprite-card presentation as the revamped feed minigame. */}
+          {popping || countdown ? <BathRoundHud timeLeft={st.timeLeft} popped={st.popped} countdown={countdown ? countdownNum : undefined} flashing={flashing} /> : null}
+          {intro ? <BathStartCard /> : null}
         </UiEntity>
       </ScreenInsetArea>
     </UiEntity>
