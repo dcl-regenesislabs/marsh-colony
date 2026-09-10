@@ -80,6 +80,18 @@ export function openCaretakerTips(): void {
   openDialog('Caretaker', CARETAKER_TIPS, 'Got it!')
 }
 
+// Shown when the player taps the Caretaker's own Golden Legendary familiar
+// (client/caretakerPet.ts) — teases the breeding reward loop.
+export const LEGENDARY_CREATURE_DIALOG: string[] = [
+  'This is a rare LEGENDARY creature — the finest the colony has to offer.',
+  'The secret? Keep your creatures thriving. When all four needs stay full, breeding two of them gives a far greater chance of hatching a LEGENDARY.',
+  "When you do, we will contact you and exchange it for something I can't reveal now. Be a good caretaker and provide the colony with exceptional creatures."
+]
+
+export function openLegendaryCreatureDialog(): void {
+  openDialog('Caretaker', LEGENDARY_CREATURE_DIALOG, 'Got it!')
+}
+
 export function DialogBox() {
   const d = clientState.dialog
   if (!d.open) return <UiEntity />
