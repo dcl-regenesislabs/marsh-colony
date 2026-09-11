@@ -1,58 +1,88 @@
 // The Caretaker's own companion: a Legendary (Golden) cross with a PEPITO body
 // and a FLUFLITO head, hovering beside the Caretaker like a familiar. Purely
-// decorative — no interaction, no server state, no roster. It just floats, idles
-// and sways so it reads as the Caretaker's flying pet.
+// decorative — no server state, no roster. It floats, plays its walk cycle and
+// sways so it reads as the Caretaker's pet, and taps open a teaser dialog.
 
-import { engine, Transform, GltfContainer, Animator, ColliderLayer, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
+import { engine, Transform, GltfContainer, Animator, ColliderLayer, pointerEventsSystem, InputAction, type Entity } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
+import { EntityNames } from '../../assets/scene/entity-names'
 import { clipForSpecies, modelForSpecies } from '../shared/config'
 import { applyCreatureSkin } from './creatureSkins'
+import { clientState } from './state'
+import { canStartPetInteraction } from './pet'
 import { openLegendaryCreatureDialog } from './ui/dialog'
 
 // pepito_fluflito.glb = PepitoArmature body + Fluflito head (see creatureSkins
-// SKIN_NODES). Its clips ride the Pepito rig (Pepito_Idle, …).
+// SKIN_NODES). Its clips ride the Pepito rig (Pepito_Idle, Pepito_Walk, …).
 const SPECIES = 'pepito_fluflito'
 const RARITY = 'legendary' as const // -> basecolorGold skin (the "Golden" look)
 
-// Hover anchor: on the Caretaker's own line (same x=153.5) and off to its side
-// (offset along z), ~1 m off the floor (y=0.5) so it clearly floats — so it reads
-// as standing beside the Caretaker rather than in front of it.
-const ANCHOR = Vector3.create(153.5, 1.5, 246.0)
-const BASE_YAW = 90 // face the same way as the Caretaker (toward the player)
+// Placement is RELATIVE to the Caretaker's live transform (read once it loads),
+// so it tracks the Caretaker if that's ever repositioned in Creator Hub instead
+// of silently drifting off a hardcoded copy of its composite coords. OFFSET is in
+// world space: 1 m up and 1.75 m to the Caretaker's side; the familiar inherits
+// the Caretaker's facing.
+const OFFSET = Vector3.create(0, 1.0, -1.75)
 const SCALE = 2.24 // adult size: ADULT stage 1.4 × family scaleForSpecies 1.6
-const WING_SPEED = 1 // wing-flap playback speed (lower = slower, calmer flap)
+const WING_SPEED = 1 // walk-clip playback speed (lower = calmer motion)
 
 const BOB_AMPLITUDE = 0.14 // metres up/down
 const BOB_PERIOD_S = 2.6 // one full bob cycle
 const SWAY_DEG = 16 // gentle yaw sway amplitude
 const SWAY_PERIOD_S = 5.0
+const TAU = Math.PI * 2
 
-export function setupCaretakerPet(): void {
+function spawnFamiliar(anchor: Vector3, baseRot: Quaternion): Entity {
   const e = engine.addEntity()
-  Transform.create(e, { position: Vector3.create(ANCHOR.x, ANCHOR.y, ANCHOR.z), scale: Vector3.create(SCALE, SCALE, SCALE), rotation: Quaternion.fromEulerDegrees(0, BASE_YAW, 0) })
-  // POINTER-only collider: clickable (opens the Caretaker's tease dialog) but it
-  // never blocks the player's movement.
+  Transform.create(e, { position: Vector3.create(anchor.x, anchor.y, anchor.z), scale: Vector3.create(SCALE, SCALE, SCALE), rotation: baseRot })
+  // POINTER-only collider: clickable (opens the teaser dialog) but it never blocks
+  // the player's movement.
   GltfContainer.createOrReplace(e, { src: modelForSpecies(SPECIES), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
   pointerEventsSystem.onPointerDown(
     { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: 'Examine', maxDistance: 16, showHighlight: true } },
-    () => openLegendaryCreatureDialog()
+    () => {
+      // GUARD: never open over another dialog or interaction. In particular the
+      // first-boot intro dialog owns an onDone that unfreezes the player + opens
+      // Adopt; openDialog replaces clientState.dialog wholesale, so opening ours
+      // on top would drop that onDone and soft-lock the frozen, pet-less player.
+      // dialog.open blocks that; canStartPetInteraction() also keeps it from
+      // popping over feed/bath/petting/fetch/carry/sleep (mirrors world clicks).
+      if (clientState.dialog.open || !canStartPetInteraction()) return
+      openLegendaryCreatureDialog()
+    }
   )
-  // Play WALK, not idle: for this winged cross the walk clip is what flaps the
-  // wings — so it reads as hovering/flying in place (it stays put; only the bob +
-  // sway below move it). ONE state only: listing every clip (each at weight 1)
-  // let the non-playing clips' bind pose bleed in and fight the flap, which looked
-  // like the animation restarting. A single looping state plays clean.
+  // Play WALK, not idle: it's the liveliest clip (idle is nearly static), so the
+  // creature reads as animated while it hovers. NB the rig is a ground walk cycle
+  // (Head/Neck/Arms/Legs/Tail — there are no wing bones); played in the air over
+  // the bob below, the limb motion passes for a hovering flutter. ONE state only:
+  // listing every clip at weight 1 let the non-playing clips' bind pose bleed in
+  // and fight the walk, which looked like the animation restarting.
   const flap = clipForSpecies(SPECIES, 'walk')
   Animator.createOrReplace(e, { states: [{ clip: flap, playing: true, loop: true, speed: WING_SPEED, weight: 1 }] })
   applyCreatureSkin(e, SPECIES, RARITY) // gold
+  return e
+}
 
-  // Float + sway (the wing-flap clip animates the body; this adds the drift).
+export function setupCaretakerPet(): void {
+  let e: Entity | null = null
+  let anchor = Vector3.Zero()
+  let baseRot = Quaternion.Identity()
   let t = 0
   engine.addSystem((dt: number) => {
+    if (e === null) {
+      // Wait for the Caretaker to load, then anchor to its live transform (once).
+      const c = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
+      if (!c || !Transform.has(c)) return
+      const ct = Transform.get(c)
+      anchor = Vector3.add(ct.position, OFFSET)
+      baseRot = ct.rotation
+      e = spawnFamiliar(anchor, baseRot)
+      return
+    }
+    // Float + gentle sway (the walk clip animates the body; this adds the drift).
     t += dt
     const tr = Transform.getMutable(e)
-    tr.position.y = ANCHOR.y + Math.sin((t / BOB_PERIOD_S) * Math.PI * 2) * BOB_AMPLITUDE
-    const yaw = BASE_YAW + Math.sin((t / SWAY_PERIOD_S) * Math.PI * 2) * SWAY_DEG
-    tr.rotation = Quaternion.fromEulerDegrees(0, yaw, 0)
+    tr.position.y = anchor.y + Math.sin((t / BOB_PERIOD_S) * TAU) * BOB_AMPLITUDE
+    tr.rotation = Quaternion.multiply(baseRot, Quaternion.fromEulerDegrees(0, Math.sin((t / SWAY_PERIOD_S) * TAU) * SWAY_DEG, 0))
   })
 }
