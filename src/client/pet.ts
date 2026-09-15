@@ -481,6 +481,13 @@ export function getLocalPet(): Entity | null {
   return localPet
 }
 
+/** TEST: the world entity of one of the player's OWN stored (non-active) pets,
+ *  roaming the care area — see updateInactivePets. Null if it isn't spawned
+ *  right now (e.g. it just became active, or the roster just changed). */
+export function getInactivePetEntity(petId: string): Entity | null {
+  return inactivePets.get(petId)?.entity ?? null
+}
+
 /** True while the pet is walking to / performing a care action. */
 export function isBusy(): boolean {
   return mode === 'goto' || mode === 'interact' || mode === 'bathhop' || mode === 'asleep'
@@ -646,7 +653,7 @@ function ensureLocalPet(): void {
     }
     Transform.create(localPet, { position: spawnPos, scale: petScale(renderSpecies, stageScaleFor(pet.size)) })
     registerPetOpenClick(localPet)
-    localTag = makeTag(true) // owner's own pet — show mood icons
+    localTag = makeTag(false) // owner's own pet — TEST: mood icons replaced by petEmotes.ts's floating emote
     // A pet can be (re)built mid-sentence — start the fresh tag in whatever state
     // the flow and the speech bubble currently agree on, not blindly visible.
     setTagVisible(localTag, localTagWanted && !tagsSuppressed)
@@ -1800,7 +1807,7 @@ function updateInactivePets(dt: number): void {
           { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${pet.name}`, maxDistance: 8 } },
           () => switchActivePet(petId)
         )
-        st = { entity: e, species: pet.species, tag: makeTag(true), home, target: null, pause: Math.random() * 2 } // owner's own pet
+        st = { entity: e, species: pet.species, tag: makeTag(false), home, target: null, pause: Math.random() * 2 } // owner's own pet — TEST: mood icons replaced by petEmotes.ts's floating emote
         inactivePets.set(pet.id, st)
       }
       st.home = home // keep anchored to its slot even if the roster reorders
@@ -1851,7 +1858,9 @@ function updateInactivePets(dt: number): void {
 // is locked (SLEEP_LOCK_MS). Sits just above the name tag; hidden otherwise.
 // ---------------------------------------------------------------------------
 let sleepLabel: Entity | null = null
-const SLEEP_LABEL_LIFT = 0.7 // metres above the name tag
+// TEST: raised from 0.7 to clear petEmotes.ts's floating sleep-emote plane
+// (sits ~0.65-0.9m above the name tag), which it was overlapping/mixing with.
+const SLEEP_LABEL_LIFT = 1.3 // metres above the name tag
 
 function updateSleepCountdown(): void {
   if (sleepLabel === null) {

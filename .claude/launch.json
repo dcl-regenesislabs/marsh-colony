@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dcl-scene",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-lc", "export PATH=/Users/toxsam/.nvm/versions/node/v22.21.0/bin:$PATH && npm run start"],
+      "port": 8000
+    }
+  ]
+}

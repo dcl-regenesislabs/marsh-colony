@@ -140,10 +140,11 @@ export function server(): void {
     if (!ctx) return
     const giver = await S.loadPlayer(ctx.from)
     const target = S.getCached(data.targetAddress) ?? (await S.loadPlayer(data.targetAddress))
-    const notes = S.petOther(giver, target)
+    const { giverNotes, targetNotify } = S.petOther(giver, target)
     await S.savePlayer(giver.address)
     await S.savePlayer(target.address)
-    forwardNotes(giver.address, notes)
+    forwardNotes(giver.address, giverNotes)
+    if (targetNotify) forwardNotes(target.address, [targetNotify])
     pushSnapshot(giver)
     pushSnapshot(target)
   })

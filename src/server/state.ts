@@ -622,17 +622,20 @@ export function petSelf(p: PlayerData): Notify[] {
   return []
 }
 
-export function petOther(giver: PlayerData, target: PlayerData): Notify[] {
+/** giverNotes go to the giver as usual; targetNotify (TEST: drives the target's
+ *  heart-emote reaction — see petEmotes.ts) is non-null only when the treat
+ *  actually landed, i.e. never on the error/cooldown early-outs below. */
+export function petOther(giver: PlayerData, target: PlayerData): { giverNotes: Notify[]; targetNotify: Notify | null } {
   const notes: Notify[] = []
   const targetPet = activePet(target)
-  if (!targetPet) return [{ kind: 'error', message: 'That player has no pet' }]
-  if (!cooldownOk(giver.address, `petOther_${target.address}`, C.PET_OTHER_COOLDOWN_MS)) return []
+  if (!targetPet) return { giverNotes: [{ kind: 'error', message: 'That player has no pet' }], targetNotify: null }
+  if (!cooldownOk(giver.address, `petOther_${target.address}`, C.PET_OTHER_COOLDOWN_MS)) return { giverNotes: [], targetNotify: null }
   // Daily cap per giver->target pair.
   const day = Math.floor(now() / C.DAY_MS)
   const key = `${target.address}|${day}`
   const counts = treatCounts.get(giver.address) ?? {}
   if ((counts[key] ?? 0) >= C.PET_OTHER_DAILY_CAP) {
-    return [{ kind: 'cooldown', message: 'Daily treats for this pet reached' }]
+    return { giverNotes: [{ kind: 'cooldown', message: 'Daily treats for this pet reached' }], targetNotify: null }
   }
   counts[key] = (counts[key] ?? 0) + 1
   treatCounts.set(giver.address, counts)
@@ -643,7 +646,7 @@ export function petOther(giver: PlayerData, target: PlayerData): Notify[] {
   grantCaretakerXp(giver, C.CARETAKER_XP_PER_GIVING, notes)
   checkAchievements(giver, notes)
   notes.push({ kind: 'giving', message: `You petted ${target.address.slice(0, 6)}'s pet! +${C.PET_OTHER_GIVING_POINTS} Giving` })
-  return notes
+  return { giverNotes: notes, targetNotify: { kind: 'treated', message: `${giver.address.slice(0, 6)} gave ${targetPet.name} a treat!` } }
 }
 
 // ---------------------------------------------------------------------------

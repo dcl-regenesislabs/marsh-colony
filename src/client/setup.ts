@@ -34,7 +34,8 @@ import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
 import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
-import { setupPetSpeech } from './speech'
+// import { setupPetSpeech } from './speech' // TEST: text speech bubble disabled — superseded by the floating emote below
+import { setupPetEmotes } from './petEmotes'
 import { setupNav } from './nav'
 
 let introTriggered = false
@@ -115,6 +116,12 @@ function registerHandlers(): void {
 
   room.onMessage('notify', (data) => {
     markServerAlive()
+    // TEST: drives petEmotes.ts's heart reaction — no toast here, the floating
+    // emote is the feedback.
+    if (data.kind === 'treated') {
+      clientState.lastTreatedAt = Date.now()
+      return
+    }
     pushToast(data.message, data.kind)
   })
 
@@ -188,7 +195,8 @@ export function setupClient(): void {
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
-  setupPetSpeech() // speech bubble over the pet — asks for what its stats need
+  // setupPetSpeech() // TEST: text speech bubble disabled — superseded by the floating emote below
+  setupPetEmotes() // TEST: floating PNG emote showing the pet's current need/mood
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)
 
   if (DEV_SKIP_SERVER_GATE) {
