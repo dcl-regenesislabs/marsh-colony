@@ -29,6 +29,7 @@ import { setupEggShake } from './eggShake'
 import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupCaretakerPet } from './caretakerPet'
+import { setupDebugGrow } from './debugGrow'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
@@ -175,6 +176,7 @@ export function setupClient(): void {
   setupPlantSway() // subtle wind sway on a random subset of the placed plants
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
+  setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
