@@ -233,16 +233,16 @@
               "y": 0,
               "z": 242
             },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
             "rotation": {
-              "w": 1,
               "x": 0,
               "y": 0,
-              "z": 0
+              "z": 0,
+              "w": 1
+            },
+            "scale": {
+              "x": 2.5,
+              "y": 2.5,
+              "z": 2.5
             },
             "parent": 0
           }
@@ -1932,7 +1932,7 @@
         },
         "522": {
           "json": {
-            "src": "assets/scene/Models/PetPool/PetPool.glb",
+            "src": "assets/Models/newModels/Bath.glb",
             "visibleMeshesCollisionMask": 2,
             "invisibleMeshesCollisionMask": 2
           }
@@ -1946,7 +1946,7 @@
         },
         "525": {
           "json": {
-            "src": "assets/scene/Models/PetBed/PetBed.glb",
+            "src": "assets/Models/newModels/PetBed.glb",
             "visibleMeshesCollisionMask": 2,
             "invisibleMeshesCollisionMask": 2
           }
@@ -1960,7 +1960,7 @@
         },
         "527": {
           "json": {
-            "src": "assets/scene/Models/PetFeeder/PetFeeder.glb",
+            "src": "assets/Models/newModels/Feeder.glb",
             "visibleMeshesCollisionMask": 2,
             "invisibleMeshesCollisionMask": 2
           }
@@ -2879,7 +2879,7 @@
         "serializationType": "map"
       },
       "data": {
-        "1": {
+        "522": {
           "json": {
             "gizmo": 0
           }
@@ -3580,7 +3580,7 @@
       }
     },
     {
-      "name": "inspector::SceneMetadata-v5",
+      "name": "inspector::SceneMetadata-v4",
       "jsonSchema": {
         "type": "object",
         "properties": {
@@ -3906,14 +3906,6 @@
               "type": "boolean",
               "serializationType": "boolean"
             }
-          },
-          "hideLandscapeTerrain": {
-            "type": "boolean",
-            "serializationType": "optional",
-            "optionalJsonSchema": {
-              "type": "boolean",
-              "serializationType": "boolean"
-            }
           }
         },
         "serializationType": "map"
@@ -3922,16 +3914,13 @@
         "0": {
           "json": {
             "name": "Marsh Colony",
-            "description": "Empty Scene Template",
+            "description": "A Tamagotchi-style pet care game for Decentraland (SDK7) — adopt a pet, keep it fed, clean, rested and happy, earn coins from its happiness, and raise it in a shared social Care Center",
             "thumbnail": "assets/images/thumbnail.png",
             "categories": [],
-            "author": "SDK",
+            "author": "RGL",
+            "email": "",
             "tags": [],
             "layout": {
-              "base": {
-                "x": 0,
-                "y": 0
-              },
               "parcels": [
                 {
                   "x": 0,
@@ -7533,8 +7522,14 @@
                   "x": 29,
                   "y": 0
                 }
-              ]
+              ],
+              "base": {
+                "x": 0,
+                "y": 0
+              }
             },
+            "silenceVoiceChat": false,
+            "disablePortableExperiences": false,
             "spawnPoints": [
               {
                 "name": "SpawnArea1",
@@ -7548,8 +7543,11 @@
                     ]
                   },
                   "y": {
-                    "$case": "single",
-                    "value": 0.5
+                    "$case": "range",
+                    "value": [
+                      0.5,
+                      0.5
+                    ]
                   },
                   "z": {
                     "$case": "range",
@@ -7568,7 +7566,9 @@
             ],
             "skyboxConfig": {
               "fixedTime": 36000
-            }
+            },
+            "creator": "",
+            "disableNearbyVoiceChat": false
           }
         }
       }
