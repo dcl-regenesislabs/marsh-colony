@@ -21,7 +21,6 @@ import {
   BillboardMode,
   MeshRenderer,
   Material,
-  MaterialTransparencyMode,
   VisibilityComponent
 } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
@@ -85,13 +84,15 @@ type EmoteState = {
 
 const emotes = new Map<string, EmoteState>()
 
-function makeMaterial(src: string): Parameters<typeof Material.setPbrMaterial>[1] {
+// Unlit (Basic), same as speech.ts's bubble — a PBR material with a full-white
+// emissive layer (the previous approach) self-illuminates the icon, which reads
+// as a glow/shine on top of the art, worse on mobile's bloom. Unlit sidesteps
+// lighting entirely instead of fighting it with emissive.
+function makeMaterial(src: string): Parameters<typeof Material.setBasicMaterial>[1] {
   return {
     texture: Material.Texture.Common({ src }),
-    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
-    emissiveColor: { r: 1, g: 1, b: 1 },
-    emissiveIntensity: 1,
-    emissiveTexture: Material.Texture.Common({ src })
+    alphaTexture: Material.Texture.Common({ src }),
+    alphaTest: 0.5
   }
 }
 
@@ -102,7 +103,7 @@ function ensureEmoteState(petId: string): EmoteState {
   Transform.create(entity, { position: Vector3.create(0, -100, 0), scale: Vector3.create(EMOTE_SIZE, EMOTE_SIZE, 1) })
   Billboard.create(entity, { billboardMode: BillboardMode.BM_Y })
   MeshRenderer.setPlane(entity)
-  Material.setPbrMaterial(entity, makeMaterial(EMOTE_SRC.happy))
+  Material.setBasicMaterial(entity, makeMaterial(EMOTE_SRC.happy))
   st = { entity, currentSrc: EMOTE_SRC.happy, sleepFrameT: 0, sleepFrameToggle: false, cycleKey: '', cycleT: 0, cycleIndex: 0 }
   emotes.set(petId, st)
   return st
@@ -111,7 +112,7 @@ function ensureEmoteState(petId: string): EmoteState {
 function setTexture(st: EmoteState, src: string): void {
   if (src === st.currentSrc) return
   st.currentSrc = src
-  Material.setPbrMaterial(st.entity, makeMaterial(src))
+  Material.setBasicMaterial(st.entity, makeMaterial(src))
 }
 
 // ---------------------------------------------------------------------------
