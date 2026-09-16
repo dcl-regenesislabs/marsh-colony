@@ -111,6 +111,14 @@ export function server(): void {
     pushSnapshot(p)
   })
 
+  room.onMessage('tutorialStepDone', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    S.advanceTutorial(p, data.step)
+    await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+  })
+
   room.onMessage('careAction', async (data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)

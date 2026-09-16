@@ -27,6 +27,7 @@ import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
+import { tutorialHighlightId, tutorialNotifyAction } from './tutorial'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -429,7 +430,23 @@ function PetPanel() {
       </UiEntity>
       {/* Care actions (flat, colored per stat) */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <TactileButton id="care_feed" label="Feed" width={chipW} height={chipH} bg={C.hunger} textColor={C.outline} fontSize={S(16)} radius={S(14)} disabled={locked} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
+        <TactileButton
+          id="care_feed"
+          label="Feed"
+          width={chipW}
+          height={chipH}
+          bg={C.hunger}
+          textColor={C.outline}
+          fontSize={S(16)}
+          radius={S(14)}
+          disabled={locked}
+          pulse={tutorialHighlightId() === 'care_feed'}
+          margin={{ left: S(3), right: S(3) }}
+          onClick={guard(() => {
+            startFeedTask()
+            tutorialNotifyAction('feed')
+          })}
+        />
         <TactileButton
           id="care_bath"
           label="Bath"
@@ -440,11 +457,13 @@ function PetPanel() {
           fontSize={S(16)}
           radius={S(14)}
           disabled={locked}
+          pulse={tutorialHighlightId() === 'care_bath'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Pick the pet up and carry it to the tub (place it there to bathe).
             startCarryPet()
             clientState.petPanelOpen = false
+            tutorialNotifyAction('bathe')
           })}
         />
         <TactileButton
@@ -457,7 +476,7 @@ function PetPanel() {
           fontSize={S(16)}
           radius={S(14)}
           disabled={!pet.sleeping && busy}
-          pulse={!pet.sleeping && tired && !busy}
+          pulse={(!pet.sleeping && tired && !busy) || tutorialHighlightId() === 'care_sleep'}
           margin={{ left: S(3), right: S(3) }}
           onClick={() => {
             // A nap can't be interrupted for its first few minutes — that lock
@@ -478,6 +497,7 @@ function PetPanel() {
               return
             }
             care('sleep')
+            tutorialNotifyAction('sleep')
           }}
         />
         <TactileButton
@@ -490,6 +510,7 @@ function PetPanel() {
           fontSize={S(16)}
           radius={S(14)}
           disabled={locked}
+          pulse={tutorialHighlightId() === 'care_play'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Out of energy: playing is what drains it, so the way back is bed.
@@ -500,6 +521,7 @@ function PetPanel() {
             // Enter Fetch mode: hide the panel and show the centered Fetch button.
             clientState.fetch.active = true
             clientState.petPanelOpen = false
+            tutorialNotifyAction('play')
           })}
         />
       </UiEntity>

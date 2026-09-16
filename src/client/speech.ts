@@ -459,6 +459,7 @@ function momentIsTaken(): boolean {
     clientState.fetch.active ||
     clientState.feedGame.active ||
     clientState.dialog.open ||
+    clientState.tutorial.active || // the scripted tutorial line owns the bubble
     isBusy()
   )
 }
@@ -510,10 +511,18 @@ function driveSpeech(dt: number): void {
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
+/** Runs the bubble's own phase/pop/position animation — needed for ANY
+ *  petSay() call (tutorial or organic) to actually render. Split from the
+ *  organic auto-nagger below so callers can get one without the other. */
 export function setupPetSpeech(): void {
   ensureBubble()
-  engine.addSystem((dt: number) => {
-    update(dt)
-    driveSpeech(dt)
-  })
+  engine.addSystem((dt: number) => update(dt))
+}
+
+/** The pet nags on its own about low stats (driveSpeech). Independent of
+ *  setupPetSpeech() above — gated behind C.PET_SPEECH_AUTO_NAG_ENABLED by
+ *  whoever calls this, since it changes behavior for every player at every
+ *  moment, not just during a scripted sequence. */
+export function setupPetSpeechAutoNag(): void {
+  engine.addSystem((dt: number) => driveSpeech(dt))
 }

@@ -50,6 +50,8 @@ export const Messages = {
   respondSwap: Schemas.Map({ accept: Schemas.Boolean }),
   // Ask the server for the current coins leaderboard (sent when the panel opens).
   requestLeaderboard: Schemas.Map({}),
+  // First-pet tutorial: mark one step complete (feed/bathe/play/sleep, 0-3).
+  tutorialStepDone: Schemas.Map({ step: Schemas.Int }),
 
   // ---- Server -> Client ----
   // Coins leaderboard (LeaderboardEntry[] JSON), sent to the requesting client.

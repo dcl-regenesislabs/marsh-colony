@@ -14,6 +14,16 @@ import { actions, clientState, pushToast } from './state'
 import { applyCareLocal } from './sim'
 import { finishBath } from './pet'
 
+// Fires ONLY from exitBathResults() (the genuine finish, after the results
+// screen), never from cancelBathGame() (the BACK bail) — both set
+// clientState.bathGame.active = false, so a caller that needs to tell a real
+// finish from a bail (the first-pet tutorial) can't do it by polling `active`
+// alone. tutorial.ts is the only expected subscriber.
+let onExitResults: (() => void) | null = null
+export function setBathExitListener(cb: (() => void) | null): void {
+  onExitResults = cb
+}
+
 export const BATH_DURATION_S = 16 // seconds of the timed popping phase
 export const BUBBLE_GOAL = 12 // pops needed for the pet to count as clean
 export const BATH_COUNTDOWN_S = 3 // 3-2-1 before popping starts
@@ -144,6 +154,7 @@ export function exitBathResults(): void {
   pops = []
   // Play the win splash + hop-out only if the pet actually came out clean.
   finishBath(clientState.bathGame.popped >= BUBBLE_GOAL)
+  onExitResults?.()
 }
 
 /** BACK button — bail out mid-game (no clean applied). */

@@ -68,6 +68,7 @@ function fakePlayer(overrides: Partial<PlayerData> = {}): PlayerData {
     activePetId: 'debug_pet',
     pets: [fakePet()],
     hatchling: null,
+    tutorialStep: -1,
     createdAt: t,
     lastUpdated: t,
     ...overrides

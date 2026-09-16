@@ -156,6 +156,7 @@ function newPlayer(address: string): PlayerData {
     activePetId: '',
     pets: [],
     hatchling: null,
+    tutorialStep: -1,
     createdAt: t,
     lastUpdated: t
   }
@@ -440,12 +441,27 @@ export function keepPet(p: PlayerData): Notify[] {
   if (p.pets.length >= p.petSlots) {
     return [{ kind: 'error', message: 'No free pet slots' }]
   }
+  // Checked BEFORE the bump below: the true "this player has never kept a pet
+  // before" signal, unlike p.pets.length === 1 (client-side heuristic), which
+  // a discard-and-readopt could retrigger. Kicks off the first-pet tutorial.
+  const isFirstEver = (p.counters.adoptCount ?? 0) === 0
   const pet = p.hatchling
   p.hatchling = null
   p.pets.push(pet)
   p.activePetId = pet.id
   bump(p, 'adoptCount')
+  if (isFirstEver) p.tutorialStep = 0
   return [{ kind: 'adopt', message: `${pet.name} joined your colony!` }]
+}
+
+const TUTORIAL_STEP_COUNT = 4
+
+/** Advance the first-pet tutorial past one completed step. Idempotent/anti-
+ *  replay: only accepts the step the player is actually currently expected
+ *  to complete, so a stale or forged client message can't skip steps. */
+export function advanceTutorial(p: PlayerData, step: number): void {
+  if (p.tutorialStep !== step) return
+  p.tutorialStep = Math.min(step + 1, TUTORIAL_STEP_COUNT)
 }
 
 /** Discard the hatchling: it goes back to the Care Center — you keep nothing. */

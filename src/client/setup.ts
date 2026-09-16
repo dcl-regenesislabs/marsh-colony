@@ -13,7 +13,7 @@
 import { engine, InputModifier } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
+import { DEV_SKIP_SERVER_GATE, PET_SPEECH_AUTO_NAG_ENABLED, type SpinReward } from '../shared/config'
 import { actions, applyPresence, applySnapshot, clientState, markServerAlive, pushToast, resolveMyAddress } from './state'
 import { evaluateStreak, seedLocalPlayer, simTick } from './sim'
 import { setupUi, ui } from './ui'
@@ -36,6 +36,8 @@ import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
 import { setupNav } from './nav'
+import { setupPetSpeech, setupPetSpeechAutoNag } from './speech'
+import { setupTutorial } from './tutorial'
 
 let introTriggered = false
 let firstSnapshotSeen = false // decide the "Choose Location!" modal on the FIRST snapshot only
@@ -194,7 +196,10 @@ export function setupClient(): void {
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
-  setupPetEmotes() // floating PNG emote showing the pet's current need/mood — supersedes the text speech bubble (speech.ts, unwired but kept in case it's needed again) and the 4-icon mood bar
+  setupPetEmotes() // floating PNG emote showing the pet's current need/mood — supersedes the 4-icon mood bar as the pet's organic status readout
+  setupPetSpeech() // bubble DISPLAY only (renders any petSay()) — the first-pet tutorial needs this; the organic nagger below is separate and off by default
+  if (PET_SPEECH_AUTO_NAG_ENABLED) setupPetSpeechAutoNag()
+  setupTutorial() // first-pet guided tutorial (issue #243): feed/bathe/play/sleep, once, right after Keep
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)
 
   if (DEV_SKIP_SERVER_GATE) {

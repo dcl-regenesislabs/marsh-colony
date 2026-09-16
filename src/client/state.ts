@@ -130,6 +130,13 @@ export const clientState: {
   colonyPopulation: number
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
+  // First-pet tutorial (client/tutorial.ts). `active` mirrors the server's
+  // player.tutorialStep being 0-3 (picked up by tutorial.ts's system, not set
+  // directly here). `phase` is purely client-local sub-state within the
+  // current step: 'need' = the pet has stated it, waiting on the player to
+  // tap the highlighted button; 'action' = tapped, waiting for the minigame
+  // to complete.
+  tutorial: { active: boolean; stepIndex: number; phase: 'need' | 'action' }
 } = {
   myAddress: '',
   player: null,
@@ -161,7 +168,8 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
-  leaderboard: []
+  leaderboard: [],
+  tutorial: { active: false, stepIndex: -1, phase: 'need' }
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
@@ -274,7 +282,8 @@ export function switchActivePet(petId: string): void {
     s.fetch.active ||
     s.feedGame.active ||
     s.bathGame.active ||
-    s.feedTask.active
+    s.feedTask.active ||
+    s.tutorial.active
   ) {
     pushToast('Finish what your pet is doing first!')
     return
@@ -305,8 +314,9 @@ export function keepHatchling(): void {
   p.activePetId = pet.id
   clientState.activePet = pet
   clientState.pendingPet = null
-  // First pet ever born -> nudge the player to interact with it.
-  if (p.pets.length === 1) showHint('firstPet', 'Click on your pet to complete some necessities and gain XP and coins!')
+  // First pet ever kept -> the server flips player.tutorialStep to 0, which
+  // tutorial.ts picks up and drives from there (superseded the old one-off
+  // "click on your pet" toast — the pet's own dialogue covers that nudge now).
   actions.keepPet()
 }
 
@@ -367,6 +377,9 @@ export const actions = {
   },
   requestLeaderboard(): void {
     room.send('requestLeaderboard', {})
+  },
+  tutorialStepDone(step: number): void {
+    room.send('tutorialStepDone', { step })
   },
   adopt(species: string, name: string): void {
     console.log('[Client] -> adopt', species, name)

@@ -40,6 +40,7 @@ export function seedLocalPlayer(): void {
     activePetId: '',
     pets: [],
     hatchling: null,
+    tutorialStep: -1,
     createdAt: t,
     lastUpdated: t
   }

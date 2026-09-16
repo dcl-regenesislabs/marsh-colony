@@ -68,6 +68,10 @@ export interface PlayerData {
   pets: PetData[]
   // A just-hatched pet not yet placed in a slot: keep it (-> pets) or discard it.
   hatchling: PetData | null
+  // First-pet-ever guided tutorial (feed/bathe/play/sleep). -1 = not eligible
+  // or not started, 0..3 = waiting on that step, 4 = done. Only ever set by
+  // server/state.ts's keepPet() on a genuine first adopt.
+  tutorialStep: number
   // Bookkeeping
   createdAt: number
   lastUpdated: number

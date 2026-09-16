@@ -76,6 +76,14 @@ export const PET_SPEECH_REPEAT_SECONDS = 45
  * this often. Set to 0 to keep a content pet silent.
  */
 export const PET_SPEECH_IDLE_SECONDS = 120
+/**
+ * Whether the pet nags on its own about low stats (client/speech.ts's
+ * driveSpeech, via setupPetSpeechAutoNag()). Off by default — the first-pet
+ * tutorial (client/tutorial.ts) only needs the bubble's DISPLAY system
+ * (setupPetSpeech()), which is unconditional; turning the organic nagger on
+ * for every player at every moment is a separate call, flip this when ready.
+ */
+export const PET_SPEECH_AUTO_NAG_ENABLED = false
 
 // ---------------------------------------------------------------------------
 // Colony — the shared Mars population everyone is building toward. Teaser for
