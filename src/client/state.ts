@@ -51,7 +51,7 @@ export const clientState: {
   // instead of the button looking dead on a fast second click.
   lastTreatSentAt: number
   // ms timestamp this player's OWN pet was last treated by someone else (set
-  // from the 'treated' notify — see server/state.ts petOther). TEST: drives
+  // from the 'treated' notify — see server/state.ts petOther). Drives
   // petEmotes.ts's heart reaction.
   lastTreatedAt: number
   // Hold-to-pet gesture: active while the overlay is up; progress 0..1 fills

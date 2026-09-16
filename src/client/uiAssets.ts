@@ -30,7 +30,21 @@ const STATIC_UI_ASSETS = [
   'assets/images/right_arrow_pressed.png',
   'assets/images/throwicon.png',
   'assets/images/tutorialUi/btn_close.png',
-  'assets/images/tutorialUi/btn_next.png'
+  'assets/images/tutorialUi/btn_next.png',
+  // World-space, not screen UI, but the same AssetLoad pipeline below preloads
+  // any texture path — petEmotes.ts's floating icon otherwise pops in blank
+  // the first time each one is shown.
+  'assets/images/emotes/emote_Food.png',
+  'assets/images/emotes/emote_Clean.png',
+  'assets/images/emotes/emote_Play.png',
+  'assets/images/emotes/emote_Sick.png',
+  'assets/images/emotes/emote_faceHappy.png',
+  'assets/images/emotes/emote_faceSad.png',
+  'assets/images/emotes/emote_faceAngry.png',
+  'assets/images/emotes/emote_heart.png',
+  'assets/images/emotes/emote_music.png',
+  'assets/images/emotes/emote_sleep.png',
+  'assets/images/emotes/emote_sleeps.png'
 ]
 
 let preloaded = false

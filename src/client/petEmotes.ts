@@ -1,11 +1,12 @@
-// TEST: floating PNG "emote" icon above EACH of the player's own pets — not
-// just the active one — a single always-on readout of that pet's dominant
-// status. Only one emote plays per pet at a time; see `dominantEmote` below
-// for the full priority order (sleeping beats "just got love" beats the
-// needs-based face/icon).
+// Floating PNG "emote" icon above EACH of the player's own pets — not just
+// the active one — a single always-on readout of that pet's dominant status.
+// Only one emote plays per pet at a time; see `dominantEmote` below for the
+// full priority order (sleeping beats "just got love" beats the needs-based
+// face/icon).
 //
-// This is a prototype sibling to the text speech bubble (speech.ts) and the
-// 4-icon mood bar (pet.ts) — it doesn't replace either.
+// Supersedes the 4-icon mood bar (pet.ts's makeTag(false) for owned pets) and
+// the text speech bubble (speech.ts, left unwired rather than deleted — see
+// setup.ts) as the pet's overhead status readout.
 //
 // "Just got treated/petted" (the heart) is inferred rather than tracked by
 // real game data — see updateHeartTriggers below. It, and the fruit-catch
@@ -13,21 +14,12 @@
 // interactions (petting, treats, the Feed minigame) that only ever happen to
 // whichever pet is out and active.
 
-import {
-  engine,
-  Entity,
-  Transform,
-  Billboard,
-  BillboardMode,
-  MeshRenderer,
-  Material,
-  VisibilityComponent
-} from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, Billboard, MeshRenderer, Material, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
-import { getLocalPet, getInactivePetEntity, petIsPresent } from './pet'
+import { getLocalPet, getInactivePetEntity, petIsPresent, TAG_MIN, TAG_SIZE_MULT } from './pet'
 import { petOverheadTuning } from './petOverheadCalibration'
 
 type EmoteId = 'food' | 'clean' | 'play' | 'sick' | 'happy' | 'sad' | 'angry' | 'heart' | 'music' | 'sleep1' | 'sleep2'
@@ -59,8 +51,6 @@ const NEEDS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
 const EMOTE_SIZE = 0.5 // plane width/height in world metres
 /** Extra clearance above the name tag + mood icon row so this doesn't overlap them. */
 const EMOTE_EXTRA_LIFT = 0.65
-const TAG_MIN = 0.35
-const TAG_SIZE_MULT = 1.85
 
 /** How long the heart shows after a petting session ends or a treat lands. */
 const HEART_HOLD_S = 5
@@ -75,6 +65,7 @@ const CYCLE_STEP_S = 1.2
 type EmoteState = {
   entity: Entity
   currentSrc: string
+  visible: boolean
   sleepFrameT: number
   sleepFrameToggle: boolean
   cycleKey: string
@@ -101,10 +92,13 @@ function ensureEmoteState(petId: string): EmoteState {
   if (st) return st
   const entity = engine.addEntity()
   Transform.create(entity, { position: Vector3.create(0, -100, 0), scale: Vector3.create(EMOTE_SIZE, EMOTE_SIZE, 1) })
-  Billboard.create(entity, { billboardMode: BillboardMode.BM_Y })
+  Billboard.create(entity, {}) // full billboard, same as the name tag (makeTag) it sits above
   MeshRenderer.setPlane(entity)
   Material.setBasicMaterial(entity, makeMaterial(EMOTE_SRC.happy))
-  st = { entity, currentSrc: EMOTE_SRC.happy, sleepFrameT: 0, sleepFrameToggle: false, cycleKey: '', cycleT: 0, cycleIndex: 0 }
+  // Starts hidden (visible: false, matching the created VisibilityComponent
+  // below) — the first real update() call decides the true state.
+  VisibilityComponent.create(entity, { visible: false })
+  st = { entity, currentSrc: EMOTE_SRC.happy, visible: false, sleepFrameT: 0, sleepFrameToggle: false, cycleKey: '', cycleT: 0, cycleIndex: 0 }
   emotes.set(petId, st)
   return st
 }
@@ -119,22 +113,24 @@ function setTexture(st: EmoteState, src: string): void {
 // "Just got love" detection (ACTIVE pet only) — tied to the actual pet
 // actions, not a happiness delta (that also fires from Play and premium food,
 // which is why the heart used to show almost constantly):
-//   - self-petting: edge-detect clientState.petting.active going true -> false,
-//     which is exactly the moment the petting cinematic finishes (pet.ts's
-//     completePetting sets celebrationUntil, and cancelPetting() — called once
-//     celebrationUntil elapses — is what flips active back to false).
+//   - self-petting: edge-detect clientState.petting.celebrationUntil going
+//     0 -> nonzero, which ONLY completePetting() ever does (pet.ts) — the
+//     moment the gesture actually finishes. NOT petting.active going true ->
+//     false: cancelPetting() also flips that on the BACK button and on the
+//     pet-vanishing bail-out, neither of which completed anything, and both
+//     reset celebrationUntil back to 0 without ever having set it.
 //   - treated by another player: clientState.lastTreatedAt, set from the
 //     server's 'treated' notify (see server/state.ts petOther + setup.ts's
 //     'notify' handler) — a real signal, not a guess.
 // ---------------------------------------------------------------------------
 let heartUntil = 0
-let wasPetting = false
+let wasCelebrating = false
 let lastSeenTreatedAt = 0
 
 function updateHeartTriggers(now: number): void {
-  const petting = clientState.petting.active
-  if (wasPetting && !petting) heartUntil = now + HEART_HOLD_S * 1000
-  wasPetting = petting
+  const celebrating = clientState.petting.celebrationUntil > 0
+  if (celebrating && !wasCelebrating) heartUntil = now + HEART_HOLD_S * 1000
+  wasCelebrating = celebrating
 
   if (clientState.lastTreatedAt !== lastSeenTreatedAt) {
     lastSeenTreatedAt = clientState.lastTreatedAt
@@ -198,11 +194,7 @@ function cycledMoodEmote(st: EmoteState, face: EmoteId, lowNeeds: StatKey[], dt:
  * What a pet shows right now, highest priority first:
  *  1. sleeping — animated between the two sleep frames (checked first: energy
  *               is expected to be near-bottom right when sleep starts, which
- *               would otherwise read as "sick" every time)
- *  2. sick    — hunger/hygiene/happiness has crashed below NEGLECT_THRESHOLD
- *               (proxy for "sick"; there's no real sickness state in the game
- *               yet). Energy is excluded — low energy while awake just means
- *               tired, already covered by its own need icon.
+ *               would otherwise read as a needs-based icon every time)
  *  2. (active pet only) playing the fruit-catch minigame — music note, with a
  *     brief happy flash on each catch (see updateCatchTrigger above)
  *  3. (active pet only) just got love (see updateHeartTriggers above) — heart
@@ -210,9 +202,9 @@ function cycledMoodEmote(st: EmoteState, face: EmoteId, lowNeeds: StatKey[], dt:
  *     2+ low = the mood face (sad at 2, angry at 3+) cycling with each low
  *     need's icon in turn (see cycledMoodEmote above)
  *
- * "sick" is deliberately NOT wired up — there's no sickness mechanic in the
- * game yet, so nothing should ever show it. EMOTE_SRC.sick is kept for when
- * that feature exists.
+ * "sick" has no priority step here — there's no sickness mechanic in the game
+ * yet (see #148), so nothing should ever show it. EMOTE_SRC.sick is kept for
+ * when that feature lands and this gets a real branch.
  */
 function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, isActive: boolean): EmoteId {
   if (pet.sleeping) return sleepingEmote(st, dt)
@@ -259,11 +251,17 @@ function update(dt: number): void {
 
       const st = ensureEmoteState(pet.id)
       if (hidden || petEntity === null) {
-        VisibilityComponent.createOrReplace(st.entity, { visible: false })
+        if (st.visible) {
+          st.visible = false
+          VisibilityComponent.getMutable(st.entity).visible = false
+        }
         continue
       }
 
-      VisibilityComponent.createOrReplace(st.entity, { visible: true })
+      if (!st.visible) {
+        st.visible = true
+        VisibilityComponent.getMutable(st.entity).visible = true
+      }
       setTexture(st, EMOTE_SRC[dominantEmote(st, pet, now, dt, isActive)])
 
       const pos = Transform.get(petEntity).position

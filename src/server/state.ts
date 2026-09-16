@@ -622,7 +622,7 @@ export function petSelf(p: PlayerData): Notify[] {
   return []
 }
 
-/** giverNotes go to the giver as usual; targetNotify (TEST: drives the target's
+/** giverNotes go to the giver as usual; targetNotify (drives the target's
  *  heart-emote reaction — see petEmotes.ts) is non-null only when the treat
  *  actually landed, i.e. never on the error/cooldown early-outs below. */
 export function petOther(giver: PlayerData, target: PlayerData): { giverNotes: Notify[]; targetNotify: Notify | null } {
@@ -646,7 +646,11 @@ export function petOther(giver: PlayerData, target: PlayerData): { giverNotes: N
   grantCaretakerXp(giver, C.CARETAKER_XP_PER_GIVING, notes)
   checkAchievements(giver, notes)
   notes.push({ kind: 'giving', message: `You petted ${targetPet.name}! +${C.PET_OTHER_GIVING_POINTS} Giving` })
-  return { giverNotes: notes, targetNotify: { kind: 'treated', message: `${giver.address.slice(0, 6)} gave ${targetPet.name} a treat!` } }
+  // Same name resolution as the presence list (line ~78) — a raw address slice
+  // here would reintroduce the #241/#256 "shows a wallet instead of a name" bug,
+  // just on the target's side instead of the giver's.
+  const giverName = playerNames.get(giver.address.toLowerCase()) ?? shortAddress(giver.address)
+  return { giverNotes: notes, targetNotify: { kind: 'treated', message: `${giverName} gave ${targetPet.name} a treat!` } }
 }
 
 // ---------------------------------------------------------------------------
