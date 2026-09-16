@@ -1294,12 +1294,12 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     }
 
     return (
-      <PetGridCard selected={false} width={cardW} height={cardH} onClick={() => pushToast('Go to the Care Center to adopt a pet!')}>
+      <PetGridCard selected={false} width={cardW} height={cardH} onClick={() => ui.openAdopt()}>
         <UiEntity uiTransform={{ width: S(42), height: S(42), borderRadius: S(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: S(10) } }} uiBackground={{ color: PET_UI.badge }}>
           <Label value="+" fontSize={S(28)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: S(42), height: S(42) }} />
         </UiEntity>
         <Label value="Adopt" fontSize={S(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-        <Label value="Go to Care Center" fontSize={S(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
+        <Label value="Tap to adopt" fontSize={S(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
       </PetGridCard>
     )
   }
