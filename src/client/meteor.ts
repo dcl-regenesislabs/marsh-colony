@@ -59,6 +59,12 @@ function spawnMeteor(): void {
     rotation: Quaternion.fromEulerDegrees(SPAWN.rotationDeg.x, SPAWN.rotationDeg.y, SPAWN.rotationDeg.z),
     scale: SPAWN.scale
   })
+  // Pointer-only for now — the entity's Transform sits at its final ground
+  // position the whole time (only the GLB's own clip animates the visual
+  // fall), so a physics collider here would be a solid, invisible wall for
+  // the whole pre-fall delay, and even during the fall would sit at the
+  // landed spot while the mesh is still animating down from above. CL_PHYSICS
+  // gets added below once it's actually landed and the two finally agree.
   GltfContainer.create(meteor, { src: MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
 
   // Hidden until it starts falling — otherwise it would sit on the ground during
@@ -85,6 +91,10 @@ function spawnMeteor(): void {
       VisibilityComponent.getMutable(meteor).visible = true
       Animator.playSingleAnimation(meteor, LANDING_CLIP, true)
     } else if (phase === 1 && t >= LANDING_DURATION) {
+      // Now that it's actually settled at the same spot its collider has sat
+      // the whole time, turn on physics so it blocks movement like a solid
+      // object — safe only from here, see the CL_POINTER-only comment above.
+      GltfContainer.getMutable(meteor).visibleMeshesCollisionMask = ColliderLayer.CL_POINTER | ColliderLayer.CL_PHYSICS
       showHint('meteor', 'Go explore the meteorite for daily rewards and surprises!', 'reward')
       engine.removeSystem(timeline) // landed & holding its last frame — nothing left to drive
     }
