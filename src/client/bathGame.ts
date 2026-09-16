@@ -71,7 +71,7 @@ function resetBubble(b: Bubble): void {
   b.baseX = rand(0.12, 0.88)
   b.x = b.baseX
   b.y = rand(1.05, 1.28) // staggered starts below the screen
-  b.r = rand(30, 56) // varied sizes
+  b.r = rand(45, 84) // varied sizes (1.5× — were too small on mobile). Scales both the floating bubble and the pop splash (all frames), since both size off b.r.
   b.speed = rand(0.1, 0.28) // varied rise speed -> crosses in ~4-10s
   b.wobbleAmp = rand(0.02, 0.09)
   b.wobbleFreq = rand(1.4, 4.2)
