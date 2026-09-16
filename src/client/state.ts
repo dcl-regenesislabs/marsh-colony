@@ -50,6 +50,10 @@ export const clientState: {
   // petOther on cooldown (no notify), so this drives a local disable/toast
   // instead of the button looking dead on a fast second click.
   lastTreatSentAt: number
+  // ms timestamp this player's OWN pet was last treated by someone else (set
+  // from the 'treated' notify — see server/state.ts petOther). Drives
+  // petEmotes.ts's heart reaction.
+  lastTreatedAt: number
   // Hold-to-pet gesture: active while the overlay is up; progress 0..1 fills
   // while the pointer is held and ebbs back when released.
   petting: { active: boolean; progress: number; celebrationUntil: number }
@@ -142,6 +146,7 @@ export const clientState: {
   viewingPetAddress: null,
   incomingSwap: null,
   lastTreatSentAt: 0,
+  lastTreatedAt: 0,
   petting: { active: false, progress: 0, celebrationUntil: 0 },
   carryEgg: { active: false, species: '', name: '', atHome: false },
   carryPet: { active: false, atStation: false },
