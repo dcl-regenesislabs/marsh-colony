@@ -22,10 +22,18 @@ const freshPlayers = new Set<string>()
 // Per-player pet follow state (Whistle/Stay), reported by the client. Ephemeral
 // (session-only) — used to broadcast `following` in presence. Defaults to true.
 const followState = new Map<string, boolean>()
+// Per-player bath carry state. Like follow state, this is session-only and is
+// broadcast in presence so other clients can render the pet on its owner.
+const carriedState = new Map<string, boolean>()
 
 /** Record a player's pet follow state so presence can broadcast it. */
 export function setFollowState(address: string, following: boolean): void {
   followState.set(address.toLowerCase(), following)
+}
+
+/** Record whether a player is carrying their pet to the bath. */
+export function setCarriedState(address: string, carried: boolean): void {
+  carriedState.set(address.toLowerCase(), carried)
 }
 
 // Player display names (from getPlayer().name, reported on requestState). Client-
@@ -895,7 +903,8 @@ export function presenceFor(p: PlayerData): PresenceEntry | null {
     size: pet.size,
     mood: deriveMood(pet),
     level: pet.petLevel,
-    following: followState.get(p.address.toLowerCase()) ?? true
+    following: followState.get(p.address.toLowerCase()) ?? true,
+    carried: carriedState.get(p.address.toLowerCase()) ?? false
   }
 }
 

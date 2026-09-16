@@ -83,6 +83,7 @@ export interface PresenceEntry {
   mood: number // 0-100 derived overall mood, drives sad/happy idle
   level: number
   following?: boolean // is the owner's pet currently following them?
+  carried?: boolean // is the owner currently carrying the pet to the bath?
 }
 
 /** One row of the coins leaderboard (server-ranked, top N by currency). */

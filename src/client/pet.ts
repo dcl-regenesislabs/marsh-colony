@@ -125,6 +125,7 @@ let wanderPause = 0
 const remotePets = new Map<string, Entity>()
 const remoteSpecies = new Map<string, string>()
 const remoteSkinKey = new Map<string, string>() // addr -> species|rarity of the applied skin
+const remoteCarried = new Map<string, Entity>() // addr -> anchor attached to that owner's avatar
 
 // Floating tag above each pet: just its name. A billboard root faces the
 // camera. The pet's OWNER additionally sees a row of 4 mood icons (hunger /
@@ -970,6 +971,10 @@ function petHoldOffset(pet: PetData): Vector3 {
   return Vector3.scale(PET_HOLD_OFFSET, petScale(pet.species, stageScaleFor(pet.size)).x)
 }
 
+function remotePetHoldOffset(species: string, size: number): Vector3 {
+  return Vector3.scale(PET_HOLD_OFFSET, petScale(species, stageScaleFor(size)).x)
+}
+
 /** The held pet is directly in front of the camera. Disable its pointer collider
  * so it cannot block clicks on the bath or other world interactions. */
 function setHeldPetPointerCollider(enabled: boolean): void {
@@ -1023,6 +1028,7 @@ export function startCarryPet(): void {
   }
   clientState.carryPet = { active: true, atStation: false }
   attachPetToHands(clientState.activePet)
+  actions.setCarried(true)
   playHoldPetEmote()
   showArrowTo(objectPosition(EntityNames.PetPool_glb), 'carryPet')
   pushToast('Carry your pet to the bath!')
@@ -1033,6 +1039,7 @@ export function cancelCarryPet(): void {
   if (!clientState.carryPet.active) return
   clientState.carryPet = { active: false, atStation: false }
   detachPetFromHands() // also resets position/rotation — see its doc comment
+  actions.setCarried(false)
   stopHoldEmote() // drop the hold pose, pet is no longer in hand
   hideArrow('carryPet')
 }
@@ -1043,6 +1050,7 @@ export function placePetAtStation(): void {
   if (!clientState.carryPet.active) return
   clientState.carryPet = { active: false, atStation: false }
   detachPetFromHands()
+  actions.setCarried(false)
   stopHoldEmote() // drop the hold pose, pet is no longer in hand
   hideArrow('carryPet')
   if (localPet) {
@@ -1762,6 +1770,27 @@ function updateRemotePets(dt: number): void {
     const t = Transform.getMutable(ent)
     const s = petScale(entry.species, stageScaleFor(entry.size))
     if (t.scale.x !== s.x) t.scale = s
+    const tag = remoteTags.get(addr)
+    const carriedAnchor = remoteCarried.get(addr)
+    if (entry.carried) {
+      const anchor = carriedAnchor ?? engine.addEntity()
+      if (!carriedAnchor) remoteCarried.set(addr, anchor)
+      Transform.createOrReplace(anchor, {})
+      AvatarAttach.createOrReplace(anchor, { avatarId: entry.address, anchorPointId: AvatarAnchorPointType.AAPT_SPINE })
+      t.parent = anchor
+      t.position = remotePetHoldOffset(entry.species, entry.size)
+      t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(entry.species) + PET_HOLD_YAW, 0)
+      setClip(ent, 'idle')
+      if (tag) setTagVisible(tag, false)
+      continue
+    }
+    if (carriedAnchor) {
+      t.parent = engine.RootEntity
+      t.position = Vector3.create(ownerPos.x - 2, C.PET_BASE_Y, ownerPos.z - 2)
+      AvatarAttach.deleteFrom(carriedAnchor)
+      remoteCarried.delete(addr)
+    }
+    if (tag) setTagVisible(tag, true)
     // Follow the owner only if their pet is currently following them; otherwise
     // it stays put (mirrors the owner having dismissed it).
     const following = entry.following !== false
@@ -1772,7 +1801,6 @@ function updateRemotePets(dt: number): void {
     }
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
-    const tag = remoteTags.get(addr)
     if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
   }
 
@@ -1782,6 +1810,11 @@ function updateRemotePets(dt: number): void {
       remotePets.delete(addr)
       remoteSpecies.delete(addr)
       remoteSkinKey.delete(addr)
+      const carriedAnchor = remoteCarried.get(addr)
+      if (carriedAnchor) {
+        engine.removeEntity(carriedAnchor)
+        remoteCarried.delete(addr)
+      }
       forgetAnimator(ent)
       const tag = remoteTags.get(addr)
       if (tag) {

@@ -242,6 +242,12 @@ export function server(): void {
     broadcastPresence() // push the new follow/stay state to everyone right away
   })
 
+  room.onMessage('setCarried', (data, ctx) => {
+    if (!ctx) return
+    S.setCarriedState(ctx.from, data.carried)
+    broadcastPresence() // remote clients need the carry pose immediately
+  })
+
   room.onMessage('proposeSwap', async (data, ctx) => {
     if (!ctx) return
     const from = await S.loadPlayer(ctx.from)
@@ -323,6 +329,7 @@ export function server(): void {
         trackEvent('session ended', addr, props)
         connected.delete(addr)
         sessionStart.delete(addr)
+        S.setCarriedState(addr, false)
       }
     }
 

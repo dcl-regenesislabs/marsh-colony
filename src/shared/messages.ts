@@ -44,6 +44,9 @@ export const Messages = {
   // Report my pet's follow state (Whistle/Stay) so the server can broadcast it
   // in presence for everyone to mirror.
   setFollow: Schemas.Map({ following: Schemas.Boolean }),
+  // Report whether the active pet is currently being carried to the bath, so
+  // other clients can attach their remote render to the owner's avatar.
+  setCarried: Schemas.Map({ carried: Schemas.Boolean }),
   // Pet swap: offer my active pet to `targetAddress` for their active pet.
   proposeSwap: Schemas.Map({ targetAddress: Schemas.String, fromName: Schemas.String }),
   // Target's answer to the pending swap offer addressed to them.

@@ -417,6 +417,9 @@ export const actions = {
   setFollow(following: boolean): void {
     room.send('setFollow', { following })
   },
+  setCarried(carried: boolean): void {
+    room.send('setCarried', { carried })
+  },
   openMeteor(): void {
     room.send('openMeteor', {})
   },
