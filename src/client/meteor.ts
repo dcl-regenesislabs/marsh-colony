@@ -20,17 +20,22 @@ import { dailyClaimable, meteorAvailable } from './sim'
 import { showHint } from './state'
 import { ui } from './ui'
 
-const MODEL = 'assets/scene/Models/meteor_gold.glb'
-const LANDING_CLIP = 'meteorLanding'
-const IDLE_CLIP = 'meteorStruckIdle'
-const FALL_DELAY = 60 // seconds after the scene loads before it falls
-const LANDING_DURATION = 4.9 // seconds — from the GLB (meteorLanding ~4.83s)
+const MODEL = 'assets/Models/newModels/meteor01.glb'
+const LANDING_CLIP = 'asteroid_land' // meteor01's fall clip; after it plays we HOLD its last frame
+const DISAPPEAR_CLIP = 'asteroid_disappear' // played on click, then the entity is removed
+// NB: meteor01's 'asteroid_rest' idle is intentionally unused — its model shows a
+// stray green prism, so instead of settling into rest we freeze on the landing pose.
+const FALL_DELAY = 10 // seconds after the scene loads before it falls (short for testing)
+const LANDING_CLIP_LENGTH = 0.92 // asteroid_land natural length (s), from the GLB
+const LANDING_SPEED = 0.4 // playback speed of the fall: < 1 = slower (tune to taste)
+const LANDING_DURATION = LANDING_CLIP_LENGTH / LANDING_SPEED // real fall time at that speed
+const DISAPPEAR_DURATION = 0.95 // asteroid_disappear length (~0.92s) at speed 1, before removal
 
 // Where the meteor lands. Tune freely (meters; scene is 480x480, base 0,0).
 const SPAWN = {
   position: Vector3.create(203.2, 0, 229.8),
   rotationDeg: Vector3.create(0, 0, 0),
-  scale: Vector3.create(0.7, 0.7, 0.7)
+  scale: Vector3.create(3.5, 3.5, 3.5) // meteor01 is authored ~5× smaller than the old model
 }
 
 export function setupMeteor(): void {
@@ -54,6 +59,12 @@ function spawnMeteor(): void {
     rotation: Quaternion.fromEulerDegrees(SPAWN.rotationDeg.x, SPAWN.rotationDeg.y, SPAWN.rotationDeg.z),
     scale: SPAWN.scale
   })
+  // Pointer-only for now — the entity's Transform sits at its final ground
+  // position the whole time (only the GLB's own clip animates the visual
+  // fall), so a physics collider here would be a solid, invisible wall for
+  // the whole pre-fall delay, and even during the fall would sit at the
+  // landed spot while the mesh is still animating down from above. CL_PHYSICS
+  // gets added below once it's actually landed and the two finally agree.
   GltfContainer.create(meteor, { src: MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
 
   // Hidden until it starts falling — otherwise it would sit on the ground during
@@ -62,12 +73,14 @@ function spawnMeteor(): void {
 
   Animator.create(meteor, {
     states: [
-      { clip: LANDING_CLIP, playing: false, loop: false, shouldReset: true },
-      { clip: IDLE_CLIP, playing: false, loop: true }
+      { clip: LANDING_CLIP, playing: false, loop: false, shouldReset: true, speed: LANDING_SPEED },
+      { clip: DISAPPEAR_CLIP, playing: false, loop: false, shouldReset: true }
     ]
   })
 
-  // Timeline: wait -> reveal + fall -> settle into idle, then retire the system.
+  // Timeline: wait -> reveal + fall -> HOLD the landing pose (no rest clip), then
+  // retire the system. A non-looping clip freezes on its last frame, which is the
+  // "landed" look we want (asteroid_rest is unusable — green prism).
   let t = 0
   let phase = 0 // 0 = waiting, 1 = falling
   const timeline = (dt: number): void => {
@@ -78,24 +91,35 @@ function spawnMeteor(): void {
       VisibilityComponent.getMutable(meteor).visible = true
       Animator.playSingleAnimation(meteor, LANDING_CLIP, true)
     } else if (phase === 1 && t >= LANDING_DURATION) {
-      Animator.playSingleAnimation(meteor, IDLE_CLIP, false)
+      // Now that it's actually settled at the same spot its collider has sat
+      // the whole time, turn on physics so it blocks movement like a solid
+      // object — safe only from here, see the CL_POINTER-only comment above.
+      GltfContainer.getMutable(meteor).visibleMeshesCollisionMask = ColliderLayer.CL_POINTER | ColliderLayer.CL_PHYSICS
       showHint('meteor', 'Go explore the meteorite for daily rewards and surprises!', 'reward')
-      engine.removeSystem(timeline) // settled — nothing left to drive
+      engine.removeSystem(timeline) // landed & holding its last frame — nothing left to drive
     }
   }
   engine.addSystem(timeline)
 
-  // Click to crack it open. The server owns the roll, the payout and the daily
-  // gate; the panel opens when `meteorResult` comes back.
+  // Click to crack it open: play the disappear animation, then remove the meteor and
+  // open the reward panel (opening it AFTER the poof so the panel doesn't cover it).
   let collected = false
   pointerEventsSystem.onPointerDown(
     { entity: meteor, opts: { button: InputAction.IA_POINTER, hoverText: 'Explore', maxDistance: 12 } },
     () => {
       if (collected) return
       collected = true
-      ui.openMeteorReward() // opens the daily-reward ladder (client streak)
-      engine.removeSystem(timeline)
-      engine.removeEntity(meteor)
+      engine.removeSystem(timeline) // in case it's clicked before it finishes landing
+      Animator.playSingleAnimation(meteor, DISAPPEAR_CLIP, true)
+      let poofT = 0
+      const finishDisappear = (dt: number): void => {
+        poofT += dt
+        if (poofT < DISAPPEAR_DURATION) return
+        engine.removeSystem(finishDisappear)
+        engine.removeEntity(meteor)
+        ui.openMeteorReward() // opens the daily-reward ladder (client streak)
+      }
+      engine.addSystem(finishDisappear)
     }
   )
 }

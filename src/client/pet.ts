@@ -244,7 +244,10 @@ function homeSpawnPos(): Vector3 {
  *  here would silently contradict that). Y matches the 'asleep' mode's lift. */
 function sleepRestPos(pet: PetData, fallback: Vector3): Vector3 {
   if (!pet.sleepOnBed) return Vector3.create(fallback.x, C.PET_BASE_Y + SLEEP_BED_LIFT, fallback.z)
-  const bed = nudgeOutsideBuildings(objectPosition(EntityNames.PetBed_glb))
+  // Land ON the bed: use its exact spot. NO nudgeOutsideBuildings here — the bed
+  // sits INSIDE the house dome ring, so nudging "outside the ring" shoved the pet
+  // off the cushion toward the wall (that's why it didn't land exactly on top).
+  const bed = objectPosition(EntityNames.PetBed_glb)
   return Vector3.create(bed.x, C.PET_BASE_Y + SLEEP_BED_LIFT, bed.z)
 }
 
@@ -875,12 +878,27 @@ function updatePetting(dt: number): void {
 // snapshot can't reveal the pet early.
 // ---------------------------------------------------------------------------
 const EGG_MODEL = 'models/stylized_dino_egg.glb'
+// The Nest: a fixture inside the house. Eggs hatch ON it — startHatch() drops the
+// egg here (not in front of the player), so hatching always happens on the nest.
+const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
+const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
+const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
+const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
+
+/** Place the (static, non-blocking) hatching nest inside the house. Called once. */
+function placeNest(): void {
+  const e = engine.addEntity()
+  Transform.create(e, { position: NEST_POS, rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0) })
+  // No collision — decorative hatch surface; must not block the player walking in.
+  GltfContainer.create(e, { src: NEST_MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
+}
 // Timings synced to the egg's `Hatch` clip (2.0s one-shot): the shell opens and
 // reveals the interior at ~1.4s, and is fully gone at 2.0s.
 const HATCH_ANIM_SECONDS = 2.0 // total Hatch clip length -> when the egg is removed
 const PET_EMERGE_AT = 1.4 // when the pet pops out (egg is open)
 const HATCH_POP_SECONDS = HATCH_ANIM_SECONDS - PET_EMERGE_AT // pop lasts until the egg is gone
 const HATCH_ADMIRE_SECONDS = 1.2 // camera lingers on the newborn before handing back control
+const HATCH_PET_LIFT = 0.35 // raise the newborn ~35 cm during the reveal (sits on the nest, not the floor)
 let egg: Entity | null = null
 let hatchSpecies = ''
 let hatchName = ''
@@ -1228,12 +1246,9 @@ export function startHatch(species: string, name: string): void {
   hatchRevealed = false
   hatchEggRemoved = false
 
-  // Egg a bit in front of the player, framed by a dedicated camera.
-  const pp = playerPos()
-  const pt = Transform.getOrNull(engine.PlayerEntity)
-  const fwd = pt ? Vector3.rotate(Vector3.create(0, 0, 1), pt.rotation) : Vector3.create(0, 0, 1)
-  const dir = Vector3.normalize(Vector3.create(fwd.x, 0, fwd.z))
-  const eggPos = Vector3.create(pp.x + dir.x * 1.6, C.PET_BASE_Y, pp.z + dir.z * 1.6)
+  // Egg hatches ON the Nest inside the house (not in front of the player), framed
+  // by a dedicated camera; the pet then reveals at that same spot before relocating.
+  const eggPos = Vector3.create(NEST_POS.x, NEST_POS.y + NEST_EGG_LIFT, NEST_POS.z)
   hatchRevealPos = eggPos
 
   if (!egg) egg = engine.addEntity()
@@ -1499,7 +1514,7 @@ function updateLocalPet(dt: number): void {
     const f = hatchPopT > 0 ? Math.max(0.05, 1 - hatchPopT / HATCH_POP_SECONDS) : 1 // 0 -> 1
     const t = Transform.getMutable(localPet)
     t.scale = Vector3.scale(full, f)
-    if (hatchRevealPos) t.position = flat(hatchRevealPos)
+    if (hatchRevealPos) t.position = Vector3.create(hatchRevealPos.x, C.PET_BASE_Y + HATCH_PET_LIFT, hatchRevealPos.z)
     setClip(localPet, 'idle')
     // Camera stays locked on hatchFocus (the egg's spot) — no retarget needed.
     if (localTag) updateTag(localTag, t.position, petH.species, petH.size, petH.name, petH)
@@ -1892,6 +1907,7 @@ function updateSleepCountdown(): void {
 }
 
 export function setupPetSystems(): void {
+  placeNest() // the in-house hatching nest (eggs hatch on top of it)
   engine.addSystem((dt: number) => {
     updateCarryEgg()
     updateArrow()

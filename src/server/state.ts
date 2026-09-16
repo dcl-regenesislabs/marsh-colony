@@ -645,7 +645,7 @@ export function petOther(giver: PlayerData, target: PlayerData): { giverNotes: N
   bump(giver, 'givingCount')
   grantCaretakerXp(giver, C.CARETAKER_XP_PER_GIVING, notes)
   checkAchievements(giver, notes)
-  notes.push({ kind: 'giving', message: `You petted ${target.address.slice(0, 6)}'s pet! +${C.PET_OTHER_GIVING_POINTS} Giving` })
+  notes.push({ kind: 'giving', message: `You petted ${targetPet.name}! +${C.PET_OTHER_GIVING_POINTS} Giving` })
   return { giverNotes: notes, targetNotify: { kind: 'treated', message: `${giver.address.slice(0, 6)} gave ${targetPet.name} a treat!` } }
 }
 
