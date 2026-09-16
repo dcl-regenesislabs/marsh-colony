@@ -125,6 +125,7 @@ let wanderPause = 0
 const remotePets = new Map<string, Entity>()
 const remoteSpecies = new Map<string, string>()
 const remoteSkinKey = new Map<string, string>() // addr -> species|rarity of the applied skin
+const remoteCarried = new Map<string, Entity>() // addr -> anchor attached to that owner's avatar
 
 // Floating tag above each pet: just its name. A billboard root faces the
 // camera. The pet's OWNER additionally sees a row of 4 mood icons (hunger /
@@ -970,11 +971,22 @@ function petHoldOffset(pet: PetData): Vector3 {
   return Vector3.scale(PET_HOLD_OFFSET, petScale(pet.species, stageScaleFor(pet.size)).x)
 }
 
+function remotePetHoldOffset(species: string, size: number): Vector3 {
+  return Vector3.scale(PET_HOLD_OFFSET, petScale(species, stageScaleFor(size)).x)
+}
+
 /** The held pet is directly in front of the camera. Disable its pointer collider
  * so it cannot block clicks on the bath or other world interactions. */
 function setHeldPetPointerCollider(enabled: boolean): void {
   if (!localPet || !GltfContainer.has(localPet)) return
   GltfContainer.getMutable(localPet).visibleMeshesCollisionMask = enabled ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
+}
+
+/** Remote pets use their own pointer handler for the passport. Mirror the local
+ * carry behavior so a pet held at another player's chest cannot intercept taps. */
+function setRemotePetPointerCollider(entity: Entity, enabled: boolean): void {
+  if (!GltfContainer.has(entity)) return
+  GltfContainer.getMutable(entity).visibleMeshesCollisionMask = enabled ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
 }
 
 /** Parent the pet to the player's spine bone, offset out in front (carrying pose); hide its tag. */
@@ -1023,6 +1035,7 @@ export function startCarryPet(): void {
   }
   clientState.carryPet = { active: true, atStation: false }
   attachPetToHands(clientState.activePet)
+  actions.setCarried(true)
   playHoldPetEmote()
   showArrowTo(objectPosition(EntityNames.PetPool_glb), 'carryPet')
   pushToast('Carry your pet to the bath!')
@@ -1033,6 +1046,7 @@ export function cancelCarryPet(): void {
   if (!clientState.carryPet.active) return
   clientState.carryPet = { active: false, atStation: false }
   detachPetFromHands() // also resets position/rotation — see its doc comment
+  actions.setCarried(false)
   stopHoldEmote() // drop the hold pose, pet is no longer in hand
   hideArrow('carryPet')
 }
@@ -1043,6 +1057,7 @@ export function placePetAtStation(): void {
   if (!clientState.carryPet.active) return
   clientState.carryPet = { active: false, atStation: false }
   detachPetFromHands()
+  actions.setCarried(false)
   stopHoldEmote() // drop the hold pose, pet is no longer in hand
   hideArrow('carryPet')
   if (localPet) {
@@ -1749,7 +1764,10 @@ function updateRemotePets(dt: number): void {
     }
     if (remoteSpecies.get(addr) !== entry.species) {
       remoteSpecies.set(addr, entry.species)
-      GltfContainer.createOrReplace(ent, { src: modelForSpecies(entry.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+      GltfContainer.createOrReplace(ent, {
+        src: modelForSpecies(entry.species),
+        visibleMeshesCollisionMask: entry.carried ? ColliderLayer.CL_NONE : ColliderLayer.CL_POINTER
+      })
       ensureAnimator(ent, entry.species)
     }
     // Re-skin on species OR rarity change (an owner swapping to a same-species pet
@@ -1762,6 +1780,33 @@ function updateRemotePets(dt: number): void {
     const t = Transform.getMutable(ent)
     const s = petScale(entry.species, stageScaleFor(entry.size))
     if (t.scale.x !== s.x) t.scale = s
+    const tag = remoteTags.get(addr)
+    const carriedAnchor = remoteCarried.get(addr)
+    if (entry.carried) {
+      if (!carriedAnchor) {
+        // The attachment only needs to be resolved when the owner starts
+        // carrying. Recreating it each frame is expensive for every observer.
+        const anchor = engine.addEntity()
+        Transform.create(anchor, {})
+        AvatarAttach.create(anchor, { avatarId: addr, anchorPointId: AvatarAnchorPointType.AAPT_SPINE })
+        remoteCarried.set(addr, anchor)
+        t.parent = anchor
+        t.position = remotePetHoldOffset(entry.species, entry.size)
+        t.rotation = Quaternion.fromEulerDegrees(0, yawOffsetForSpecies(entry.species) + PET_HOLD_YAW, 0)
+        setRemotePetPointerCollider(ent, false)
+      }
+      setClip(ent, 'idle')
+      if (tag) setTagVisible(tag, false)
+      continue
+    }
+    if (carriedAnchor) {
+      t.parent = engine.RootEntity
+      t.position = Vector3.create(ownerPos.x - 2, C.PET_BASE_Y, ownerPos.z - 2)
+      engine.removeEntity(carriedAnchor)
+      remoteCarried.delete(addr)
+      setRemotePetPointerCollider(ent, true)
+    }
+    if (tag) setTagVisible(tag, true)
     // Follow the owner only if their pet is currently following them; otherwise
     // it stays put (mirrors the owner having dismissed it).
     const following = entry.following !== false
@@ -1772,7 +1817,6 @@ function updateRemotePets(dt: number): void {
     }
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
-    const tag = remoteTags.get(addr)
     if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
   }
 
@@ -1782,6 +1826,11 @@ function updateRemotePets(dt: number): void {
       remotePets.delete(addr)
       remoteSpecies.delete(addr)
       remoteSkinKey.delete(addr)
+      const carriedAnchor = remoteCarried.get(addr)
+      if (carriedAnchor) {
+        engine.removeEntity(carriedAnchor)
+        remoteCarried.delete(addr)
+      }
       forgetAnimator(ent)
       const tag = remoteTags.get(addr)
       if (tag) {
