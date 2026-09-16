@@ -59,7 +59,7 @@ function spawnMeteor(): void {
     rotation: Quaternion.fromEulerDegrees(SPAWN.rotationDeg.x, SPAWN.rotationDeg.y, SPAWN.rotationDeg.z),
     scale: SPAWN.scale
   })
-  GltfContainer.create(meteor, { src: MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+  GltfContainer.create(meteor, { src: MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_POINTER | ColliderLayer.CL_PHYSICS })
 
   // Hidden until it starts falling — otherwise it would sit on the ground during
   // the delay before the landing animation kicks in.
