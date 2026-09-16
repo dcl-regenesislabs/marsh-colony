@@ -244,7 +244,10 @@ function homeSpawnPos(): Vector3 {
  *  here would silently contradict that). Y matches the 'asleep' mode's lift. */
 function sleepRestPos(pet: PetData, fallback: Vector3): Vector3 {
   if (!pet.sleepOnBed) return Vector3.create(fallback.x, C.PET_BASE_Y + SLEEP_BED_LIFT, fallback.z)
-  const bed = nudgeOutsideBuildings(objectPosition(EntityNames.PetBed_glb))
+  // Land ON the bed: use its exact spot. NO nudgeOutsideBuildings here — the bed
+  // sits INSIDE the house dome ring, so nudging "outside the ring" shoved the pet
+  // off the cushion toward the wall (that's why it didn't land exactly on top).
+  const bed = objectPosition(EntityNames.PetBed_glb)
   return Vector3.create(bed.x, C.PET_BASE_Y + SLEEP_BED_LIFT, bed.z)
 }
 
@@ -871,13 +874,14 @@ const EGG_MODEL = 'models/stylized_dino_egg.glb'
 // The Nest: a fixture inside the house. Eggs hatch ON it — startHatch() drops the
 // egg here (not in front of the player), so hatching always happens on the nest.
 const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
-const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 244) // inside the house, just past HOME_BASE (204,240)
+const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
 const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
+const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
 
 /** Place the (static, non-blocking) hatching nest inside the house. Called once. */
 function placeNest(): void {
   const e = engine.addEntity()
-  Transform.create(e, { position: NEST_POS })
+  Transform.create(e, { position: NEST_POS, rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0) })
   // No collision — decorative hatch surface; must not block the player walking in.
   GltfContainer.create(e, { src: NEST_MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
 }
