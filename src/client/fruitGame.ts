@@ -1186,7 +1186,7 @@ function finalizeAndClose(): void {
   stopEatCinematic()
   suppressPetTags(false)
   setFeedingAvatarHidden(false)
-  if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+  if (MainCamera.has(engine.CameraEntity)) MainCamera.getMutable(engine.CameraEntity).virtualCameraEntity = undefined
   if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
   setLaneColliders(false)
   applyDefaultTouchControls()
