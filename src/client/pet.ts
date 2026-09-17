@@ -1667,13 +1667,19 @@ function updateLocalPet(dt: number): void {
     case 'asleep': {
       // Stay put — no follow/wander/goto movement while asleep (`moved` stays 0,
       // so the clip logic below plays 'sleep'). Resume as soon as it wakes.
-      // Lifted onto the bed's cushion (see SLEEP_BED_LIFT) instead of resting
-      // at ground level.
-      const st = Transform.getMutable(localPet)
-      if (Math.abs(st.position.y - (C.PET_BASE_Y + SLEEP_BED_LIFT)) > 0.001) {
-        st.position = Vector3.create(st.position.x, C.PET_BASE_Y + SLEEP_BED_LIFT, st.position.z)
+      // Rest via sleepRestPos — the SINGLE source of truth for where a sleeping
+      // pet belongs (on the bed's cushion when sleepOnBed, else lifted in place).
+      // This is what makes a FRESH sleep (the care action walks the pet to a spot
+      // nudged OUTSIDE the bed's building ring so navigation doesn't oscillate,
+      // which left it dozing on the floor beside the bed) settle in the EXACT same
+      // place as re-selecting a pet that was already asleep (reanchorLocalPet).
+      const pet2 = clientState.activePet
+      if (pet2) {
+        const st = Transform.getMutable(localPet)
+        const rest = sleepRestPos(pet2, st.position)
+        if (Vector3.distance(st.position, rest) > 0.001) st.position = rest
+        if (!pet2.sleeping) mode = clientState.followEnabled ? 'follow' : 'wander'
       }
-      if (!clientState.activePet?.sleeping) mode = clientState.followEnabled ? 'follow' : 'wander'
       break
     }
     case 'bathhop': {
