@@ -242,6 +242,15 @@ function homeSpawnPos(): Vector3 {
   return nudgeOutsideBuildings(HOME_BASE)
 }
 
+/** How much the PetBed (and its cushion height) scales for a given pet: the
+ *  composite bed is sized for a JUNIOR (factor 1), and GROWS in the same
+ *  proportion the pet does for Teenager/Adult. Shared by the bed's own scaling
+ *  (updateSleepBedScale) and the pet's rest lift below, so pet + bed + cushion
+ *  stay in sync. */
+function sleepBedFactor(pet: PetData): number {
+  return stageScaleFor(pet.size) / stageScaleFor(C.SIZE_BASE)
+}
+
 /** Where a sleeping pet belongs: on the PetBed's cushion when it dozed off in
  *  bed, otherwise lifted in place at `fallback` (it fell asleep in the open, and
  *  `sleepOnBed` false is what makes it refill slower — moving it onto the bed
@@ -251,8 +260,10 @@ function sleepRestPos(pet: PetData, fallback: Vector3): Vector3 {
   // Land ON the bed: use its exact spot. NO nudgeOutsideBuildings here — the bed
   // sits INSIDE the house dome ring, so nudging "outside the ring" shoved the pet
   // off the cushion toward the wall (that's why it didn't land exactly on top).
+  // The lift scales with the bed so the pet sits ON the (shrunk) cushion, not
+  // floating above it, for smaller stages.
   const bed = objectPosition(EntityNames.PetBed_glb)
-  return Vector3.create(bed.x, C.PET_BASE_Y + SLEEP_BED_LIFT, bed.z)
+  return Vector3.create(bed.x, C.PET_BASE_Y + SLEEP_BED_LIFT * sleepBedFactor(pet), bed.z)
 }
 
 let localTag: HealthTag | null = null
@@ -888,6 +899,12 @@ const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
 const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
 const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
 const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
+// Hatch reveal camera, relative to the egg on the nest. HATCH_CAM_YAW is the bearing
+// FROM the egg TO the camera (0 = +Z). Aligned with the nest's facing so the shot is
+// head-on with the nest+egg instead of viewing it from the side. Tune freely.
+const HATCH_CAM_YAW = NEST_YAW
+const HATCH_CAM_DIST = 2.6 // metres back from the egg
+const HATCH_CAM_HEIGHT = 1.2 // metres above the egg
 
 /** Place the (static, non-blocking) hatching nest inside the house. Called once. */
 function placeNest(): void {
@@ -1285,7 +1302,11 @@ export function startHatch(species: string, name: string): void {
   if (!hatchFocus) hatchFocus = engine.addEntity()
   Transform.createOrReplace(hatchFocus, { position: Vector3.create(eggPos.x, eggPos.y + 0.4, eggPos.z) })
 
-  const camPos = Vector3.create(eggPos.x, eggPos.y + 1.2, eggPos.z + 2.6)
+  // Sit the camera on the nest's front bearing so it looks at the egg head-on,
+  // not from the side (the nest is rotated toward the door, so a fixed +Z camera
+  // caught it edge-on).
+  const camRad = (HATCH_CAM_YAW * Math.PI) / 180
+  const camPos = Vector3.create(eggPos.x + Math.sin(camRad) * HATCH_CAM_DIST, eggPos.y + HATCH_CAM_HEIGHT, eggPos.z + Math.cos(camRad) * HATCH_CAM_DIST)
   if (!petCam) petCam = engine.addEntity()
   Transform.createOrReplace(petCam, { position: camPos })
   VirtualCamera.createOrReplace(petCam, { lookAtEntity: hatchFocus })
@@ -1667,13 +1688,19 @@ function updateLocalPet(dt: number): void {
     case 'asleep': {
       // Stay put — no follow/wander/goto movement while asleep (`moved` stays 0,
       // so the clip logic below plays 'sleep'). Resume as soon as it wakes.
-      // Lifted onto the bed's cushion (see SLEEP_BED_LIFT) instead of resting
-      // at ground level.
-      const st = Transform.getMutable(localPet)
-      if (Math.abs(st.position.y - (C.PET_BASE_Y + SLEEP_BED_LIFT)) > 0.001) {
-        st.position = Vector3.create(st.position.x, C.PET_BASE_Y + SLEEP_BED_LIFT, st.position.z)
+      // Rest via sleepRestPos — the SINGLE source of truth for where a sleeping
+      // pet belongs (on the bed's cushion when sleepOnBed, else lifted in place).
+      // This is what makes a FRESH sleep (the care action walks the pet to a spot
+      // nudged OUTSIDE the bed's building ring so navigation doesn't oscillate,
+      // which left it dozing on the floor beside the bed) settle in the EXACT same
+      // place as re-selecting a pet that was already asleep (reanchorLocalPet).
+      const pet2 = clientState.activePet
+      if (pet2) {
+        const st = Transform.getMutable(localPet)
+        const rest = sleepRestPos(pet2, st.position)
+        if (Vector3.distance(st.position, rest) > 0.001) st.position = rest
+        if (!pet2.sleeping) mode = clientState.followEnabled ? 'follow' : 'wander'
       }
-      if (!clientState.activePet?.sleeping) mode = clientState.followEnabled ? 'follow' : 'wander'
       break
     }
     case 'bathhop': {
@@ -1958,6 +1985,26 @@ function updateSleepCountdown(): void {
   ts.text = C.formatLockCountdown(left)
 }
 
+// Scale the shared PetBed to match the growth stage of the pet sleeping on it, so a
+// tiny Junior doesn't nap on an adult-sized bed (and an Adult doesn't dwarf it). The
+// composite bed size is treated as the ADULT reference; smaller stages shrink it in
+// the same proportion the pet does (stageScaleFor). Resets to full when nobody's on it.
+let bedBaseScale: Vector3 | null = null
+function updateSleepBedScale(): void {
+  const bed = engine.getEntityOrNullByName(EntityNames.PetBed_glb)
+  if (!bed || !Transform.has(bed)) return
+  const t = Transform.getMutable(bed)
+  // Capture the composite (adult-reference) scale once, before we ever mutate it.
+  if (!bedBaseScale) bedBaseScale = Vector3.create(t.scale.x, t.scale.y, t.scale.z)
+  const pet = clientState.activePet
+  const onBed = !!pet && pet.sleeping && pet.sleepOnBed
+  const factor = onBed ? sleepBedFactor(pet) : 1
+  const sx = bedBaseScale.x * factor
+  if (Math.abs(t.scale.x - sx) > 0.0001) {
+    t.scale = Vector3.create(bedBaseScale.x * factor, bedBaseScale.y * factor, bedBaseScale.z * factor)
+  }
+}
+
 export function setupPetSystems(): void {
   placeNest() // the in-house hatching nest (eggs hatch on top of it)
   engine.addSystem((dt: number) => {
@@ -1967,6 +2014,7 @@ export function setupPetSystems(): void {
     updatePetting(dt)
     updateLocalPet(dt)
     updateSleepCountdown()
+    updateSleepBedScale()
     updateInactivePets(dt)
     updateRemotePets(dt)
   })
