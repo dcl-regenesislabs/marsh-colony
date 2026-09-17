@@ -45,8 +45,11 @@ export function dimColor(c?: Color): Color {
 // it every render (React-ECS re-renders each frame, so the HUD resizes once the
 // lookup resolves).
 let isMobileRuntime = false
-// The Bevy explorer reports platform:"web" agent:"bevy" and renders the HUD
-// small at 1920x1080 — it needs the compact virtual canvas like mobile does.
+// The Bevy explorer reports platform:"web" agent:"bevy". It is scaled exactly like
+// Unity desktop (see S()) — the fixed 1920x1080 virtual canvas already matches, so
+// it gets NO mobile-style canvas and NO DPR compensation. (react-ecs 7.26 dropped
+// the devicePixelRatio term from the scale factor, so re-adding it double-counted
+// on Bevy and blew the HUD up on retina.)
 let isBevyRuntime = false
 let platformLookupStarted = false
 
