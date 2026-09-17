@@ -242,6 +242,15 @@ function homeSpawnPos(): Vector3 {
   return nudgeOutsideBuildings(HOME_BASE)
 }
 
+/** How much the PetBed (and its cushion height) scales for a given pet: the
+ *  composite bed is sized for a JUNIOR (factor 1), and GROWS in the same
+ *  proportion the pet does for Teenager/Adult. Shared by the bed's own scaling
+ *  (updateSleepBedScale) and the pet's rest lift below, so pet + bed + cushion
+ *  stay in sync. */
+function sleepBedFactor(pet: PetData): number {
+  return stageScaleFor(pet.size) / stageScaleFor(C.SIZE_BASE)
+}
+
 /** Where a sleeping pet belongs: on the PetBed's cushion when it dozed off in
  *  bed, otherwise lifted in place at `fallback` (it fell asleep in the open, and
  *  `sleepOnBed` false is what makes it refill slower — moving it onto the bed
@@ -251,8 +260,10 @@ function sleepRestPos(pet: PetData, fallback: Vector3): Vector3 {
   // Land ON the bed: use its exact spot. NO nudgeOutsideBuildings here — the bed
   // sits INSIDE the house dome ring, so nudging "outside the ring" shoved the pet
   // off the cushion toward the wall (that's why it didn't land exactly on top).
+  // The lift scales with the bed so the pet sits ON the (shrunk) cushion, not
+  // floating above it, for smaller stages.
   const bed = objectPosition(EntityNames.PetBed_glb)
-  return Vector3.create(bed.x, C.PET_BASE_Y + SLEEP_BED_LIFT, bed.z)
+  return Vector3.create(bed.x, C.PET_BASE_Y + SLEEP_BED_LIFT * sleepBedFactor(pet), bed.z)
 }
 
 let localTag: HealthTag | null = null
@@ -1974,6 +1985,26 @@ function updateSleepCountdown(): void {
   ts.text = C.formatLockCountdown(left)
 }
 
+// Scale the shared PetBed to match the growth stage of the pet sleeping on it, so a
+// tiny Junior doesn't nap on an adult-sized bed (and an Adult doesn't dwarf it). The
+// composite bed size is treated as the ADULT reference; smaller stages shrink it in
+// the same proportion the pet does (stageScaleFor). Resets to full when nobody's on it.
+let bedBaseScale: Vector3 | null = null
+function updateSleepBedScale(): void {
+  const bed = engine.getEntityOrNullByName(EntityNames.PetBed_glb)
+  if (!bed || !Transform.has(bed)) return
+  const t = Transform.getMutable(bed)
+  // Capture the composite (adult-reference) scale once, before we ever mutate it.
+  if (!bedBaseScale) bedBaseScale = Vector3.create(t.scale.x, t.scale.y, t.scale.z)
+  const pet = clientState.activePet
+  const onBed = !!pet && pet.sleeping && pet.sleepOnBed
+  const factor = onBed ? sleepBedFactor(pet) : 1
+  const sx = bedBaseScale.x * factor
+  if (Math.abs(t.scale.x - sx) > 0.0001) {
+    t.scale = Vector3.create(bedBaseScale.x * factor, bedBaseScale.y * factor, bedBaseScale.z * factor)
+  }
+}
+
 export function setupPetSystems(): void {
   placeNest() // the in-house hatching nest (eggs hatch on top of it)
   engine.addSystem((dt: number) => {
@@ -1983,6 +2014,7 @@ export function setupPetSystems(): void {
     updatePetting(dt)
     updateLocalPet(dt)
     updateSleepCountdown()
+    updateSleepBedScale()
     updateInactivePets(dt)
     updateRemotePets(dt)
   })
