@@ -53,10 +53,9 @@ let platformLookupStarted = false
 const MOBILE_AGENT_RE = /mobile|android|iphone|ipad|ios/
 
 /**
- * Live device pixel ratio, read from the renderer. Bevy (web) rasterizes the HUD
- * at the PHYSICAL resolution, so on a retina screen (dpr 2) everything comes out
- * half-size. We multiply S() by this on Bevy to compensate — resolution- and
- * density-independent, since it's read at render time.
+ * Live device pixel ratio, read from the renderer. Used only to expand the MOBILE
+ * virtual canvas in lockstep with pixel density (see getUiRendererConfig). It is
+ * NOT applied to S() anymore — doing that on Bevy blew the HUD up on retina.
  */
 function devicePixelRatio(): number {
   const ci = UiCanvasInformation.getOrNull(engine.RootEntity)
@@ -117,8 +116,10 @@ export function getUiRendererConfig() {
 // too (mobile-testing friendly). React-ECS re-renders every frame, so the HUD
 // resizes automatically once the platform lookup resolves.
 export function S(n: number): number {
-  // Bevy renders at physical resolution, so compensate for the pixel ratio.
-  if (isBevyRuntime) return Math.round(n * 1.18 * devicePixelRatio())
+  // Bevy is treated exactly like Unity desktop (×1.18) — no DPR compensation. The
+  // old `× devicePixelRatio()` made the HUD gigantic on retina (dpr 2 → ~2.36×),
+  // and the fixed 1920×1080 virtual canvas (see getUiRendererConfig) already keeps
+  // Bevy in step with Unity, which needs no density scaling. Matches CozyFarm.
   return Math.round(n * (isMobileRuntime ? 1.6 : 1.18))
 }
 
