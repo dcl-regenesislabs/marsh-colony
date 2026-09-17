@@ -888,6 +888,12 @@ const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
 const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
 const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
 const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
+// Hatch reveal camera, relative to the egg on the nest. HATCH_CAM_YAW is the bearing
+// FROM the egg TO the camera (0 = +Z). Aligned with the nest's facing so the shot is
+// head-on with the nest+egg instead of viewing it from the side. Tune freely.
+const HATCH_CAM_YAW = NEST_YAW
+const HATCH_CAM_DIST = 2.6 // metres back from the egg
+const HATCH_CAM_HEIGHT = 1.2 // metres above the egg
 
 /** Place the (static, non-blocking) hatching nest inside the house. Called once. */
 function placeNest(): void {
@@ -1285,7 +1291,11 @@ export function startHatch(species: string, name: string): void {
   if (!hatchFocus) hatchFocus = engine.addEntity()
   Transform.createOrReplace(hatchFocus, { position: Vector3.create(eggPos.x, eggPos.y + 0.4, eggPos.z) })
 
-  const camPos = Vector3.create(eggPos.x, eggPos.y + 1.2, eggPos.z + 2.6)
+  // Sit the camera on the nest's front bearing so it looks at the egg head-on,
+  // not from the side (the nest is rotated toward the door, so a fixed +Z camera
+  // caught it edge-on).
+  const camRad = (HATCH_CAM_YAW * Math.PI) / 180
+  const camPos = Vector3.create(eggPos.x + Math.sin(camRad) * HATCH_CAM_DIST, eggPos.y + HATCH_CAM_HEIGHT, eggPos.z + Math.cos(camRad) * HATCH_CAM_DIST)
   if (!petCam) petCam = engine.addEntity()
   Transform.createOrReplace(petCam, { position: camPos })
   VirtualCamera.createOrReplace(petCam, { lookAtEntity: hatchFocus })
