@@ -10,7 +10,7 @@
 // simTick() still run so the data is ready the instant the gate lifts, but
 // nothing is shown or usable before that.
 
-import { AvatarModifierArea, AvatarModifierType, engine, InputModifier } from '@dcl/sdk/ecs'
+import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
@@ -41,19 +41,36 @@ import { PRIVATE_AVATAR_AREAS } from './privacyAreas'
 let introTriggered = false
 let firstSnapshotSeen = false // decide the "Choose Location!" modal on the FIRST snapshot only
 let avatarModifierAreasOwner = ''
+const nameTagHideAreas = new Map<string, Entity>()
 
 function setupAvatarModifierAreas(): void {
   const owner = resolveMyAddress()
-  // Player identity can arrive a few frames after the scene. Do not install an
-  // unfiltered area, because that would hide the local player's own avatar too.
+  // Player identity can arrive a few frames after the scene. Do not install the
+  // avatar-hide area unfiltered, because that would hide the local avatar too.
   if (!owner || owner === avatarModifierAreasOwner) return
 
-  const modifiers = [AvatarModifierType.AMT_HIDE_AVATARS, AvatarModifierType.AMT_HIDE_NAMETAGS]
+  const avatarModifiers = [AvatarModifierType.AMT_HIDE_AVATARS]
+  const nameTagModifiers = [AvatarModifierType.AMT_HIDE_NAMETAGS]
   for (const { entityName, area } of PRIVATE_AVATAR_AREAS) {
     const anchor = engine.getEntityOrNullByName(entityName)
-    if (anchor) {
-      AvatarModifierArea.createOrReplace(anchor, { area, modifiers, excludeIds: [owner] })
+    if (!anchor) continue
+
+    // Keep this player's avatar visible, while a separate overlapping area
+    // hides every player's nametag, including the local player's.
+    AvatarModifierArea.createOrReplace(anchor, { area, modifiers: avatarModifiers, excludeIds: [owner] })
+
+    const anchorTransform = Transform.getOrNull(anchor)
+    if (!anchorTransform) continue
+    let nameTagArea = nameTagHideAreas.get(entityName)
+    if (!nameTagArea) {
+      nameTagArea = engine.addEntity()
+      nameTagHideAreas.set(entityName, nameTagArea)
     }
+    Transform.createOrReplace(nameTagArea, {
+      position: anchorTransform.position,
+      rotation: anchorTransform.rotation
+    })
+    AvatarModifierArea.createOrReplace(nameTagArea, { area, modifiers: nameTagModifiers, excludeIds: [] })
   }
 
   avatarModifierAreasOwner = owner
