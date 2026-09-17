@@ -1832,8 +1832,12 @@ function updateRemotePets(dt: number): void {
     }
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
-    const visible = !isInsidePrivateAvatarArea(t.position)
+    // The owner test keeps a following companion synchronized with its hidden
+    // avatar. The pet test also keeps a dismissed pet hidden if it remains in
+    // a private area after its owner has walked away.
+    const visible = !isInsidePrivateAvatarArea(ownerPos) && !isInsidePrivateAvatarArea(t.position)
     setRemotePetVisible(addr, ent, visible)
+    setRemotePetPointerCollider(ent, visible)
     if (tag) setTagVisible(tag, visible)
     if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
   }

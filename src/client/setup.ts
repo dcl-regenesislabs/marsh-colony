@@ -10,7 +10,7 @@
 // simTick() still run so the data is ready the instant the gate lifts, but
 // nothing is shown or usable before that.
 
-import { AvatarModifierArea, AvatarModifierType, engine, InputModifier } from '@dcl/sdk/ecs'
+import { AvatarModifierArea, AvatarModifierType, engine, InputModifier, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
@@ -36,7 +36,7 @@ import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
 import { setupNav } from './nav'
-import { PRIVATE_AVATAR_AREAS } from './privacyAreas'
+import { getPrivateAvatarAreaAnchor, PRIVATE_AVATAR_AREAS } from './privacyAreas'
 
 let introTriggered = false
 let firstSnapshotSeen = false // decide the "Choose Location!" modal on the FIRST snapshot only
@@ -49,16 +49,21 @@ function setupAvatarModifierAreas(): void {
   if (!owner || owner === avatarModifierAreasOwner) return
 
   const modifiers = [AvatarModifierType.AMT_HIDE_AVATARS, AvatarModifierType.AMT_HIDE_NAMETAGS]
+  let everyAreaInstalled = true
   for (const { entityName, area } of PRIVATE_AVATAR_AREAS) {
-    const anchor = engine.getEntityOrNullByName(entityName)
-    if (anchor) {
-      // excludeIds applies to both modifiers, so the local player keeps both
-      // their avatar and nametag while every other player loses both.
-      AvatarModifierArea.createOrReplace(anchor, { area, modifiers, excludeIds: [owner] })
+    const anchor = getPrivateAvatarAreaAnchor(entityName)
+    if (anchor === null || !Transform.has(anchor)) {
+      everyAreaInstalled = false
+      continue
     }
+    // excludeIds applies to both modifiers, so the local player keeps both
+    // their avatar and nametag while every other player loses both.
+    AvatarModifierArea.createOrReplace(anchor, { area, modifiers, excludeIds: [owner] })
   }
 
-  avatarModifierAreasOwner = owner
+  // Keep trying until every static anchor is ready; otherwise a transient
+  // composite-load race would leave a focus area permanently unconfigured.
+  if (everyAreaInstalled) avatarModifierAreasOwner = owner
 }
 
 function showIntro(): void {
