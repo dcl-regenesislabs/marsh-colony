@@ -1186,7 +1186,13 @@ function finalizeAndClose(): void {
   stopEatCinematic()
   suppressPetTags(false)
   setFeedingAvatarHidden(false)
+  // Clear the active-camera reference, then explicitly tear down the camera
+  // components so the renderer cannot keep blending toward this round's shot.
   if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+  if (cinCam) {
+    Tween.deleteFrom(cinCam)
+    VirtualCamera.deleteFrom(cinCam)
+  }
   if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
   setLaneColliders(false)
   applyDefaultTouchControls()
