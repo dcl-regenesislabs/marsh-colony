@@ -55,6 +55,7 @@ import { applyCreatureSkin } from './creatureSkins'
 import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import { petOverheadTuning } from './petOverheadCalibration'
+import { isInsidePrivateAvatarArea } from './privacyAreas'
 
 type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 
@@ -126,6 +127,7 @@ const remotePets = new Map<string, Entity>()
 const remoteSpecies = new Map<string, string>()
 const remoteSkinKey = new Map<string, string>() // addr -> species|rarity of the applied skin
 const remoteCarried = new Map<string, Entity>() // addr -> anchor attached to that owner's avatar
+const hiddenRemotePets = new Set<string>()
 
 // Floating tag above each pet: just its name. A billboard root faces the
 // camera. The pet's OWNER additionally sees a row of 4 mood icons (hunger /
@@ -1765,6 +1767,17 @@ function remotePlayerPositions(): Map<string, Vector3> {
   return out
 }
 
+/** Keep another player's pet out of a private-focus area. */
+function setRemotePetVisible(address: string, pet: Entity, visible: boolean): void {
+  const hidden = !visible
+  if (hiddenRemotePets.has(address) === hidden) return
+
+  if (hidden) hiddenRemotePets.add(address)
+  else hiddenRemotePets.delete(address)
+
+  VisibilityComponent.createOrReplace(pet, { visible })
+}
+
 function updateRemotePets(dt: number): void {
   const me = clientState.myAddress.toLowerCase()
   const positions = remotePlayerPositions()
@@ -1786,7 +1799,9 @@ function updateRemotePets(dt: number): void {
       const targetAddr = entry.address
       pointerEventsSystem.onPointerDown(
         { entity: ent, opts: { button: InputAction.IA_POINTER, hoverText: 'View', maxDistance: 8 } },
-        () => (clientState.viewingPetAddress = targetAddr)
+        () => {
+          if (!hiddenRemotePets.has(addr)) clientState.viewingPetAddress = targetAddr
+        }
       )
     }
     if (remoteSpecies.get(addr) !== entry.species) {
@@ -1823,6 +1838,7 @@ function updateRemotePets(dt: number): void {
         setRemotePetPointerCollider(ent, false)
       }
       setClip(ent, 'idle')
+      setRemotePetVisible(addr, ent, !isInsidePrivateAvatarArea(ownerPos))
       if (tag) setTagVisible(tag, false)
       continue
     }
@@ -1833,7 +1849,6 @@ function updateRemotePets(dt: number): void {
       remoteCarried.delete(addr)
       setRemotePetPointerCollider(ent, true)
     }
-    if (tag) setTagVisible(tag, true)
     // Follow the owner only if their pet is currently following them; otherwise
     // it stays put (mirrors the owner having dismissed it).
     const following = entry.following !== false
@@ -1844,6 +1859,13 @@ function updateRemotePets(dt: number): void {
     }
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
+    // The owner test keeps a following companion synchronized with its hidden
+    // avatar. The pet test also keeps a dismissed pet hidden if it remains in
+    // a private area after its owner has walked away.
+    const visible = !isInsidePrivateAvatarArea(ownerPos) && !isInsidePrivateAvatarArea(t.position)
+    setRemotePetVisible(addr, ent, visible)
+    setRemotePetPointerCollider(ent, visible)
+    if (tag) setTagVisible(tag, visible)
     if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
   }
 
@@ -1858,6 +1880,7 @@ function updateRemotePets(dt: number): void {
         engine.removeEntity(carriedAnchor)
         remoteCarried.delete(addr)
       }
+      hiddenRemotePets.delete(addr)
       forgetAnimator(ent)
       const tag = remoteTags.get(addr)
       if (tag) {
