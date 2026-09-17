@@ -45,18 +45,20 @@ export function dimColor(c?: Color): Color {
 // it every render (React-ECS re-renders each frame, so the HUD resizes once the
 // lookup resolves).
 let isMobileRuntime = false
-// The Bevy explorer reports platform:"web" agent:"bevy" and renders the HUD
-// small at 1920x1080 — it needs the compact virtual canvas like mobile does.
+// The Bevy explorer reports platform:"web" agent:"bevy". It is scaled exactly like
+// Unity desktop (see S()) — the fixed 1920x1080 virtual canvas already matches, so
+// it gets NO mobile-style canvas and NO DPR compensation. (react-ecs 7.26 dropped
+// the devicePixelRatio term from the scale factor, so re-adding it double-counted
+// on Bevy and blew the HUD up on retina.)
 let isBevyRuntime = false
 let platformLookupStarted = false
 
 const MOBILE_AGENT_RE = /mobile|android|iphone|ipad|ios/
 
 /**
- * Live device pixel ratio, read from the renderer. Bevy (web) rasterizes the HUD
- * at the PHYSICAL resolution, so on a retina screen (dpr 2) everything comes out
- * half-size. We multiply S() by this on Bevy to compensate — resolution- and
- * density-independent, since it's read at render time.
+ * Live device pixel ratio, read from the renderer. Used only to expand the MOBILE
+ * virtual canvas in lockstep with pixel density (see getUiRendererConfig). It is
+ * NOT applied to S() anymore — doing that on Bevy blew the HUD up on retina.
  */
 function devicePixelRatio(): number {
   const ci = UiCanvasInformation.getOrNull(engine.RootEntity)
@@ -117,8 +119,10 @@ export function getUiRendererConfig() {
 // too (mobile-testing friendly). React-ECS re-renders every frame, so the HUD
 // resizes automatically once the platform lookup resolves.
 export function S(n: number): number {
-  // Bevy renders at physical resolution, so compensate for the pixel ratio.
-  if (isBevyRuntime) return Math.round(n * 1.18 * devicePixelRatio())
+  // Bevy is treated exactly like Unity desktop (×1.18) — no DPR compensation. The
+  // old `× devicePixelRatio()` made the HUD gigantic on retina (dpr 2 → ~2.36×),
+  // and the fixed 1920×1080 virtual canvas (see getUiRendererConfig) already keeps
+  // Bevy in step with Unity, which needs no density scaling. Matches CozyFarm.
   return Math.round(n * (isMobileRuntime ? 1.6 : 1.18))
 }
 
