@@ -31,6 +31,15 @@ const LANDING_SPEED = 0.4 // playback speed of the fall: < 1 = slower (tune to t
 const LANDING_DURATION = LANDING_CLIP_LENGTH / LANDING_SPEED // real fall time at that speed
 const DISAPPEAR_DURATION = 0.95 // asteroid_disappear length (~0.92s) at speed 1, before removal
 
+// Assigned while the daily meteor is alive. The UI calls this only after the
+// player presses Claim; closing the reward panel leaves the meteor available.
+let dismissActiveMeteor: (() => void) | null = null
+
+/** Play the meteor's collection animation after its daily reward is claimed. */
+export function dismissMeteorAfterClaim(): void {
+  dismissActiveMeteor?.()
+}
+
 // Where the meteor lands. Tune freely (meters; scene is 480x480, base 0,0).
 const SPAWN = {
   position: Vector3.create(203.2, 0, 229.8),
@@ -101,25 +110,33 @@ function spawnMeteor(): void {
   }
   engine.addSystem(timeline)
 
-  // Click to crack it open: play the disappear animation, then remove the meteor and
-  // open the reward panel (opening it AFTER the poof so the panel doesn't cover it).
-  let collected = false
+  // Claiming, not opening the panel, consumes the meteor. This lets a player
+  // inspect or close the daily-reward UI without losing their world reward.
+  let disappearing = false
+  const disappear = (): void => {
+    if (disappearing) return
+    disappearing = true
+    engine.removeSystem(timeline)
+    Animator.playSingleAnimation(meteor, DISAPPEAR_CLIP, true)
+    let poofT = 0
+    const finishDisappear = (dt: number): void => {
+      poofT += dt
+      if (poofT < DISAPPEAR_DURATION) return
+      engine.removeSystem(finishDisappear)
+      engine.removeEntity(meteor)
+      if (dismissActiveMeteor === disappear) dismissActiveMeteor = null
+    }
+    engine.addSystem(finishDisappear)
+  }
+  dismissActiveMeteor = disappear
+
+  // Click to inspect the daily-reward ladder. The meteor stays in-world until
+  // its Claim button confirms the collection flow above.
   pointerEventsSystem.onPointerDown(
     { entity: meteor, opts: { button: InputAction.IA_POINTER, hoverText: 'Explore', maxDistance: 12 } },
     () => {
-      if (collected) return
-      collected = true
-      engine.removeSystem(timeline) // in case it's clicked before it finishes landing
-      Animator.playSingleAnimation(meteor, DISAPPEAR_CLIP, true)
-      let poofT = 0
-      const finishDisappear = (dt: number): void => {
-        poofT += dt
-        if (poofT < DISAPPEAR_DURATION) return
-        engine.removeSystem(finishDisappear)
-        engine.removeEntity(meteor)
-        ui.openMeteorReward() // opens the daily-reward ladder (client streak)
-      }
-      engine.addSystem(finishDisappear)
+      if (disappearing) return
+      ui.openMeteorReward()
     }
   )
 }

@@ -37,6 +37,7 @@ import {
   feedResultsCounterDurationMs
 } from './fruitGame'
 import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
+import { dismissMeteorAfterClaim } from './meteor'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible, getPress, triggerPress } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
@@ -1419,27 +1420,95 @@ function SpinPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Daily reward — a login-streak ladder shown when you crack open the meteor.
-// TODAY is claimable; the following days preview what you'd get if you keep
-// coming back. Claim! gives the reward; Watch Ad grants 2x (ad is a stub).
+// Meteor daily rewards — the supplied sheet contains the full Marsh Colony
+// treatment (modal, cards, claim buttons and close control). Only the changing
+// values live in React-ECS labels: day, currency and the current claim state.
+// Keeping that split means the server-authoritative daily ladder below stays
+// completely independent from the visual revamp.
 // ---------------------------------------------------------------------------
-function DailyDayCard(props: { key?: string; day: number; state: 'claimed' | 'today' | 'future' }) {
-  const r = Cfg.STREAK_WEEK_REWARDS[props.day - 1]
-  const today = props.state === 'today'
-  const future = props.state === 'future'
-  const cardW = S(106) // sized so all 7 ladder days fit one row
+const DAILY_REWARDS_SHEET = 'assets/images/revamp/dailyrewards_hud.png'
+const DAILY_REWARDS_SHEET_SIZE = 1024
+
+function dailyRewardsUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
+  const uL = x0 / DAILY_REWARDS_SHEET_SIZE
+  const uR = x1 / DAILY_REWARDS_SHEET_SIZE
+  const vTop = 1 - y0 / DAILY_REWARDS_SHEET_SIZE
+  const vBottom = 1 - y1 / DAILY_REWARDS_SHEET_SIZE
+  return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
+}
+
+// Pixel bounds were taken from dailyrewards_hud.png. The crops include their
+// baked highlights/shadows but exclude the transparent sheet around them.
+const DAILY_PANEL_BOX = { x0: 12, y0: 474, x1: 1008, y1: 994 }
+const DAILY_CLOSE_BOX = { x0: 100, y0: 40, x1: 161, y1: 101 }
+// The larger Claim variants include their side sparkles in the atlas. Keep
+// the complete 407 px-wide crops so they render sharp rather than sampling a
+// clipped inner section of the sheet.
+const DAILY_CLAIM_BOX = { x0: 179, y0: 27, x1: 586, y1: 121 }
+const DAILY_CLAIM_DISABLED_BOX = { x0: 604, y0: 27, x1: 1011, y1: 121 }
+const DAILY_CARD_TODAY_BOX = { x0: 70, y0: 157, x1: 261, y1: 426 }
+const DAILY_CARD_FUTURE_BOX = { x0: 307, y0: 156, x1: 495, y1: 426 }
+const DAILY_CARD_JACKPOT_BOX = { x0: 510, y0: 157, x1: 713, y1: 426 }
+const DAILY_CARD_CLAIMED_BOX = { x0: 730, y0: 157, x1: 916, y1: 426 }
+
+const DAILY_PANEL_UVS = dailyRewardsUvRect(DAILY_PANEL_BOX.x0, DAILY_PANEL_BOX.y0, DAILY_PANEL_BOX.x1, DAILY_PANEL_BOX.y1)
+const DAILY_CLOSE_UVS = dailyRewardsUvRect(DAILY_CLOSE_BOX.x0, DAILY_CLOSE_BOX.y0, DAILY_CLOSE_BOX.x1, DAILY_CLOSE_BOX.y1)
+const DAILY_CLAIM_UVS = dailyRewardsUvRect(DAILY_CLAIM_BOX.x0, DAILY_CLAIM_BOX.y0, DAILY_CLAIM_BOX.x1, DAILY_CLAIM_BOX.y1)
+const DAILY_CLAIM_DISABLED_UVS = dailyRewardsUvRect(DAILY_CLAIM_DISABLED_BOX.x0, DAILY_CLAIM_DISABLED_BOX.y0, DAILY_CLAIM_DISABLED_BOX.x1, DAILY_CLAIM_DISABLED_BOX.y1)
+const DAILY_CARD_TODAY_UVS = dailyRewardsUvRect(DAILY_CARD_TODAY_BOX.x0, DAILY_CARD_TODAY_BOX.y0, DAILY_CARD_TODAY_BOX.x1, DAILY_CARD_TODAY_BOX.y1)
+const DAILY_CARD_FUTURE_UVS = dailyRewardsUvRect(DAILY_CARD_FUTURE_BOX.x0, DAILY_CARD_FUTURE_BOX.y0, DAILY_CARD_FUTURE_BOX.x1, DAILY_CARD_FUTURE_BOX.y1)
+const DAILY_CARD_JACKPOT_UVS = dailyRewardsUvRect(DAILY_CARD_JACKPOT_BOX.x0, DAILY_CARD_JACKPOT_BOX.y0, DAILY_CARD_JACKPOT_BOX.x1, DAILY_CARD_JACKPOT_BOX.y1)
+const DAILY_CARD_CLAIMED_UVS = dailyRewardsUvRect(DAILY_CARD_CLAIMED_BOX.x0, DAILY_CARD_CLAIMED_BOX.y0, DAILY_CARD_CLAIMED_BOX.x1, DAILY_CARD_CLAIMED_BOX.y1)
+const DAILY_PANEL_ASPECT = (DAILY_PANEL_BOX.x1 - DAILY_PANEL_BOX.x0) / (DAILY_PANEL_BOX.y1 - DAILY_PANEL_BOX.y0)
+
+const DAILY_TEXT = {
+  ink: { r: 0.38, g: 0.23, b: 0.18, a: 1 } as Color,
+  muted: { r: 0.52, g: 0.38, b: 0.33, a: 1 } as Color,
+  today: { r: 0.58, g: 0.31, b: 0.1, a: 1 } as Color,
+  claimed: { r: 1, g: 1, b: 1, a: 1 } as Color,
+  jackpot: { r: 0.4, g: 0.22, b: 0.42, a: 1 } as Color
+}
+
+type DailyCardState = 'claimed' | 'today' | 'future'
+
+function dailyCardUvs(day: number, state: DailyCardState): number[] {
+  if (state === 'claimed') return DAILY_CARD_CLAIMED_UVS
+  if (state === 'today') return DAILY_CARD_TODAY_UVS
+  return day === 7 ? DAILY_CARD_JACKPOT_UVS : DAILY_CARD_FUTURE_UVS
+}
+
+function DailyDayCard(props: { key?: string; day: number; state: DailyCardState; width: number; height: number }) {
+  const reward = Cfg.STREAK_WEEK_REWARDS[props.day - 1]
+  const isToday = props.state === 'today'
+  const isClaimed = props.state === 'claimed'
+  const isJackpot = props.day === 7 && !isClaimed
+  // The claimed tile only has a green value badge; its header sits on the
+  // same light card surface as the future tiles, so it needs dark ink too.
+  const titleColor = isToday ? DAILY_TEXT.today : isJackpot ? DAILY_TEXT.jackpot : DAILY_TEXT.muted
+  const rewardColor = isToday ? DAILY_TEXT.today : isClaimed ? DAILY_TEXT.claimed : isJackpot ? DAILY_TEXT.jackpot : DAILY_TEXT.muted
+  const titleSize = Math.max(S(12), Math.round(props.height * 0.095))
+  const rewardSize = Math.max(S(14), Math.round(props.height * 0.105))
+
   return (
-    <UiEntity
-      uiTransform={{ width: cardW, height: S(168), flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', margin: S(4), padding: S(8), borderRadius: S(16) }}
-      uiBackground={{ color: today ? LOC.blue : LOC.tile }}
-    >
-      <Label value={today ? 'TODAY' : `DAY ${props.day}`} fontSize={S(18)} color={today ? LOC.white : future ? LOC.dim : LOC.body} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
-      <UiEntity uiTransform={{ width: cardW - S(22), height: S(84), alignItems: 'center', justifyContent: 'center', margin: { top: S(4), bottom: S(4) }, borderRadius: S(12) }} uiBackground={{ color: today ? LOC.white : LOC.card }}>
-        <Label value={props.state === 'claimed' ? '✅' : '💰'} fontSize={S(44)} color={LOC.body} textAlign="middle-center" uiTransform={{ width: cardW - S(22), height: S(84) }} />
-      </UiEntity>
-      <UiEntity uiTransform={{ width: cardW - S(14), height: S(30), alignItems: 'center', justifyContent: 'center', borderRadius: S(10) }} uiBackground={{ color: today ? LOC.white : future ? LOC.neutral : LOC.green }}>
-        <Label value={`$${r.currency}`} fontSize={S(18)} color={today ? LOC.blue : future ? LOC.dim : LOC.white} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-      </UiEntity>
+    <UiEntity uiTransform={{ width: props.width, height: props.height }}>
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height }}
+        uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: dailyCardUvs(props.day, props.state) }}
+      />
+      <Label
+        value={isToday ? 'TODAY' : `DAY ${props.day}`}
+        fontSize={titleSize}
+        color={titleColor}
+        textAlign="middle-center"
+        uiTransform={{ positionType: 'absolute', position: { top: Math.round(props.height * 0.055), left: 0 }, width: props.width, height: Math.round(props.height * 0.15) }}
+      />
+      <Label
+        value={`$${reward.currency}`}
+        fontSize={rewardSize}
+        color={rewardColor}
+        textAlign="middle-center"
+        uiTransform={{ positionType: 'absolute', position: { top: Math.round(props.height * 0.74), left: 0 }, width: props.width, height: Math.round(props.height * 0.14) }}
+      />
     </UiEntity>
   )
 }
@@ -1447,42 +1516,74 @@ function DailyDayCard(props: { key?: string; day: number; state: 'claimed' | 'to
 function MeteorRewardPanel() {
   const weekDay = dailyLadderDay() // server-derived (from streakCount)
   const claimable = dailyClaimable() // server-derived (meteorDay gate)
-  const days = [1, 2, 3, 4, 5, 6, 7].map((d) => {
-    let state: 'claimed' | 'today' | 'future' = 'future'
-    if (d < weekDay) state = 'claimed'
-    else if (d === weekDay) state = claimable ? 'today' : 'claimed'
-    return { d, state }
+  const days = [1, 2, 3, 4, 5, 6, 7].map((day) => {
+    let state: DailyCardState = 'future'
+    if (day < weekDay) state = 'claimed'
+    else if (day === weekDay) state = claimable ? 'today' : 'claimed'
+    return { day, state }
   })
+
+  // On mobile, the virtual canvas is 1600 x 720. This keeps the full 7-day
+  // calendar visible with room for the touch controls; desktop receives the
+  // larger presentation in the supplied reference.
+  const panelWidth = mobile() ? S(720) : S(960)
+  const panelHeight = Math.round(panelWidth / DAILY_PANEL_ASPECT)
+  const cardsSidePad = Math.round(panelWidth * 0.042)
+  const cardGap = Math.max(S(4), Math.round(panelWidth * 0.01))
+  const cardWidth = Math.floor((panelWidth - cardsSidePad * 2 - cardGap * 6) / 7)
+  const cardHeight = Math.round(panelHeight * 0.35)
+  // Keep the reward actions in the lower half of the panel, beneath the
+  // already-baked title treatment.
+  const cardsTop = Math.round(panelHeight * 0.325)
+  // The supplied button includes transparent spark margins. Size its crop from
+  // the visible green pill, so it carries the same visual weight as the cards.
+  const claimWidth = Math.round(panelWidth * 0.34)
+  const claimHeight = Math.round(claimWidth / ((DAILY_CLAIM_BOX.x1 - DAILY_CLAIM_BOX.x0) / (DAILY_CLAIM_BOX.y1 - DAILY_CLAIM_BOX.y0)))
+  const claimTop = cardsTop + cardHeight + Math.round(panelHeight * 0.07)
+  const closeSize = Math.round(panelHeight * 0.118)
+
   return (
-    <LightModal title="Daily Rewards" width={S(920)} height={S(440)} onClose={() => ui.close()}>
-      <Label value="Play every day to get better prizes!" fontSize={S(20)} color={LOC.body} textAlign="middle-center" uiTransform={{ width: '100%', height: S(28), margin: { bottom: S(6) } }} />
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
-        {days.map((c) => (
-          <DailyDayCard key={`dd-${c.d}`} day={c.d} state={c.state} />
-        ))}
-      </UiEntity>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', margin: { top: S(14) } }}>
-        {claimable ? (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: PET_UI.scrim }}
+      onMouseDown={() => {}}
+    >
+      <UiEntity uiTransform={{ width: panelWidth, height: panelHeight }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: panelWidth, height: panelHeight }}
+          uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_PANEL_UVS }}
+        />
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(panelHeight * 0.035), right: Math.round(panelWidth * 0.035) }, width: closeSize, height: closeSize, pointerFilter: 'block' }}
+          uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_CLOSE_UVS }}
+          onMouseDown={() => ui.close()}
+        />
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: cardsTop, left: cardsSidePad }, width: panelWidth - cardsSidePad * 2, height: cardHeight, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+        >
+          {days.map((card) => (
+            <DailyDayCard key={`dd-${card.day}`} day={card.day} state={card.state} width={cardWidth} height={cardHeight} />
+          ))}
+        </UiEntity>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: claimTop, left: Math.round((panelWidth - claimWidth) / 2) }, width: claimWidth, height: claimHeight, pointerFilter: 'block' }}>
           <TactileButton
             id="daily_claim"
-            label="Claim!"
-            width={S(300)}
-            height={S(70)}
-            bg={LOC.green}
-            textColor={LOC.white}
-            fontSize={S(26)}
-            radius={S(18)}
-            pulse
+            label=""
+            texture={DAILY_REWARDS_SHEET}
+            uvs={claimable ? DAILY_CLAIM_UVS : DAILY_CLAIM_DISABLED_UVS}
+            width={claimWidth}
+            height={claimHeight}
+            disabled={!claimable}
+            pulse={claimable}
             onClick={() => {
               actions.claimDaily() // server grants + persists; toast comes back from it
               ui.close()
+              dismissMeteorAfterClaim()
             }}
           />
-        ) : (
-          <TactileButton id="daily_done" label="Come back tomorrow!" width={S(360)} height={S(70)} bg={LOC.neutral} textColor={LOC.body} fontSize={S(22)} radius={S(18)} disabled onClick={() => {}} />
-        )}
+        </UiEntity>
       </UiEntity>
-    </LightModal>
+    </UiEntity>
   )
 }
 
