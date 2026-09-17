@@ -10,7 +10,7 @@
 // simTick() still run so the data is ready the instant the gate lifts, but
 // nothing is shown or usable before that.
 
-import { engine, InputModifier } from '@dcl/sdk/ecs'
+import { AvatarModifierArea, AvatarModifierType, engine, InputModifier } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
@@ -36,9 +36,28 @@ import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
 import { setupNav } from './nav'
+import { PRIVATE_AVATAR_AREAS } from './privacyAreas'
 
 let introTriggered = false
 let firstSnapshotSeen = false // decide the "Choose Location!" modal on the FIRST snapshot only
+let avatarModifierAreasOwner = ''
+
+function setupAvatarModifierAreas(): void {
+  const owner = resolveMyAddress()
+  // Player identity can arrive a few frames after the scene. Do not install an
+  // unfiltered area, because that would hide the local player's own avatar too.
+  if (!owner || owner === avatarModifierAreasOwner) return
+
+  const modifiers = [AvatarModifierType.AMT_HIDE_AVATARS, AvatarModifierType.AMT_HIDE_NAMETAGS]
+  for (const { entityName, area } of PRIVATE_AVATAR_AREAS) {
+    const anchor = engine.getEntityOrNullByName(entityName)
+    if (anchor) {
+      AvatarModifierArea.createOrReplace(anchor, { area, modifiers, excludeIds: [owner] })
+    }
+  }
+
+  avatarModifierAreasOwner = owner
+}
 
 function showIntro(): void {
   if (introTriggered) return
@@ -187,6 +206,7 @@ export function setupClient(): void {
   preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
   setupUi()
   applyDefaultTouchControls()
+  setupAvatarModifierAreas() // hide other players in the Feed tree and house focus areas
   setupInput()
   preloadCreatureTextures() // warm the creature-skin PNG cache so runtime skins don't pop in
   setupPetSystems() // renders + simulates remote pets from server `presence`
@@ -217,6 +237,10 @@ export function setupClient(): void {
   engine.addSystem((dt: number) => {
     elapsed += dt
     simTick(dt) // local game simulation
+
+    // getPlayer() can be unavailable during initial scene setup. Once its ID
+    // resolves, exclude this player from the house and Feed-game hide areas.
+    setupAvatarModifierAreas()
 
     if (inputFrozen && clientState.serverReady) {
       inputFrozen = false
