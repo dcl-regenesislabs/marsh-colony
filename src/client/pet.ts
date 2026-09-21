@@ -606,6 +606,102 @@ function reanchorLocalPet(pet: PetData): void {
   wanderPause = 1
 }
 
+// ---------------------------------------------------------------------------
+// Pooled pet switching — the ResetMaterialSystem (Unity desktop) crash fix.
+//
+// Every owned pet keeps its OWN persistent, already-skinned entity: the active
+// pet is whichever entity `localPet` points at; the others are the roamers in
+// `inactivePets`. Switching the active pet must therefore NEVER swap a
+// GltfContainer, re-run applyCreatureSkin, or engine.removeEntity a skinned
+// creature — any of those changes/tears-down a GltfNodeModifiers material
+// override, which fires Unity's ResetMaterialSystem and crashes the desktop
+// client (mobile is unaffected). Instead we hand the "active" role between two
+// entities that both already exist and are already skinned.
+// ---------------------------------------------------------------------------
+
+/** Reset the shared active-pet flags so a newly-promoted pet doesn't inherit the
+ *  outgoing pet's errand/trail, then settle it into follow/wander/asleep at the
+ *  position it is ALREADY standing on (mirrors reanchorLocalPet, minus the
+ *  roamer lookup — the promoted entity is its own roamer). */
+function settlePromotedPet(pet: PetData): void {
+  onArrive = null
+  interactTimer = 0
+  justBathed = false
+  bathHopT = 0
+  bathSplashT = 0
+  followTrail.length = 0
+  if (!localPet) return
+  const t = Transform.getMutable(localPet)
+  if (pet.sleeping) {
+    t.position = sleepRestPos(pet, t.position)
+    mode = 'asleep'
+    return
+  }
+  mode = clientState.followEnabled ? 'follow' : 'wander'
+  wanderHome = flat(t.position)
+  wanderTarget = null
+  wanderPause = 1
+}
+
+/** Normal roster switch: promote the incoming pet's roamer entity to be the
+ *  active `localPet`, and demote the current `localPet` to a roamer for its own
+ *  pet. Both entities are already loaded and skinned, so no material override is
+ *  ever changed or destroyed — ResetMaterialSystem never runs. */
+function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
+  const p = clientState.player
+  if (!localPet || !localTag || !p) return
+
+  // Demote the outgoing active entity into a roamer for the pet it was showing.
+  const outId = localPetId
+  const outIndex = p.pets.findIndex((x) => x.id === outId)
+  const outName = p.pets.find((x) => x.id === outId)?.name ?? ''
+  const outEntity = localPet
+  pointerEventsSystem.removeOnPointerDown(outEntity) // drop the "Open" click
+  pointerEventsSystem.onPointerDown(
+    { entity: outEntity, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${outName}`, maxDistance: 8 } },
+    () => switchActivePet(outId)
+  )
+  inactivePets.set(outId, {
+    entity: outEntity,
+    species: localSpecies,
+    tag: localTag,
+    home: slotHome(outIndex >= 0 ? outIndex : 0),
+    target: null,
+    pause: 0.4 // brief beat before it starts wandering back to its slot
+  })
+
+  // Promote the incoming pet's roamer into the active entity.
+  inactivePets.delete(newPet.id)
+  pointerEventsSystem.removeOnPointerDown(targetRoamer.entity) // drop the "Select" click
+  registerPetOpenClick(targetRoamer.entity)
+  localPet = targetRoamer.entity
+  localTag = targetRoamer.tag
+  localSpecies = newPet.species // already the loaded model — prevents a re-skin below
+  localSkinKey = `${newPet.species}|${newPet.rarity}` // already the applied skin — ditto
+  settlePromotedPet(newPet)
+}
+
+/** Retire the outgoing active entity when the incoming active pet has NO entity
+ *  of its own yet (e.g. a pet just received via a trade). We can't reuse the old
+ *  entity — re-skinning it to the newcomer would fire ResetMaterialSystem — so
+ *  we hide it (leaked, but a traded-away pet is gone for good) and let the
+ *  caller build a fresh, first-time-skinned entity for the newcomer. */
+function retireActiveEntity(): void {
+  if (localPet) {
+    VisibilityComponent.createOrReplace(localPet, { visible: false })
+    pointerEventsSystem.removeOnPointerDown(localPet)
+    forgetAnimator(localPet)
+  }
+  if (localTag) {
+    removeTag(localTag)
+    localTag = null
+  }
+  localPet = null
+  localSpecies = ''
+  localSkinKey = ''
+  reskinTicks = 0
+}
+
 /** Click-to-open handler for the local pet — pulled out of ensureLocalPet so
  *  startPetting()/cancelPetting() can strip and restore it: while petting is
  *  active the camera is locked on the pet for the swipe gesture, and the
@@ -644,22 +740,40 @@ function registerPetOpenClick(entity: Entity): void {
 function ensureLocalPet(): void {
   const pet = clientState.activePet
   if (!pet) {
-    if (localPet) {
-      engine.removeEntity(localPet)
-      forgetAnimator(localPet)
-      localPet = null
-      localSpecies = ''
-      localSkinKey = ''
-      reskinTicks = 0
-      localPetId = ''
-    }
-    if (localTag) {
-      removeTag(localTag)
-      localTag = null
-    }
+    // No active pet (lost your last one / state cleared). Retire the entity by
+    // HIDING it, not engine.removeEntity — destroying a skinned creature fires
+    // Unity's ResetMaterialSystem (desktop crash). retireActiveEntity leaks it,
+    // which is fine: there's no pet to render until you adopt again.
+    if (localPet || localTag) retireActiveEntity()
+    localPetId = ''
     return
   }
   const renderSpecies = pet.species
+
+  // The roster switched to a DIFFERENT pet (My Pets panel, or clicking a stored
+  // pet in the care area). Handle it BEFORE the create/reuse decision so a real
+  // switch NEVER re-skins or destroys a skinned creature (see the pooled-pet
+  // switching block above — that reset crashes the Unity desktop client).
+  if (localPet && localPetId !== pet.id) {
+    const targetRoamer = inactivePets.get(pet.id)
+    if (targetRoamer) {
+      // The incoming pet already has its own persistent, skinned roamer entity:
+      // promote it to active and demote the current localPet. No re-skin, no
+      // removal — ResetMaterialSystem never runs.
+      swapActiveWithRoamer(pet, targetRoamer)
+    } else if (localPetId.startsWith('local_')) {
+      // No roamer AND the OUTGOING id is the optimistic hatchling's throwaway
+      // `local_...` id being replaced by the server's real one: same creature,
+      // new id. Keep the same entity exactly where it is (reanchor no-ops here).
+      reanchorLocalPet(pet)
+    } else {
+      // No roamer and not a hatchling re-key: a genuinely new active pet we have
+      // no entity for (e.g. one just received via a trade). Hide the outgoing
+      // entity instead of re-skinning it, then build a fresh one below.
+      retireActiveEntity()
+    }
+  }
+
   if (!localPet) {
     localPet = engine.addEntity()
     // Reconnecting while the pet was left sleeping: resume it AT the bed,
@@ -677,13 +791,6 @@ function ensureLocalPet(): void {
     // A pet can be (re)built mid-sentence — start the fresh tag in whatever state
     // the flow and the speech bubble currently agree on, not blindly visible.
     setTagVisible(localTag, localTagWanted && !tagsSuppressed)
-  } else if (localPetId !== pet.id) {
-    // The roster switched to a DIFFERENT pet (My Pets panel, or clicking a
-    // stored pet in the care area). The entity is reused, so without this
-    // nothing resets WHERE the pet is: it would inherit the previous pet's
-    // position and mode and start trailing the player from wherever that one
-    // stood — a pet left asleep in its bed would get up and follow.
-    reanchorLocalPet(pet)
   }
   localPetId = pet.id
   if (localSpecies !== renderSpecies) {
@@ -1962,7 +2069,14 @@ function updateInactivePets(dt: number): void {
 
   for (const [id, st] of inactivePets) {
     if (!wanted.has(id)) {
-      engine.removeEntity(st.entity)
+      // A pet left the roster (traded away / discarded). Do NOT engine.removeEntity
+      // its skinned creature — destroying the GltfNodeModifiers material override
+      // fires Unity's ResetMaterialSystem, which crashes the desktop client
+      // (mobile is fine). Hide and leak it instead; roster-leave is rare and the
+      // leak is bounded by how many distinct pets you owned this session. The tag
+      // carries no material override, so removing it stays safe.
+      VisibilityComponent.createOrReplace(st.entity, { visible: false })
+      pointerEventsSystem.removeOnPointerDown(st.entity)
       removeTag(st.tag)
       forgetAnimator(st.entity)
       inactivePets.delete(id)
