@@ -1556,6 +1556,9 @@ function updateLocalPet(dt: number): void {
     const t = Transform.getMutable(localPet)
     t.scale = Vector3.scale(full, f)
     if (hatchRevealPos) t.position = Vector3.create(hatchRevealPos.x, C.PET_BASE_Y + HATCH_PET_LIFT, hatchRevealPos.z)
+    // The hatch camera sits on this bearing, so explicitly face the newborn
+    // toward it instead of retaining its orientation from before the reveal.
+    t.rotation = Quaternion.fromEulerDegrees(0, HATCH_CAM_YAW + yawOffsetForSpecies(petH.species), 0)
     setClip(localPet, 'idle')
     // Camera stays locked on hatchFocus (the egg's spot) — no retarget needed.
     if (localTag) updateTag(localTag, t.position, petH.species, petH.size, petH.name, petH)
