@@ -6,6 +6,8 @@ import { room } from '../shared/messages'
 import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
+const OPTIMISTIC_PET_TIMEOUT_MS = 12000
+
 export type DialogState = {
   open: boolean
   npcName: string
@@ -117,6 +119,10 @@ export const clientState: {
   // up, so adoption never feels like "nothing happened" if a message is slow.
   pendingPet: PetData | null
   pendingUntil: number
+  // Keep/Discard is optimistic too. Pin the decided hatchling briefly so a
+  // late pre-decision snapshot cannot reopen its choice UI, while still
+  // accepting unrelated/new hatchlings and eventually reconciling a rejection.
+  pendingHatchlingDecision: { pet: PetData; action: 'keep' | 'discard'; until: number } | null
   // 7-day login streak (client-owned so it works without the server).
   streak: { count: number; lastDay: number; claimedDay: number }
   // ms timestamp of the last message received from the authoritative server
@@ -157,6 +163,7 @@ export const clientState: {
   fetch: { active: false, busy: false, charging: false, charge: 0 },
   pendingPet: null,
   pendingUntil: 0,
+  pendingHatchlingDecision: null,
   streak: { count: 1, lastDay: 0, claimedDay: 0 },
   lastServerMsgAt: 0,
   serverReady: false,
@@ -212,8 +219,24 @@ export function closeDialog(): void {
 }
 
 export function applySnapshot(snap: PlayerSnapshot): void {
+  const decision = clientState.pendingHatchlingDecision
+  const staleDecisionSnapshot =
+    !!decision && Date.now() < decision.until && snap.player.hatchling?.id === decision.pet.id
+  // A matching hatchling is a late pre-decision snapshot. All of its other
+  // fields remain authoritative; only the resolved hatchling field is kept
+  // optimistic. A different hatchling, or one after the grace period, wins.
+  if (decision && !staleDecisionSnapshot) clientState.pendingHatchlingDecision = null
   clientState.player = snap.player
-  if (snap.activePet) {
+  if (staleDecisionSnapshot) {
+    clientState.player.hatchling = null
+    if (decision.action === 'keep') {
+      if (!clientState.player.pets.some((pet) => pet.id === decision.pet.id)) clientState.player.pets = [...clientState.player.pets, decision.pet]
+      clientState.player.activePetId = decision.pet.id
+      clientState.activePet = decision.pet
+    } else {
+      clientState.activePet = clientState.player.pets.find((pet) => pet.id === clientState.player?.activePetId) ?? null
+    }
+  } else if (snap.activePet) {
     // Server confirmed a pet — authoritative wins, clear any optimistic state.
     clientState.activePet = snap.activePet
     clientState.pendingPet = null
@@ -289,7 +312,7 @@ export function switchActivePet(petId: string): void {
 export function adoptPet(species: string, name: string): void {
   const pet = makeLocalPet(species, name)
   clientState.pendingPet = pet
-  clientState.pendingUntil = Date.now() + 12000
+  clientState.pendingUntil = Date.now() + OPTIMISTIC_PET_TIMEOUT_MS
   clientState.activePet = pet
   if (clientState.player) clientState.player.hatchling = pet
   actions.adopt(species, name)
@@ -305,6 +328,7 @@ export function keepHatchling(): void {
   p.activePetId = pet.id
   clientState.activePet = pet
   clientState.pendingPet = null
+  clientState.pendingHatchlingDecision = { pet, action: 'keep', until: Date.now() + OPTIMISTIC_PET_TIMEOUT_MS }
   // First pet ever born -> nudge the player to interact with it.
   if (p.pets.length === 1) showHint('firstPet', 'Click on your pet to complete some necessities and gain XP and coins!')
   actions.keepPet()
@@ -314,9 +338,11 @@ export function keepHatchling(): void {
 export function discardHatchling(): void {
   const p = clientState.player
   if (!p || !p.hatchling) return
+  const pet = p.hatchling
   p.hatchling = null
   clientState.pendingPet = null
   clientState.activePet = p.pets.find((x) => x.id === p.activePetId) ?? null
+  clientState.pendingHatchlingDecision = { pet, action: 'discard', until: Date.now() + OPTIMISTIC_PET_TIMEOUT_MS }
   actions.discardPet()
 }
 
