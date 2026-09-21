@@ -12,10 +12,14 @@ export const Messages = {
   adopt: Schemas.Map({ species: Schemas.String, name: Schemas.String }),
   // Trigger a care action: feed | clean | sleep | play. onBed = slept on the Bed.
   careAction: Schemas.Map({ action: Schemas.String, onBed: Schemas.Boolean }),
-  // Feed tree minigame result: how many fruit were caught (sent once, at game end).
-  feedResult: Schemas.Map({ caught: Schemas.Int }),
+  // Feed tree minigame result: how many fruit were caught, and whether a
+  // poisonous fruit was caught this round (sent once, at game end).
+  feedResult: Schemas.Map({ caught: Schemas.Int, poisoned: Schemas.Boolean }),
   // Pet your own active pet (instant happiness).
   petSelf: Schemas.Map({}),
+  // Cure the active pet's sickness (Pepito chase minigame result: player hit
+  // Pepito and recovered the medicine). Server re-validates pet.sick itself.
+  cureSickness: Schemas.Map({}),
   // Pet/treat another player's pet.
   petOther: Schemas.Map({ targetAddress: Schemas.String }),
   // Shop: buy a food tier (1 | 2).

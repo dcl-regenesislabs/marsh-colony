@@ -400,6 +400,14 @@ export const PLAY_XP_REWARD = 14
 /** Coins for a completed fetch (vs COINS_PER_ACTION for passive care). */
 export const PLAY_COINS_REWARD = 9
 
+// ---------------------------------------------------------------------------
+// Sickness cure (Pepito chase minigame, client/pepitoChase.ts) — pays like a
+// minigame (see PLAY_XP_REWARD/PLAY_COINS_REWARD) since it takes a whole
+// errand + throw round to earn, not an instant tap.
+// ---------------------------------------------------------------------------
+export const SICKNESS_CURE_XP = 14
+export const SICKNESS_CURE_COINS = 9
+
 /** True if the pet has the energy to play right now. Single source of truth for
  *  the gate — server (state.ts), client sim, Fetch flow and HUD all call this. */
 export function canPlay(pet: { energy: number; sleeping: boolean }): boolean {
@@ -438,6 +446,11 @@ export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {
   sleep: 2000, // just a toggle now (sleep/wake), so keep it responsive
   play: 8000
 }
+
+/** Cooldown for the 'cure' pseudo-action (server/state.ts's cureSickness) —
+ *  not part of CareAction/ACTION_COOLDOWN_MS since it isn't a HUD care button,
+ *  just the Pepito chase minigame's single result submission. */
+export const SICKNESS_CURE_COOLDOWN_MS = 8000
 
 // ---------------------------------------------------------------------------
 // Sleep — a duration state. The pet stays asleep and energy refills in real

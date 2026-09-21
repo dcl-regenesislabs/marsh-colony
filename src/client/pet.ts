@@ -530,7 +530,16 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active
+  return (
+    petTransformOwnedElsewhere() ||
+    clientState.petting.active ||
+    clientState.fetch.active ||
+    clientState.feedTask.active ||
+    clientState.feedGame.active ||
+    clientState.bathGame.active ||
+    clientState.sicknessErrand.active ||
+    clientState.pepitoChase.active
+  )
 }
 
 /**
@@ -776,6 +785,59 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
   eatCinematicActive = true
   eatPlaybackSpeed = Math.max(0.1, Math.min(3, playbackSpeed))
   restartEatAnimation()
+}
+
+// ---------------------------------------------------------------------------
+// Sick cinematic (issue #148, sicknessErrand.ts): the newly-sick pet stands
+// still, turned to a camera off to one side of the player, looping its Sad clip
+// while the Caretaker talks. Like the eat cinematic, the pet stays parked until
+// the flow explicitly ends it.
+// ---------------------------------------------------------------------------
+const SAD_CAM_ANGLE_DEG = 55 // camera sits this far around from the player's side, so the avatar isn't in the way
+let sadHold = false
+
+/** True while the sick cinematic has the pet parked (petEmotes.ts keeps its
+ *  sick bubble up through the Caretaker's dialog for this). */
+export function sadCinematicIsActive(): boolean {
+  return sadHold
+}
+
+/** Park the active pet, turn it to face the shot and loop its Sad clip. Returns
+ *  where to put the camera and what to look at (framing the pet AND the sick
+ *  bubble above it), or null if there's no pet in the world to show. */
+export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+  const petPos = Transform.get(localPet).position
+  const pp = playerPos()
+  let away = Vector3.create(pp.x - petPos.x, 0, pp.z - petPos.z)
+  away = Vector3.length(away) > 0.1 ? Vector3.normalize(away) : Vector3.create(0, 0, 1)
+  const a = (SAD_CAM_ANGLE_DEG * Math.PI) / 180
+  const dir = Vector3.create(away.x * Math.cos(a) - away.z * Math.sin(a), 0, away.x * Math.sin(a) + away.z * Math.cos(a))
+  const stage = stageScaleFor(pet.size)
+  const dist = 3.0 + stage // farther for bigger pets, whose bubble floats higher
+  const lookY = petPos.y + 0.5 + 0.9 * stage
+  const camPos = Vector3.create(petPos.x + dir.x * dist, lookY + 0.3, petPos.z + dir.z * dist)
+  const look = Vector3.create(petPos.x, lookY, petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-negative'
+  interactTimer = 0
+  sadHold = true
+  return { camPos, look }
+}
+
+/** Let the pet go again (it resumes following/wandering). */
+export function endSadCinematic(): void {
+  if (!sadHold) return
+  sadHold = false
+  if (mode === 'interact' && interactClip === 'gesture-negative') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,7 +1194,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet'
+export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet' | 'sickness'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -1154,6 +1216,9 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'feed') return clientState.feedTask.active
   if (arrowOwner === 'carryEgg') return clientState.carryEgg.active
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
+  // The sickness arrow points at the Caretaker (errand) and later at the cure
+  // that fell where Pepito was hit (Pepito chase's 'pickup' phase).
+  if (arrowOwner === 'sickness') return clientState.sicknessErrand.active || (clientState.pepitoChase.active && clientState.pepitoChase.phase === 'pickup')
   return false
 }
 
@@ -1668,6 +1733,7 @@ function updateLocalPet(dt: number): void {
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
       if (interactClip === 'eat' && eatCinematicActive) break
+      if (interactClip === 'gesture-negative' && sadHold) break // parked for the sick cinematic
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {

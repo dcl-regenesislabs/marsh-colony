@@ -16,6 +16,9 @@ export type DialogState = {
   // Show the "Adopt" button art on the final page (only the Caretaker intro,
   // whose CTA is adopting). Everything else uses the neutral "Next" art.
   adoptCta: boolean
+  // Fired with the new page index each time the player taps Next to a later
+  // page (not on close — that's onDone). Lets a cinematic change shots per page.
+  onPage: ((page: number) => void) | null
 }
 
 export const clientState: {
@@ -69,6 +72,11 @@ export const clientState: {
   // player cancels it with BACK. `petId` is the pet Feed was pressed for, so the
   // errand can drop itself if the player switches pets mid-walk.
   feedTask: { active: boolean; petId: string }
+  // Sickness errand (sicknessErrand.ts): after catching a poisonous fruit in
+  // the Feed minigame and clearing the sickness-explainer dialog, the guide
+  // arrow is up and the player is walking to the Caretaker, who hands off into
+  // the Pepito chase on arrival. Same "owns the moment" shape as feedTask.
+  sicknessErrand: { active: boolean; petId: string }
   // Hatch gesture: rubbing/tapping the egg fills this progress, then it hatches.
   // Reuses the petting gesture input.
   hatch: { active: boolean; progress: number }
@@ -94,6 +102,11 @@ export const clientState: {
     // Driven by fruitGame's tick while the final eat beat plays. Keeping it in
     // state makes the HUD fill continuous and tied to the cinematic clock.
     hungerFillProgress: number
+    // Sticky for the whole round: true once ANY poisonous fruit has been
+    // caught this game (see fruitGame.ts's FruitRuntime.poison). Sent with
+    // the feedResult message — server/state.ts's feedFromMinigame sets
+    // pet.sick from it.
+    poisoned: boolean
   }
   // Bubble-bath minigame (see client/bathGame.ts). `popped` counts popped
   // bubbles, `timeLeft` the popping-phase clock; popFlashUntil (Date.now() ms)
@@ -113,6 +126,22 @@ export const clientState: {
   // ramps `charge` 0→1 (`charging` true meanwhile) — that charge scales the
   // throw's distance/arc/flight-time on release (play.ts's beginThrow).
   fetch: { active: boolean; busy: boolean; charging: boolean; charge: number }
+  // Pepito chase minigame (pepitoChase.ts), reached from the sickness errand
+  // once the player reaches the Caretaker. 'steal' is the frozen cinematic
+  // where Pepito swipes the cure; 'circling' is the live charge/throw phase
+  // (Pepito flies its circle high above the Care Center); 'hit' is the beat
+  // where Pepito flees and the cure falls where it was hit; 'pickup' is the
+  // walk to the landed cure (guide arrow + floor marker); 'results' is the
+  // reward card before Exit. charge/charging mirror `fetch`'s
+  // own charge-meter shape (same Throw-button mechanic); `busy` is true while
+  // a rock is in flight (mirrors fetch.busy).
+  pepitoChase: {
+    active: boolean
+    phase: 'steal' | 'circling' | 'hit' | 'pickup' | 'results'
+    charging: boolean
+    charge: number
+    busy: boolean
+  }
   // Optimistic adoption: render the new pet instantly while the server catches
   // up, so adoption never feels like "nothing happened" if a message is slow.
   pendingPet: PetData | null
@@ -140,7 +169,7 @@ export const clientState: {
   currentToast: null,
   reward: null,
   lastSpin: null,
-  dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, adoptCta: false },
+  dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, adoptCta: false, onPage: null },
   introShown: false,
   petPanelOpen: false,
   viewingPetAddress: null,
@@ -151,10 +180,12 @@ export const clientState: {
   carryEgg: { active: false, species: '', name: '', atHome: false },
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
+  sicknessErrand: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
-  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
+  feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0, poisoned: false },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
+  pepitoChase: { active: false, phase: 'steal', charging: false, charge: 0, busy: false },
   pendingPet: null,
   pendingUntil: 0,
   streak: { count: 1, lastDay: 0, claimedDay: 0 },
@@ -189,8 +220,15 @@ export function serverConnected(): boolean {
 }
 
 /** Open a multi-page NPC dialog. Advancing past the last page closes it. */
-export function openDialog(npcName: string, pages: string[], finalLabel = 'Got it!', onDone?: () => void, adoptCta = false): void {
-  clientState.dialog = { open: true, npcName, pages, page: 0, finalLabel, onDone: onDone ?? null, adoptCta }
+export function openDialog(
+  npcName: string,
+  pages: string[],
+  finalLabel = 'Got it!',
+  onDone?: () => void,
+  adoptCta = false,
+  onPage?: (page: number) => void
+): void {
+  clientState.dialog = { open: true, npcName, pages, page: 0, finalLabel, onDone: onDone ?? null, adoptCta, onPage: onPage ?? null }
 }
 
 export function advanceDialog(): void {
@@ -198,17 +236,20 @@ export function advanceDialog(): void {
   if (!d.open) return
   if (d.page < d.pages.length - 1) {
     d.page += 1
+    if (d.onPage) d.onPage(d.page)
     return
   }
   d.open = false
   const cb = d.onDone
   d.onDone = null
+  d.onPage = null
   if (cb) cb()
 }
 
 export function closeDialog(): void {
   clientState.dialog.open = false
   clientState.dialog.onDone = null
+  clientState.dialog.onPage = null
 }
 
 export function applySnapshot(snap: PlayerSnapshot): void {
@@ -247,6 +288,7 @@ function makeLocalPet(species: string, name: string): PetData {
     sleeping: false,
     sleepOnBed: false,
     sleepLockUntil: 0,
+    sick: false,
     bornAt: t,
     lastUpdated: t
   }
@@ -274,7 +316,9 @@ export function switchActivePet(petId: string): void {
     s.fetch.active ||
     s.feedGame.active ||
     s.bathGame.active ||
-    s.feedTask.active
+    s.feedTask.active ||
+    s.sicknessErrand.active ||
+    s.pepitoChase.active
   ) {
     pushToast('Finish what your pet is doing first!')
     return
@@ -375,8 +419,11 @@ export const actions = {
   care(action: CareAction, onBed = false): void {
     room.send('careAction', { action, onBed })
   },
-  feedResult(caught: number): void {
-    room.send('feedResult', { caught })
+  feedResult(caught: number, poisoned: boolean): void {
+    room.send('feedResult', { caught, poisoned })
+  },
+  cureSickness(): void {
+    room.send('cureSickness', {})
   },
   keepPet(): void {
     room.send('keepPet', {})

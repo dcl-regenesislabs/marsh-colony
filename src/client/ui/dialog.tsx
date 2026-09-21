@@ -92,6 +92,32 @@ export function openLegendaryCreatureDialog(): void {
   openDialog('Caretaker', LEGENDARY_CREATURE_DIALOG, 'Got it!')
 }
 
+// Shown once the Feed round's Exit is pressed and the pet turned sick
+// (client/sicknessErrand.ts, driven by the server's `notify(kind:'sickness')`).
+// Page 1 plays over the sad, sick pet; when the player taps Next to page 2 the
+// camera cuts to the potion table as its cage opens on the cure (onPage). onDone
+// starts the errand (raises the guide arrow to the table).
+export const SICKNESS_DIALOG: string[] = [
+  'Oh no — your pet ate a poisonous fruit and feels really bad.',
+  "Don't worry, I have the cure! It's right there on my table — go and get it!"
+]
+
+export function openSicknessDialog(onDone?: () => void, onPage?: (page: number) => void): void {
+  openDialog('Caretaker', SICKNESS_DIALOG, 'Got it!', onDone, false, onPage)
+}
+
+// Shown right after the steal cinematic (client/pepitoChase.ts): Pepito just
+// snatched the cure off the table and is circling with it. onDone unfreezes the
+// player and starts the circling/throw phase.
+export const PEPITO_STOLE_DIALOG: string[] = [
+  'That Pepito stole your cure! Look, it is circling up there with it!',
+  'Aim at Pepito and throw a rock — hit it and it will drop the medicine!'
+]
+
+export function openPepitoStoleDialog(onDone?: () => void): void {
+  openDialog('Caretaker', PEPITO_STOLE_DIALOG, "Let's go!", onDone)
+}
+
 export function DialogBox() {
   const d = clientState.dialog
   if (!d.open) return <UiEntity />

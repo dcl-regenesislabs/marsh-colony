@@ -458,6 +458,8 @@ function momentIsTaken(): boolean {
     clientState.petting.active ||
     clientState.fetch.active ||
     clientState.feedGame.active ||
+    clientState.sicknessErrand.active ||
+    clientState.pepitoChase.active ||
     clientState.dialog.open ||
     isBusy()
   )

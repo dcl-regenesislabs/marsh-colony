@@ -332,8 +332,9 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
 
 /** Apply the Feed tree minigame's result locally (optimistic; server snapshot
  *  corrects). Mirrors applyCareLocal's tail, but the hunger delta scales with
- *  fruit caught instead of a flat ACTION_EFFECT. */
-export function applyFeedMinigameLocal(caught: number): void {
+ *  fruit caught instead of a flat ACTION_EFFECT. `poisoned` mirrors the server's
+ *  feedFromMinigame guard: only flips pet.sick on, never re-triggers once sick. */
+export function applyFeedMinigameLocal(caught: number, poisoned: boolean): void {
   const p = clientState.player
   const pet = clientState.activePet
   if (!p || !pet || caught <= 0) return
@@ -347,4 +348,23 @@ export function applyFeedMinigameLocal(caught: number): void {
   bumpCounter(p, 'feedCount')
   bumpCounter(p, 'careCount')
   showReward(xpGain, Cfg.COINS_PER_ACTION)
+  if (poisoned && !pet.sick) pet.sick = true
+}
+
+/** Apply the Pepito chase minigame's cure result locally (optimistic; server
+ *  snapshot corrects). Mirrors applyFeedMinigameLocal's tail, but with no stat
+ *  effect — the "effect" is clearing pet.sick (see server/state.ts cureSickness). */
+export function applyCureLocal(): void {
+  const p = clientState.player
+  const pet = clientState.activePet
+  if (!p || !pet || !pet.sick) return
+  if (sleepLocked()) return
+  pet.sick = false
+  pet.careCount += 1
+  pet.size = Cfg.growSize(pet.size)
+  const xpGain = grantXp(p, Cfg.SICKNESS_CURE_XP)
+  p.currency += Cfg.SICKNESS_CURE_COINS
+  bumpCounter(p, 'cureCount')
+  bumpCounter(p, 'careCount')
+  showReward(xpGain, Cfg.SICKNESS_CURE_COINS)
 }
