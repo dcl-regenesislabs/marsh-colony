@@ -6,13 +6,14 @@
 // UI-only: the bubbles are react-ecs circles drawn by BathGameOverlay (ui.tsx),
 // which reads the bubble list (getBubbles) + clientState.bathGame that this
 // module's tick() mutates each frame. Mirrors the feed minigame's phase machine
-// (fruitGame.ts) but without the 3D fruit pool — no cinematic camera, no input
-// lock (kept intentionally simple for the prototype).
+// (fruitGame.ts) and, like it, locks a cinematic camera on the tub + freezes the
+// avatar for the round (pet.ts startBathCamera/endBathCamera) — there's no 3D
+// bubble pool though, the bubbles live entirely in the screen-space overlay.
 
 import { engine } from '@dcl/sdk/ecs'
 import { actions, clientState, pushToast } from './state'
 import { applyCareLocal } from './sim'
-import { finishBath } from './pet'
+import { finishBath, endBathCamera } from './pet'
 
 export const BATH_DURATION_S = 16 // seconds of the timed popping phase
 export const BUBBLE_GOAL = 12 // pops needed for the pet to count as clean
@@ -84,16 +85,20 @@ function makeBubble(): Bubble {
   return b
 }
 
-/** Launch the bath minigame — called after the pet is placed in the tub. */
-export function startBathGame(): void {
-  if (phase !== 'idle') return
+/** Launch the bath minigame — called after the pet is placed in the tub. Returns
+ *  false if a round is already live (the caller must NOT then lock the camera —
+ *  that would freeze the avatar with no overlay/BACK behind it). */
+export function startBathGame(): boolean {
+  if (phase !== 'idle') return false
   bubbles = []
   pops = []
   spawnAcc = 0
   clock = 0
   clientState.bathGame = { active: true, phase: 'intro', popped: 0, timeLeft: BATH_DURATION_S, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
   phase = 'intro'
-  for (let i = 0; i < 5; i++) bubbles.push(makeBubble()) // a few already drifting behind the intro
+  // No bubbles during intro/countdown — the tub sits empty behind the Start beat
+  // and the 3-2-1; they only appear (and become poppable) once popping begins.
+  return true
 }
 
 /** Start button -> 3-2-1 countdown, then the timed popping phase. */
@@ -108,6 +113,15 @@ function beginPopping(): void {
   phase = 'popping'
   clientState.bathGame.phase = 'popping'
   clientState.bathGame.timeLeft = BATH_DURATION_S
+  spawnAcc = 0
+  // Seed the first bubbles already ON-SCREEN (not below the bottom edge like a
+  // fresh spawn) so the tub is full the instant 3-2-1 ends — otherwise the first
+  // poppable bubble takes up to ~2.8s to rise into view out of a 16s round.
+  for (let i = 0; i < 5; i++) {
+    const b = makeBubble()
+    b.y = rand(0.35, 1.0)
+    bubbles.push(b)
+  }
 }
 
 /** Pop a bubble (overlay onMouseDown). Scores it and sends a fresh one up. */
@@ -142,6 +156,7 @@ export function exitBathResults(): void {
   phase = 'idle'
   bubbles = []
   pops = []
+  endBathCamera() // hand the camera + avatar control back before the splash/hop-out
   // Play the win splash + hop-out only if the pet actually came out clean.
   finishBath(clientState.bathGame.popped >= BUBBLE_GOAL)
 }
@@ -153,6 +168,7 @@ export function cancelBathGame(): void {
   phase = 'idle'
   bubbles = []
   pops = []
+  endBathCamera() // unlock the camera + avatar on bail-out
   pushToast('Bath cancelled') // BACK: acknowledge like every other step of the carry flow
 }
 
@@ -174,8 +190,8 @@ function tick(dt: number): void {
     }
   }
 
-  // Bubbles drift/rise during intro, countdown and popping (ambient before, live during).
-  if (phase !== 'results') {
+  // Bubbles only exist during the timed popping phase — none during intro/countdown.
+  if (phase === 'popping') {
     spawnAcc += dt
     if (bubbles.length < MAX_BUBBLES && spawnAcc >= SPAWN_STAGGER_S) {
       spawnAcc = 0

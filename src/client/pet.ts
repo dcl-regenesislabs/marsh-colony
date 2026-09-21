@@ -48,6 +48,7 @@ import {
 import type { PetData } from '../shared/types'
 import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, hasPendingHatchling } from './state'
 import { startBathGame } from './bathGame'
+import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
@@ -1161,6 +1162,48 @@ export function cancelCarryPet(): void {
   hideArrow('carryPet')
 }
 
+// Bath minigame camera: a cinematic shot framed on the tub, held (avatar frozen)
+// through the whole minigame — the intro "Start" beat, the countdown, popping and
+// results — the same lock/lookAt pattern the petting/hatch shots use. Tunable.
+const BATH_CAM_DIST = 3.2 // metres out from the tub, on the side AWAY from the home dome (-Z)
+const BATH_CAM_HEIGHT = 1.6 // metres above the tub
+const BATH_CAM_LOOK_LIFT = 0.6 // focus point above the tub floor (roughly the pet's body)
+const BATH_CAM_AVATAR_BACK = 2 // metres to park the frozen avatar BEHIND the camera, out of the shot
+const BATH_CAM_TRANSITION_S = 0.8 // blend-in time, mirrors the fruit minigame's ARRIVAL_CAM_TRANSITION_S (no hard cut)
+
+/** Lock the camera onto the bathtub for the bath minigame. */
+function startBathCamera(): void {
+  const tub = objectPosition(EntityNames.PetPool_glb)
+  if (!petCam) petCam = engine.addEntity()
+  if (!petCamFocus) petCamFocus = engine.addEntity()
+  // Frame the tub from the -Z side: +Z aims straight into HomeDome01, which would
+  // put the camera inside the dome and teleport the frozen avatar through its
+  // wall. nudgeOutsideBuildings is a belt-and-braces guard — relocating the tub
+  // in the editor can never re-park the shot (or the avatar) indoors. (It flattens
+  // Y to PET_BASE_Y, so the camera/avatar height is re-applied afterwards.)
+  const camFlat = nudgeOutsideBuildings(Vector3.create(tub.x, C.PET_BASE_Y, tub.z - BATH_CAM_DIST))
+  const avatarFlat = nudgeOutsideBuildings(Vector3.create(tub.x, C.PET_BASE_Y, tub.z - (BATH_CAM_DIST + BATH_CAM_AVATAR_BACK)))
+  Transform.createOrReplace(petCamFocus, { position: Vector3.create(tub.x, C.PET_BASE_Y + BATH_CAM_LOOK_LIFT, tub.z) })
+  Transform.createOrReplace(petCam, { position: Vector3.create(camFlat.x, C.PET_BASE_Y + BATH_CAM_HEIGHT, camFlat.z) })
+  VirtualCamera.createOrReplace(petCam, {
+    lookAtEntity: petCamFocus,
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(BATH_CAM_TRANSITION_S) } // blend in, like fruitGame
+  })
+  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
+  // Tuck the avatar BEHIND the camera (further out than it) so it's out of the shot
+  // — done before the freeze so the teleport isn't blocked. It stays frozen there.
+  void movePlayerTo({
+    newRelativePosition: Vector3.create(avatarFlat.x, C.PET_BASE_Y, avatarFlat.z),
+    cameraTarget: Vector3.create(tub.x, C.PET_BASE_Y + BATH_CAM_LOOK_LIFT, tub.z)
+  })
+  InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
+}
+
+/** Hand the camera + avatar control back when the bath minigame ends (Done/BACK). */
+export function endBathCamera(): void {
+  releasePettingView() // shared camera/input release (clears the virtual cam + InputModifier)
+}
+
 /** Bath step 2: place the pet in the tub and start the bubble minigame. The bath
  *  reward + splash come from the minigame's RESULT (finishBath), not from here. */
 export function placePetAtStation(): void {
@@ -1187,7 +1230,10 @@ export function placePetAtStation(): void {
   interactTimer = 0.5
   bathSplashT = 0
   justBathed = false
-  startBathGame()
+  // Lock the camera ONLY if the game actually started — startBathGame no-ops if a
+  // round is somehow still live, and locking + freezing the avatar with no overlay
+  // and no BACK button behind it would be an unrecoverable soft-lock.
+  if (startBathGame()) startBathCamera() // cinematic lock on the tub for the intro beat + the minigame
 }
 
 /** Called by the bath minigame when it ends. On a WIN the pet plays the short

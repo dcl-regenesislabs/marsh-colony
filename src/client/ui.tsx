@@ -2699,7 +2699,7 @@ function BathGameOverlay() {
       <BackButton onClick={() => cancelBathGame()} />
       <ScreenInsetArea>
         <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-          {/* the bubbles — only score during 'popping', but they float during intro/countdown too */}
+          {/* the bubbles — they only exist (and are poppable) during the timed 'popping' phase */}
           {getBubbles().map((b) => (
             <BathBubble key={`bub-${b.id}`} b={b} />
           ))}
