@@ -6,8 +6,9 @@
 // UI-only: the bubbles are react-ecs circles drawn by BathGameOverlay (ui.tsx),
 // which reads the bubble list (getBubbles) + clientState.bathGame that this
 // module's tick() mutates each frame. Mirrors the feed minigame's phase machine
-// (fruitGame.ts) but without the 3D fruit pool — no cinematic camera, no input
-// lock (kept intentionally simple for the prototype).
+// (fruitGame.ts) and, like it, locks a cinematic camera on the tub + freezes the
+// avatar for the round (pet.ts startBathCamera/endBathCamera) — there's no 3D
+// bubble pool though, the bubbles live entirely in the screen-space overlay.
 
 import { engine } from '@dcl/sdk/ecs'
 import { actions, clientState, pushToast } from './state'
@@ -84,9 +85,11 @@ function makeBubble(): Bubble {
   return b
 }
 
-/** Launch the bath minigame — called after the pet is placed in the tub. */
-export function startBathGame(): void {
-  if (phase !== 'idle') return
+/** Launch the bath minigame — called after the pet is placed in the tub. Returns
+ *  false if a round is already live (the caller must NOT then lock the camera —
+ *  that would freeze the avatar with no overlay/BACK behind it). */
+export function startBathGame(): boolean {
+  if (phase !== 'idle') return false
   bubbles = []
   pops = []
   spawnAcc = 0
@@ -95,6 +98,7 @@ export function startBathGame(): void {
   phase = 'intro'
   // No bubbles during intro/countdown — the tub sits empty behind the Start beat
   // and the 3-2-1; they only appear (and become poppable) once popping begins.
+  return true
 }
 
 /** Start button -> 3-2-1 countdown, then the timed popping phase. */
@@ -110,7 +114,14 @@ function beginPopping(): void {
   clientState.bathGame.phase = 'popping'
   clientState.bathGame.timeLeft = BATH_DURATION_S
   spawnAcc = 0
-  for (let i = 0; i < 5; i++) bubbles.push(makeBubble()) // fill the tub the moment the 3-2-1 ends
+  // Seed the first bubbles already ON-SCREEN (not below the bottom edge like a
+  // fresh spawn) so the tub is full the instant 3-2-1 ends — otherwise the first
+  // poppable bubble takes up to ~2.8s to rise into view out of a 16s round.
+  for (let i = 0; i < 5; i++) {
+    const b = makeBubble()
+    b.y = rand(0.35, 1.0)
+    bubbles.push(b)
+  }
 }
 
 /** Pop a bubble (overlay onMouseDown). Scores it and sends a fresh one up. */
