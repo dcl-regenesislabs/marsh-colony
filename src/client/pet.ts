@@ -76,7 +76,7 @@ let reskinTicks = 0 // frames left to keep re-asserting the skin after a reparen
 const RESKIN_TICKS = 150 // ~2.5 s of coverage @60fps for the async reparent-reload (covers slow devices)
 // Which pet the localPet entity currently stands for. The entity is REUSED when
 // the roster switches, so this is the only way to notice "same entity, different
-// pet" and re-place it (see ensureLocalPet / reanchorLocalPet).
+// pet" and re-place it (see ensureLocalPet / settlePromotedPet).
 let localPetId = ''
 let mode: Mode = 'follow'
 let target = Vector3.create(199.2, 0, 231.8)
@@ -211,6 +211,12 @@ type HealthTag = { root: Entity; label: Entity; icons: Entity[]; name: string; i
 // The player's NON-active stored pets roam the care area on their own.
 type Roamer = { entity: Entity; species: string; tag: HealthTag; home: Vector3; target: Vector3 | null; pause: number }
 const inactivePets = new Map<string, Roamer>()
+// Creatures whose pet left the roster (traded away) or whose owner has no active
+// pet: parked off-map + hidden instead of engine.removeEntity'd, because
+// destroying a skinned creature fires Unity's ResetMaterialSystem (desktop
+// crash). Keyed by pet id so a returning pet re-shows its ORIGINAL entity (no
+// second entity, no re-skin) rather than leaking one and building another.
+const retiredPets = new Map<string, Entity>()
 
 // Each owned pet gets its OWN home slot so up-to-4 pets never pile up on the same
 // spot. Slots are spread across the care area (objects sit ~x195-214, z235-249);
@@ -560,52 +566,6 @@ export function canQueueCareAction(): boolean {
   return !hasPendingHatchling() && !clientState.activePet?.sleeping && !otherActivityActive()
 }
 
-/**
- * Re-place the local pet entity after the roster switches to a DIFFERENT pet.
- * The entity is REUSED across the switch, so its Transform and `mode` still
- * describe the pet we just stopped showing — the newcomer would silently
- * inherit them and carry on whatever that one was doing (a pet left asleep in
- * its bed would get up and trail the player from wherever the previous pet
- * happened to be standing).
- */
-function reanchorLocalPet(pet: PetData): void {
-  if (!localPet) return
-  // Where this pet actually IS: the roamer that has been standing in for it in
-  // the care area. It's still alive at this point — updateInactivePets only
-  // retires it later in the same frame — so the handoff is seamless.
-  //
-  // No roamer means this ISN'T a roster switch at all: it's the optimistic
-  // hatchling's throwaway `local_...` id being replaced by the server's real
-  // one once the snapshot lands. Same pet, new id — reanchoring there would
-  // teleport the newborn out of its hatch spot and into a care-area slot.
-  const roamer = inactivePets.get(pet.id)
-  if (!roamer) return
-  const here = Transform.get(roamer.entity).position
-
-  // Drop what the PREVIOUS pet was in the middle of: an errand's arrival
-  // callback would otherwise fire on this pet, and the stale breadcrumb trail
-  // would send it retracing a route it never walked.
-  onArrive = null
-  interactTimer = 0
-  justBathed = false
-  bathHopT = 0
-  bathSplashT = 0
-  followTrail.length = 0
-
-  const t = Transform.getMutable(localPet)
-  if (pet.sleeping) {
-    t.position = sleepRestPos(pet, here)
-    mode = 'asleep'
-    return
-  }
-  const pos = flat(here)
-  t.position = pos
-  mode = clientState.followEnabled ? 'follow' : 'wander'
-  wanderHome = pos
-  wanderTarget = null
-  wanderPause = 1
-}
-
 // ---------------------------------------------------------------------------
 // Pooled pet switching — the ResetMaterialSystem (Unity desktop) crash fix.
 //
@@ -621,8 +581,8 @@ function reanchorLocalPet(pet: PetData): void {
 
 /** Reset the shared active-pet flags so a newly-promoted pet doesn't inherit the
  *  outgoing pet's errand/trail, then settle it into follow/wander/asleep at the
- *  position it is ALREADY standing on (mirrors reanchorLocalPet, minus the
- *  roamer lookup — the promoted entity is its own roamer). */
+ *  position it is ALREADY standing on — the promoted entity is its own roamer,
+ *  so it's already where the pet was, no re-placement needed. */
 function settlePromotedPet(pet: PetData): void {
   onArrive = null
   interactTimer = 0
@@ -643,6 +603,21 @@ function settlePromotedPet(pet: PetData): void {
   wanderPause = 1
 }
 
+/** Park a skinned creature off-map + hidden instead of destroying it. We can't
+ *  engine.removeEntity it (that tears down its GltfNodeModifiers override and
+ *  fires Unity's ResetMaterialSystem -> desktop crash), and hiding alone is not
+ *  enough: a hidden entity KEEPS its CL_POINTER collider, so it would sit there
+ *  as an invisible ray-absorber over the bed/pool/feeder and neighbouring pets'
+ *  clicks. Moving it far below the map takes that collider out of the way. It's
+ *  tracked in retiredPets so the same pet re-shows this entity on return. */
+function parkPetEntity(petId: string, e: Entity): void {
+  if (petId) retiredPets.set(petId, e)
+  VisibilityComponent.createOrReplace(e, { visible: false })
+  Transform.getMutable(e).position = Vector3.create(0, -100, 0) // off-map: gets its collider clear of everything (same trick sleepLabel uses)
+  pointerEventsSystem.removeOnPointerDown(e)
+  forgetAnimator(e)
+}
+
 /** Normal roster switch: promote the incoming pet's roamer entity to be the
  *  active `localPet`, and demote the current `localPet` to a roamer for its own
  *  pet. Both entities are already loaded and skinned, so no material override is
@@ -654,21 +629,33 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
   // Demote the outgoing active entity into a roamer for the pet it was showing.
   const outId = localPetId
   const outIndex = p.pets.findIndex((x) => x.id === outId)
-  const outName = p.pets.find((x) => x.id === outId)?.name ?? ''
   const outEntity = localPet
+  const outTag = localTag
   pointerEventsSystem.removeOnPointerDown(outEntity) // drop the "Open" click
-  pointerEventsSystem.onPointerDown(
-    { entity: outEntity, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${outName}`, maxDistance: 8 } },
-    () => switchActivePet(outId)
-  )
-  inactivePets.set(outId, {
-    entity: outEntity,
-    species: localSpecies,
-    tag: localTag,
-    home: slotHome(outIndex >= 0 ? outIndex : 0),
-    target: null,
-    pause: 0.4 // brief beat before it starts wandering back to its slot
-  })
+  if (outIndex >= 0) {
+    const outName = p.pets[outIndex].name
+    pointerEventsSystem.onPointerDown(
+      { entity: outEntity, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${outName}`, maxDistance: 8 } },
+      () => switchActivePet(outId)
+    )
+    // Un-hide the tag: it may have been hidden mid-speech-bubble while active,
+    // and updateInactivePets' updateTag never un-hides it — the pet would roam
+    // permanently nameless otherwise.
+    setTagVisible(outTag, true)
+    inactivePets.set(outId, {
+      entity: outEntity,
+      species: localSpecies,
+      tag: outTag,
+      home: slotHome(outIndex),
+      target: null,
+      pause: 0.4 // brief beat before it starts wandering back to its slot
+    })
+  } else {
+    // The outgoing pet already left the roster (e.g. a discarded hatchling):
+    // don't leave a selectable ghost of it — park it away instead.
+    parkPetEntity(outId, outEntity)
+    removeTag(outTag)
+  }
 
   // Promote the incoming pet's roamer into the active entity.
   inactivePets.delete(newPet.id)
@@ -678,20 +665,17 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
   localTag = targetRoamer.tag
   localSpecies = newPet.species // already the loaded model — prevents a re-skin below
   localSkinKey = `${newPet.species}|${newPet.rarity}` // already the applied skin — ditto
+  reskinTicks = 0 // a carry put-down could have left this armed; re-asserting the skin now is the exact op we're avoiding
   settlePromotedPet(newPet)
 }
 
 /** Retire the outgoing active entity when the incoming active pet has NO entity
  *  of its own yet (e.g. a pet just received via a trade). We can't reuse the old
  *  entity — re-skinning it to the newcomer would fire ResetMaterialSystem — so
- *  we hide it (leaked, but a traded-away pet is gone for good) and let the
- *  caller build a fresh, first-time-skinned entity for the newcomer. */
+ *  we park it (see parkPetEntity) and let the caller build a fresh,
+ *  first-time-skinned entity for the newcomer. */
 function retireActiveEntity(): void {
-  if (localPet) {
-    VisibilityComponent.createOrReplace(localPet, { visible: false })
-    pointerEventsSystem.removeOnPointerDown(localPet)
-    forgetAnimator(localPet)
-  }
+  if (localPet) parkPetEntity(localPetId, localPet)
   if (localTag) {
     removeTag(localTag)
     localTag = null
@@ -764,8 +748,8 @@ function ensureLocalPet(): void {
     } else if (localPetId.startsWith('local_')) {
       // No roamer AND the OUTGOING id is the optimistic hatchling's throwaway
       // `local_...` id being replaced by the server's real one: same creature,
-      // new id. Keep the same entity exactly where it is (reanchor no-ops here).
-      reanchorLocalPet(pet)
+      // new id. Nothing to do — keep the same entity exactly where it is (mode,
+      // position and skin all still describe this very pet).
     } else {
       // No roamer and not a hatchling re-key: a genuinely new active pet we have
       // no entity for (e.g. one just received via a trade). Hide the outgoing
@@ -1802,7 +1786,7 @@ function updateLocalPet(dt: number): void {
       // This is what makes a FRESH sleep (the care action walks the pet to a spot
       // nudged OUTSIDE the bed's building ring so navigation doesn't oscillate,
       // which left it dozing on the floor beside the bed) settle in the EXACT same
-      // place as re-selecting a pet that was already asleep (reanchorLocalPet).
+      // place as re-selecting a pet that was already asleep (settlePromotedPet).
       const pet2 = clientState.activePet
       if (pet2) {
         const st = Transform.getMutable(localPet)
@@ -2021,11 +2005,21 @@ function updateInactivePets(dt: number): void {
 
       let st = inactivePets.get(pet.id)
       if (!st) {
-        const e = engine.addEntity()
-        Transform.create(e, { position: home, scale: petScale(pet.species, stageScaleFor(pet.size)) })
-        GltfContainer.createOrReplace(e, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+        // Re-show this pet's ORIGINAL entity if it was parked (returned to the
+        // roster): its model + skin are still intact, so re-applying them would
+        // be the very reset we avoid. Only build + skin a brand-new entity when
+        // we've never seen this pet.
+        const revived = retiredPets.get(pet.id)
+        const e = revived ?? engine.addEntity()
+        Transform.createOrReplace(e, { position: home, scale: petScale(pet.species, stageScaleFor(pet.size)) })
+        if (revived) {
+          retiredPets.delete(pet.id)
+          VisibilityComponent.createOrReplace(e, { visible: true }) // parkPetEntity hid it
+        } else {
+          GltfContainer.createOrReplace(e, { src: modelForSpecies(pet.species), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER })
+          applyCreatureSkin(e, pet.species, pet.rarity)
+        }
         ensureAnimator(e, pet.species)
-        applyCreatureSkin(e, pet.species, pet.rarity)
         const petId = pet.id
         pointerEventsSystem.onPointerDown(
           { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${pet.name}`, maxDistance: 8 } },
@@ -2056,7 +2050,10 @@ function updateInactivePets(dt: number): void {
           st.target = Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r)
         }
       } else {
-        moved = stepToward(st.entity, st.target, dt, yawOffsetForSpecies(pet.species))
+        // navStepToward (not stepToward) so a just-demoted pet walking back from
+        // wherever it was deselected — possibly inside/near the dome — routes
+        // around walls instead of beelining through them.
+        moved = navStepToward(st.entity, st.target, dt, yawOffsetForSpecies(pet.species))
       }
       setClip(st.entity, moved > 0.003 ? 'walk' : 'idle')
 
@@ -2069,16 +2066,12 @@ function updateInactivePets(dt: number): void {
 
   for (const [id, st] of inactivePets) {
     if (!wanted.has(id)) {
-      // A pet left the roster (traded away / discarded). Do NOT engine.removeEntity
-      // its skinned creature — destroying the GltfNodeModifiers material override
-      // fires Unity's ResetMaterialSystem, which crashes the desktop client
-      // (mobile is fine). Hide and leak it instead; roster-leave is rare and the
-      // leak is bounded by how many distinct pets you owned this session. The tag
-      // carries no material override, so removing it stays safe.
-      VisibilityComponent.createOrReplace(st.entity, { visible: false })
-      pointerEventsSystem.removeOnPointerDown(st.entity)
+      // A pet left the roster (traded away / discarded). Park its skinned
+      // creature off-map instead of engine.removeEntity — destroying it fires
+      // Unity's ResetMaterialSystem (desktop crash). The tag carries no material
+      // override, so removing it stays safe.
+      parkPetEntity(id, st.entity)
       removeTag(st.tag)
-      forgetAnimator(st.entity)
       inactivePets.delete(id)
     }
   }
