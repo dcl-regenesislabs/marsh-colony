@@ -1553,10 +1553,28 @@ function updateBreed(dt: number): void {
   }
 }
 
+/** Whisk both parents from the nest bowls back to their care-area home slots the
+ *  instant breeding ends. Their slots are ~65m from the nest, so nothing lingers
+ *  at the machine and any 1-frame transient as the camera cuts back lands
+ *  off-screen — not on the pet you had selected. */
+function sendParentsHome(partnerId: string): void {
+  const p = clientState.player
+  if (localPet) {
+    const aIdx = activePetSlotIndex()
+    Transform.getMutable(localPet).position = aIdx >= 0 ? slotHome(aIdx) : homeSpawnPos()
+  }
+  const roamer = inactivePets.get(partnerId)
+  if (roamer && p) {
+    const bIdx = p.pets.findIndex((x) => x.id === partnerId)
+    Transform.getMutable(roamer.entity).position = slotHome(bIdx >= 0 ? bIdx : 0)
+  }
+}
+
 function finishBreed(res: { species: string; name: string }): void {
   removeBreedEgg()
   endBreedCamera()
   restoreNest()
+  sendParentsHome(clientState.breed.partnerId) // clear the machine before the camera cuts back (must run BEFORE breed state is reset)
   breedNestBase = null
   breedFx = BREED_FX_OFF
   breedResultPending = null
