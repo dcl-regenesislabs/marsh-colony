@@ -16,7 +16,9 @@ import {
   cancelPetting,
   petTap,
   hatchTap,
-  startCarryEgg,
+  startGetEgg,
+  getEggPending,
+  cancelGetEgg,
   beginHatchFromCarry,
   startCarryPet,
   placePetAtStation,
@@ -78,6 +80,12 @@ export const ui = {
     // One hatchling at a time: finish (keep/discard) the current one first.
     if (hasPendingHatchling()) {
       pushToast('Place or discard your current pet first.')
+      return
+    }
+    // One egg at a time — don't let a second adoption overwrite an egg that's
+    // still waiting at the Caretaker (its species/name would be lost silently).
+    if (getEggPending()) {
+      pushToast('Go to the Caretaker to pick up your egg first!')
       return
     }
     uiState.panel = 'adopt'
@@ -230,15 +238,19 @@ function PetsCountBar(props: { height: number }) {
   const w = Math.round(h * BAR_PETS_ASPECT)
   const pop = clientState.colonyPopulation
   const goal = Cfg.COLONY_GOAL
+  const textW = Math.round(w * 0.65)
   return (
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_PETS_UVS }}>
-      <Label
-        value={`${pop} / ${goal} pets`}
-        fontSize={S(22)}
-        color={PET_UI.ink}
-        textAlign="middle-right"
-        uiTransform={{ positionType: 'absolute', position: { right: S(16), top: 0 }, width: Math.round(w * 0.65), height: h }}
-      />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { right: S(28), top: 0 }, width: textW, height: h, overflow: 'hidden' }}>
+        <Label
+          value={`${pop}/${goal}`}
+          fontSize={S(22)}
+          color={PET_UI.ink}
+          textAlign="middle-right"
+          textWrap="nowrap"
+          uiTransform={{ width: textW, height: h }}
+        />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -906,8 +918,11 @@ function AdoptPanel() {
             pulse
             disabled={!named}
             onClick={() => {
-              // Adoption gives an egg to carry home; you hatch it there (rub/tap).
-              startCarryEgg(sp, uiState.adoptName.trim())
+              // Adoption gives an egg — but you collect it FROM the Caretaker
+              // (an arrow guides you there), not spawned into your hand from
+              // wherever you're standing. startGetEgg hands it over on arrival
+              // (or immediately if you're already at the Caretaker).
+              startGetEgg(sp, uiState.adoptName.trim())
               uiState.adoptName = ''
               ui.close()
             }}
@@ -1829,7 +1844,7 @@ function Toasts() {
   // FeedErrandOverlay. When one's actually up, rest BELOW it so the two never
   // overlap; otherwise sit AT the same height the button would be, instead of
   // leaving that vertical space empty.
-  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active
+  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || getEggPending()
 
   // Slide in from the LEFT edge + fade, resting anchored top-left just below where
   // the BACK button sits (top ~25% + its S(90) height) when one's showing, so it
@@ -3124,6 +3139,24 @@ function BreedFxOverlay() {
 // BACK button, which is the whole point here — the errand blocks every other
 // care action while it runs, so there has to be a way out of it that doesn't
 // require finishing the walk.
+// Guide overlay while an adopted egg waits at the Caretaker: BACK cancels the
+// adoption, the banner reinforces the arrow. Hidden while a carry flow owns the
+// screen (updateGetEgg yields the arrow to it), so the two never stack.
+function GetEggOverlay() {
+  if (!getEggPending() || clientState.carryEgg.active || clientState.carryPet.active) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelGetEgg()} />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value="Follow the arrow to the Caretaker to get your egg!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FeedErrandOverlay() {
   if (!clientState.feedTask.active) return <UiEntity />
   return (
@@ -3209,6 +3242,7 @@ const Root = () => {
         <BathButton />
         <BreedButtons />
         <FeedErrandOverlay />
+        <GetEggOverlay />
         {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
             on top of it instead of the nav icons poking through over them. Moot
             now that bigUiOpen() hides the nav while these are open, but keeps
@@ -3241,7 +3275,24 @@ const Root = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       {content}
       {UI_DEBUG_MODE && <DebugBrowserBar />}
+      <ScreenFadeOverlay />
     </UiEntity>
+  )
+}
+
+// Full-screen black mask (see clientState.screenFade's doc comment) — drawn
+// above EVERY branch above, including the full-screen minigame ones, since it
+// has to cover the seam no matter which HUD state the camera hand-off lands
+// in. `pointerFilter: 'none'` while invisible (alpha 0) is the default for
+// every UiEntity, so it doesn't block clicks when not in use.
+function ScreenFadeOverlay() {
+  const alpha = clientState.screenFade.alpha
+  if (alpha <= 0) return null
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: alpha >= 0.99 ? 'block' : 'none' }}
+      uiBackground={{ color: { r: 0, g: 0, b: 0, a: alpha } }}
+    />
   )
 }
 

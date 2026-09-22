@@ -36,6 +36,12 @@ export const clientState: {
   currentToast: { message: string; kind: string; shownAt: number; until: number } | null
   // Gamified "+XP +coins" reward popup after a care action. Auto-expires.
   reward: { xp: number; coins: number; until: number } | null
+  // Full-screen black overlay alpha (0 = invisible, 1 = fully black). Used to
+  // mask an unavoidable camera hand-off pop (see fruitGame.ts's fadeAndRelease)
+  // instead of trying to predict exactly where a given client's native camera
+  // will land — rendered above everything in ui.tsx's Root, so it covers the
+  // seam regardless of which HUD branch is active at the moment.
+  screenFade: { alpha: number }
   lastSpin: { reward: SpinReward; index: number; at: number } | null
   dialog: DialogState
   introShown: boolean
@@ -153,6 +159,7 @@ export const clientState: {
   toasts: [],
   currentToast: null,
   reward: null,
+  screenFade: { alpha: 0 },
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, adoptCta: false },
   introShown: false,
