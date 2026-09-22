@@ -274,6 +274,10 @@ let phaseAt = 0
 let clock = 0
 let introEmotePlayed = false
 let drawerRevealed = false
+// Exit keeps the results scene mounted until the screen is fully black. That
+// prevents Unity from briefly exposing the HUD/avatar re-mount while handing
+// its camera rig back to the player.
+let closing = false
 
 const fruits: FruitRuntime[] = []
 const groundClutter: Entity[] = [] // decorative fallen fruit — see GROUND_CLUTTER_COUNT
@@ -287,12 +291,6 @@ let scorchIndex = 0
 const scorchStartedAt = new Map<Entity, number>()
 let scorchTexture: ReturnType<typeof Material.Texture.Common> | null = null
 let cinCam: Entity | null = null // the one cinematic camera, re-Tweened rather than swapped
-// Fallback return pose: the player's own camera right before cinCam ever takes
-// over, captured once at the very start (see startFruitGame) — used only when
-// there's no feed shot to derive a proper one from (the caught<=0 path, which
-// never sets up feedReturnCamPos/Rot below).
-let returnCamPos: Vector3 | null = null
-let returnCamRot: Quaternion | null = null
 // Preferred return pose: computed from where the (hidden) avatar gets stood —
 // behind the feeding shot's camera, facing the pet — at the moment the feeding
 // shot is set up (see applyResults). finalizeAndClose zooms cinCam out to this
@@ -1342,7 +1340,11 @@ function applyResults(): void {
       groundY,
       shot.focus.z - localForward.z * AVATAR_STAND_BACK
     )
-    void movePlayerTo({ newRelativePosition: standPos, cameraTarget: shot.focus })
+    // cameraTarget only turns the camera. Set avatarTarget too: once the
+    // virtual camera is released, the native third-person rig picks up an
+    // avatar already facing the scene instead of correcting its heading in
+    // full view of the player.
+    void movePlayerTo({ newRelativePosition: standPos, cameraTarget: shot.focus, avatarTarget: shot.focus })
     // The zoom-out target for finalizeAndClose: a natural third-person camera
     // behind THAT stand position, still generally aimed at the pet scene —
     // computed fresh here (not the drifted "wherever the mouse left it" pose)
@@ -1388,39 +1390,108 @@ function applyResults(): void {
   clientState.feedGame.hungerFillProgress = 0
 }
 
-// How long the camera blends from its last shot back to the player's own
-// pose (see returnCamPos/returnCamRot) before the movement/camera freeze
-// lifts. Matches the wide-shot pan's own feel (see GAME_CAM_PAN_MS).
+// How long the camera blends from its last shot back to the post-feed avatar
+// pose before the movement/camera freeze lifts. Matches the wide-shot pan's
+// own feel (see GAME_CAM_PAN_MS).
 const CAMERA_RETURN_MS = 700
 
-/** Hard release: clear the active-camera reference, then explicitly tear down
- *  the camera components so the renderer cannot keep blending toward this
- *  round's shot, and drop the freeze. The final step of both teardown paths
- *  below. */
-function releaseCameraAndFreeze(): void {
+/** Start the native-camera hand-off while the screen is black. The virtual
+ *  camera component deliberately stays on its reusable runtime entity: the
+ *  supported exit operation is clearing MainCamera's reference, and deleting
+ *  both in the same frame made Unity briefly rebuild the camera presentation.
+ *
+ *  Does NOT re-call movePlayerTo here on purpose (an earlier version did, to
+ *  "refresh" cameraTarget right before releasing) — confirmed on-device that
+ *  doing so made the post-release whip WORSE, not better: even the "instant"
+ *  (no `duration`) form of movePlayerTo appears to still animate the camera's
+ *  own turn-to-face-target with some built-in easing rather than snapping it,
+ *  so calling it here just replayed that turn right as the virtual camera let
+ *  go — which is exactly what a hidden (masked) turn would look like once the
+ *  fade lifts. The ORIGINAL movePlayerTo call, made back when the feeding shot
+ *  was set up (see applyResults), already had the whole feeding+results tail
+ *  to finish turning — that one is left alone. */
+function startCameraHandoff(): void {
   if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
-  if (cinCam) {
-    Tween.deleteFrom(cinCam)
-    VirtualCamera.deleteFrom(cinCam)
-  }
-  if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
-  returnCamPos = null
-  returnCamRot = null
+  if (cinCam) Tween.deleteFrom(cinCam)
   feedReturnCamPos = null
   feedReturnCamRot = null
+  // These changes can cause Unity to rebuild avatar/UI presentation. Do all
+  // of them under the opaque fade and give the renderer time to settle before
+  // revealing the native camera again.
+  suppressPetTags(false)
+  setFeedingAvatarHidden(false)
+  setMinigameNametagsHidden(false)
+  clientState.feedGame.active = false
+  feedingShotAnchor = null
 }
 
-/** Zoom cinCam out to a natural third-person pose behind wherever the avatar
- *  actually ended up (see feedReturnCamPos/Rot — preferred, set up by the
- *  feeding shot; falls back to the round-start captured pose on the
- *  caught<=0 path, which never sets those), THEN release — the player stays
- *  frozen through the blend so the target can't go stale mid-transition.
- *  Falls back to a hard release if neither is available. */
+/** The player remains frozen until the fade is completely gone, so native
+ *  third-person camera settling cannot be disturbed by new movement/input. */
+function finishCameraHandoff(): void {
+  if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+  phase = 'idle'
+  closing = false
+}
+
+// Trying to predict exactly where each client's NATIVE third-person camera
+// will land once released (matching its own internal orbit/spring state,
+// which scripting has no visibility into) turned out not to be reliable —
+// confirmed on-device: the zoom-out above lands perfectly, but the engine's
+// own camera still does a visible whip settling into place right after
+// release, on some clients. So instead of continuing to chase that, the
+// hand-off itself is masked with a quick black flash (fadeAndRelease) —
+// short enough to read as a natural cut, not a loading screen, but long
+// enough to let Unity settle its avatar/UI presentation while it's covered.
+const EXIT_FADE_OUT_MS = 180
+const EXIT_FADE_HOLD_MS = 900 // includes the Unity avatar/UI re-mount after returning to the native camera
+const EXIT_FADE_IN_MS = 220
+
+type FadeStage = 'out' | 'hold' | 'in'
+
+/** Fade to black, release the camera/freeze while covered, hold a beat, then
+ *  fade back in. One system driving all three stages off a single clock. */
+function fadeAndRelease(): void {
+  let stage: FadeStage = 'out'
+  let t = 0
+  const tick = (dt: number): void => {
+    t += dt * 1000
+    if (stage === 'out') {
+      clientState.screenFade.alpha = Math.min(1, t / EXIT_FADE_OUT_MS)
+      if (t < EXIT_FADE_OUT_MS) return
+      clientState.screenFade.alpha = 1
+      startCameraHandoff() // fully covered: release camera + re-mount avatar/UI here, not before the fade
+      stage = 'hold'
+      t = 0
+      return
+    }
+    if (stage === 'hold') {
+      if (t < EXIT_FADE_HOLD_MS) return
+      stage = 'in'
+      t = 0
+      return
+    }
+    // 'in'
+    clientState.screenFade.alpha = Math.max(0, 1 - t / EXIT_FADE_IN_MS)
+    if (t >= EXIT_FADE_IN_MS) {
+      clientState.screenFade.alpha = 0
+      finishCameraHandoff()
+      engine.removeSystem(tick)
+    }
+  }
+  engine.addSystem(tick)
+}
+
+/** Zoom cinCam out to a natural third-person pose behind the post-feed avatar,
+ *  then fade-release — the player stays frozen through the blend so the target
+ *  can't go stale mid-transition. A zero-catch game never relocates the avatar
+ *  for the feed shot, so it releases under the fade instead of tweening toward
+ *  a camera pose captured before the minigame teleported the player to the
+ *  tree. */
 function returnCameraToPlayer(): void {
-  const targetPos = feedReturnCamPos ?? returnCamPos
-  const targetRot = feedReturnCamRot ?? returnCamRot
+  const targetPos = feedReturnCamPos
+  const targetRot = feedReturnCamRot
   if (!cinCam || !targetPos || !targetRot || !Transform.has(cinCam)) {
-    releaseCameraAndFreeze()
+    fadeAndRelease()
     return
   }
   const cur = Transform.get(cinCam)
@@ -1437,7 +1508,7 @@ function returnCameraToPlayer(): void {
     elapsedMs += dt * 1000
     if (elapsedMs < CAMERA_RETURN_MS) return
     engine.removeSystem(waitForBlend)
-    releaseCameraAndFreeze()
+    fadeAndRelease()
   }
   engine.addSystem(waitForBlend)
 }
@@ -1446,12 +1517,11 @@ function returnCameraToPlayer(): void {
  *  called once the player is done looking at the results (Exit), or right
  *  away on an early cancel (no results screen in that case). */
 function finalizeAndClose(): void {
+  if (closing) return
+  closing = true
   hideHeldFruit()
   hideFoodSet()
   stopEatCinematic()
-  suppressPetTags(false)
-  setFeedingAvatarHidden(false)
-  setMinigameNametagsHidden(false)
   returnCameraToPlayer()
   setLaneColliders(false)
   applyDefaultTouchControls()
@@ -1463,9 +1533,6 @@ function finalizeAndClose(): void {
     if (TweenSequence.has(e)) TweenSequence.deleteFrom(e)
     VisibilityComponent.createOrReplace(e, { visible: false })
   }
-  clientState.feedGame.active = false
-  feedingShotAnchor = null
-  phase = 'idle'
 }
 
 /** The Back button follows the same completion path as a natural timeout. */
@@ -1476,12 +1543,12 @@ export function cancelFruitGame(): void {
 
 /** Exit button on the results screen. */
 export function exitFeedResults(): void {
-  if (phase !== 'results') return
+  if (phase !== 'results' || closing) return
   finalizeAndClose()
 }
 
 function tick(dt: number): void {
-  if (phase === 'feeding' || phase === 'results') {
+  if (!closing && (phase === 'feeding' || phase === 'results')) {
     advanceHeldFruitMotion(dt)
     showHeldFruit()
   }
@@ -1729,20 +1796,8 @@ export function startFruitGame(mascotaId: string): void {
   // introTick, once the "move left/right" hint goes away. Desktop skips the
   // zoom entirely — it keeps the original single cut, looking straight at
   // the player (no height/left offset).
-  // Capture the player's own camera pose ONE LAST TIME before cinCam ever takes
-  // over (only if no virtual camera already has it — a stale one shouldn't
-  // overwrite a good captured pose). finalizeAndClose blends back to this at
-  // the end instead of hard-cutting.
-  if (!MainCamera.has(engine.CameraEntity) || MainCamera.get(engine.CameraEntity).virtualCameraEntity === undefined) {
-    const nativeCam = Transform.getOrNull(engine.CameraEntity)
-    if (nativeCam) {
-      returnCamPos = Vector3.create(nativeCam.position.x, nativeCam.position.y, nativeCam.position.z)
-      returnCamRot = Quaternion.create(nativeCam.rotation.x, nativeCam.rotation.y, nativeCam.rotation.z, nativeCam.rotation.w)
-    }
-  }
   // A fresh round: drop any feed-shot return pose left over from a previous
-  // one, so a caught<=0 round can't inherit a stale target from an earlier
-  // caught>0 round (see returnCameraToPlayer's fallback order).
+  // one, so a caught<=0 round can't inherit the previous round's exit pose.
   feedReturnCamPos = null
   feedReturnCamRot = null
 
