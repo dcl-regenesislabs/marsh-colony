@@ -46,13 +46,15 @@ import {
   suppressPetTags
 } from './pet'
 
+// Safe (edible) fruit. Fruit01 is the poisonous one and is kept OUT of this
+// list on purpose — see POISON_FRUIT_MODEL — so decor/held fruit (drawer pile,
+// ground clutter, the fruit the pet eats) never show the poison model.
 const FRUIT_MODELS = [
-  'assets/Models/Fruit01.glb',
   'assets/Models/Fruit02.glb',
-  'assets/Models/Fruit03.glb',
   'assets/Models/Fruit04.glb',
   'assets/Models/Fruit05.glb'
 ]
+const POISON_FRUIT_MODEL = 'assets/Models/Fruit01.glb'
 const NUM_FRUIT_SLOTS = 5
 const FRUIT_SCALE = 1.2
 
@@ -119,6 +121,16 @@ const CATCH_BURST_GROW_MS = 150
 const CATCH_BURST_FADE_MS = 140
 const CATCH_BURST_TINT = Color4.create(0.55, 1, 0.7, 1)
 const CATCH_BURST_EMISSIVE = 2.4
+// Catching the POISONOUS fruit skips the green burst above: the poison.png
+// sticker pops up over the player instead (scales in with a little overshoot,
+// holds, then fades out drifting upward), so the mistake reads instantly.
+const POISON_POP_TEXTURE = 'assets/images/poison.png'
+const POISON_POP_SIZE = 1.7 // metres, the sticker's width and height
+const POISON_POP_HEIGHT = 2.5 // above the player's feet
+const POISON_POP_IN_MS = 220
+const POISON_POP_HOLD_MS = 550
+const POISON_POP_OUT_MS = 350
+const POISON_POP_RISE = 0.5 // metres it drifts up while fading
 const SCORCH_TEXTURE = 'assets/images/scorch_03.png'
 const SCORCH_COUNT = GROUND_CLUTTER_COUNT
 const SCORCH_START_SCALE = 0.6
@@ -229,12 +241,27 @@ const DRAWER_MODEL = 'assets/asset-packs/drawer_2/Drawer 2.glb'
 const DRAWER_HOLD_OFFSET = Vector3.create(0.22, 0, 0.2)
 const DRAWER_HOLD_SCALE = 0.9
 
+// Poisonous fruit (issue #146): the Fruit01 model IS the poisonous fruit —
+// catching one plays the poison pop-up instead of the normal catch burst (see
+// POISON_POP_* / spawnPoisonPop below). A round only ever spawns 1 or 2 of
+// them (a flat per-fruit percentage put ~7 in every round, too many for a
+// "watch out for this one" fruit). Their spawn times are picked when catching
+// begins (see pickPoisonTimes) and spread across the round: each one is the
+// next fruit to respawn once its time has passed.
+const POISON_FRUITS_MIN = 1
+const POISON_FRUITS_MAX = 2
+// Not before the first respawn wave (~4s in) and early enough that the fruit
+// still has time to hang + fall (up to ~4.3s) before the round ends.
+const POISON_EARLIEST_S = 4
+const POISON_LATEST_S = GAME_DURATION_S - 7
+
 type FruitPhase = 'idle' | 'falling' | 'caught' | 'resolved'
 interface FruitRuntime {
   entity: Entity
   phase: FruitPhase
   nextDropAt: number
   resolvedAt: number
+  poison: boolean
 }
 
 type Phase = 'idle' | 'arrival' | 'intro' | 'countdown' | 'catching' | 'feeding' | 'results'
@@ -516,6 +543,28 @@ function setFeedingAvatarHidden(hidden: boolean): void {
   })
 }
 
+// Mobile only: avatar nametags clutter the small screen for the whole minigame,
+// so hide them (everyone's, the player's own included) in a generous box around
+// the play lane while the minigame runs. Avatars themselves stay visible — only
+// the tags go. Like the feeding-scene area above, this entity exists only in
+// this client's own runtime, so it affects nobody else's screen.
+const NAMETAG_HIDE_AREA = Vector3.create(30, 12, 30)
+let nametagHideArea: Entity | null = null
+
+function setMinigameNametagsHidden(hidden: boolean): void {
+  if (!hidden) {
+    if (nametagHideArea && AvatarModifierArea.has(nametagHideArea)) AvatarModifierArea.deleteFrom(nametagHideArea)
+    return
+  }
+  if (!nametagHideArea) nametagHideArea = engine.addEntity()
+  Transform.createOrReplace(nametagHideArea, { position: cinematicSpawnPos })
+  AvatarModifierArea.createOrReplace(nametagHideArea, {
+    area: NAMETAG_HIDE_AREA,
+    modifiers: [AvatarModifierType.AMT_HIDE_NAMETAGS],
+    excludeIds: []
+  })
+}
+
 function fruitHandCalibrationForSpecies(species: string): FruitHandCalibration {
   // Bred pets play the animation of their HEAD family, so they share the
   // matching original's hand-to-mouth calibration rather than falling back to
@@ -759,6 +808,29 @@ function randomFruitModel(): string {
   return FRUIT_MODELS[Math.floor(Math.random() * FRUIT_MODELS.length)]
 }
 
+// Seconds-into-the-catching-phase at which each of this round's poison fruit
+// becomes due, ascending. The round is split into equal segments (one per
+// poison fruit) with a random time in each, so two of them never bunch up.
+let poisonDueTimes: number[] = []
+
+function pickPoisonTimes(): number[] {
+  const count = POISON_FRUITS_MIN + Math.floor(Math.random() * (POISON_FRUITS_MAX - POISON_FRUITS_MIN + 1))
+  const seg = (POISON_LATEST_S - POISON_EARLIEST_S) / count
+  const times: number[] = []
+  for (let i = 0; i < count; i++) times.push(POISON_EARLIEST_S + seg * i + Math.random() * seg)
+  return times
+}
+
+/** Model for a fruit that's about to respawn: the poison one if a scheduled
+ *  time has passed (consumed), otherwise a random safe one. */
+function nextRespawnModel(): string {
+  if (poisonDueTimes.length > 0 && clock - phaseAt >= poisonDueTimes[0]) {
+    poisonDueTimes.shift()
+    return POISON_FRUIT_MODEL
+  }
+  return randomFruitModel()
+}
+
 function randomCanopySpot(): Vector3 {
   const rightOff = (Math.random() * 2 - 1) * canopyHalfWidth
   const fwdOff = (Math.random() * 2 - 1) * CANOPY_DEPTH
@@ -772,6 +844,8 @@ function randomCanopySpot(): Vector3 {
 function armFruit(f: FruitRuntime): void {
   f.phase = 'idle'
   f.nextDropAt = clock + MIN_HANG_S + Math.random() * (MAX_HANG_S - MIN_HANG_S)
+  // Poison follows the model, which callers set (nextRespawnModel) right before arming.
+  f.poison = GltfContainer.get(f.entity).src === POISON_FRUIT_MODEL
 }
 
 function startFall(f: FruitRuntime): void {
@@ -883,6 +957,75 @@ function clearCatchBursts(): void {
     VisibilityComponent.createOrReplace(entity, { visible: false })
   }
   catchBurstStartedAt.clear()
+  clearPoisonPop()
+}
+
+// Poison pop-up (see POISON_POP_*). One billboard plane, created once and only
+// hidden/shown; it follows the player while it plays.
+let poisonPop: Entity | null = null
+let poisonPopStartedAt = -1 // `clock` seconds when it started; -1 = not playing
+let poisonPopTexture: ReturnType<typeof Material.Texture.Common> | null = null
+
+function applyPoisonPopMaterial(entity: Entity, alpha: number): void {
+  if (!poisonPopTexture) return
+  Material.setPbrMaterial(entity, {
+    texture: poisonPopTexture,
+    alphaTexture: poisonPopTexture,
+    emissiveTexture: poisonPopTexture,
+    emissiveColor: Color4.White(),
+    emissiveIntensity: 0.7 * alpha, // keeps the sticker bright without blowing out its colors
+    albedoColor: Color4.create(1, 1, 1, alpha),
+    roughness: 1,
+    metallic: 0,
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND
+  })
+}
+
+function spawnPoisonPop(): void {
+  if (!poisonPop) return
+  poisonPopStartedAt = clock
+  applyPoisonPopMaterial(poisonPop, 1)
+  const pp = playerPos()
+  const t = Transform.getMutable(poisonPop)
+  t.position = Vector3.create(pp.x, pp.y + POISON_POP_HEIGHT, pp.z)
+  t.scale = Vector3.Zero()
+  VisibilityComponent.createOrReplace(poisonPop, { visible: true })
+}
+
+/** Scale-in curve: overshoots past 1 and settles back (t in 0..1). */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158
+  const c3 = c1 + 1
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
+}
+
+function poisonPopTick(): void {
+  if (!poisonPop || poisonPopStartedAt < 0) return
+  const ageMs = (clock - poisonPopStartedAt) * 1000
+  let scale = 1
+  let alpha = 1
+  let rise = 0
+  if (ageMs < POISON_POP_IN_MS) {
+    scale = easeOutBack(ageMs / POISON_POP_IN_MS)
+  } else if (ageMs >= POISON_POP_IN_MS + POISON_POP_HOLD_MS) {
+    const u = (ageMs - POISON_POP_IN_MS - POISON_POP_HOLD_MS) / POISON_POP_OUT_MS
+    if (u >= 1) {
+      clearPoisonPop()
+      return
+    }
+    alpha = 1 - u
+    rise = POISON_POP_RISE * u
+    applyPoisonPopMaterial(poisonPop, alpha)
+  }
+  const pp = playerPos()
+  const t = Transform.getMutable(poisonPop)
+  t.position = Vector3.create(pp.x, pp.y + POISON_POP_HEIGHT + rise, pp.z)
+  t.scale = Vector3.scale(Vector3.One(), POISON_POP_SIZE * scale)
+}
+
+function clearPoisonPop(): void {
+  poisonPopStartedAt = -1
+  if (poisonPop) VisibilityComponent.createOrReplace(poisonPop, { visible: false })
 }
 
 function applyScorchMaterial(entity: Entity, alpha: number): void {
@@ -950,7 +1093,8 @@ function resolveFruit(f: FruitRuntime, caught: boolean): void {
     clientState.feedGame.caught += 1
     clientState.feedGame.catchFlashUntil = Date.now() + 350
     if (sfxEntity) AudioSource.playSound(sfxEntity, FRUIT_PICK_SOUND)
-    spawnCatchBurst()
+    if (f.poison) spawnPoisonPop() // the poison sticker instead of the green burst
+    else spawnCatchBurst()
     if (drawerEntity) {
       const startLocal = Vector3.add(CATCH_BURST_LOCAL_OFFSET, FRUIT_SUCK_START_LOCAL)
       const transform = Transform.getMutable(f.entity)
@@ -1011,7 +1155,7 @@ function fruitTick(): void {
       transform.parent = undefined
       transform.position = randomCanopySpot()
       transform.scale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
-      GltfContainer.createOrReplace(f.entity, { src: randomFruitModel(), ...NO_COLLISION })
+      GltfContainer.createOrReplace(f.entity, { src: nextRespawnModel(), ...NO_COLLISION })
       VisibilityComponent.createOrReplace(f.entity, { visible: true })
       armFruit(f)
     }
@@ -1100,6 +1244,7 @@ function beginCatching(): void {
     })
   }
   for (const f of fruits) armFruit(f)
+  poisonDueTimes = pickPoisonTimes()
   phase = 'catching'
   phaseAt = clock
   clientState.feedGame.phase = 'catching'
@@ -1186,6 +1331,7 @@ function finalizeAndClose(): void {
   stopEatCinematic()
   suppressPetTags(false)
   setFeedingAvatarHidden(false)
+  setMinigameNametagsHidden(false)
   // Clear the active-camera reference, then explicitly tear down the camera
   // components so the renderer cannot keep blending toward this round's shot.
   if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
@@ -1228,6 +1374,7 @@ function tick(dt: number): void {
   }
   clock += dt
   catchBurstTick()
+  poisonPopTick()
   scorchTick()
   if (phase === 'arrival') {
     arrivalTick()
@@ -1258,7 +1405,7 @@ export function setupFruitGame(): void {
     Transform.create(entity, { position: Vector3.Zero(), scale: Vector3.scale(Vector3.One(), FRUIT_SCALE) })
     GltfContainer.create(entity, { src: FRUIT_MODELS[i % FRUIT_MODELS.length], ...NO_COLLISION })
     VisibilityComponent.create(entity, { visible: false })
-    fruits.push({ entity, phase: 'idle', nextDropAt: 0, resolvedAt: 0 })
+    fruits.push({ entity, phase: 'idle', nextDropAt: 0, resolvedAt: 0, poison: false })
   }
 
   for (let i = 0; i < GROUND_CLUTTER_COUNT; i++) {
@@ -1279,6 +1426,14 @@ export function setupFruitGame(): void {
     VisibilityComponent.create(entity, { visible: false })
     catchBursts.push(entity)
   }
+
+  poisonPopTexture = Material.Texture.Common({ src: POISON_POP_TEXTURE })
+  poisonPop = engine.addEntity()
+  Transform.create(poisonPop, { position: Vector3.create(0, -100, 0), scale: Vector3.Zero() })
+  MeshRenderer.setPlane(poisonPop)
+  applyPoisonPopMaterial(poisonPop, 1)
+  Billboard.create(poisonPop)
+  VisibilityComponent.create(poisonPop, { visible: false })
 
   scorchTexture = Material.Texture.Common({ src: SCORCH_TEXTURE })
   for (let i = 0; i < SCORCH_COUNT; i++) {
@@ -1397,6 +1552,7 @@ export function startFruitGame(mascotaId: string): void {
   const rawCamPos = Transform.get(cinePoint).position
   const spawnPos = Transform.get(spawnPoint).position
   cinematicSpawnPos = spawnPos
+  if (onMobile) setMinigameNametagsHidden(true)
   const p3 = Transform.get(lane3).position
   const p4 = Transform.get(lane4).position
   groundY = spawnPos.y
@@ -1487,6 +1643,8 @@ export function startFruitGame(mascotaId: string): void {
     transform.position = randomCanopySpot()
     VisibilityComponent.createOrReplace(f.entity, { visible: true })
     f.phase = 'idle'
+    // Not armed yet (that's beginCatching's job) — poison is rolled per-arm, see armFruit.
+    f.poison = false
   }
 
   hideHeldFruit()
