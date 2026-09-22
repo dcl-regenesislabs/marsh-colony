@@ -30,7 +30,8 @@ import {
   MainCamera,
   InputModifier,
   AvatarAttach,
-  AvatarAnchorPointType
+  AvatarAnchorPointType,
+  AudioSource
 } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
 import * as C from '../shared/config'
@@ -537,7 +538,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active
 }
 
 /**
@@ -1250,6 +1251,349 @@ export function finishBath(won: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
+// Breeding at the DualNest — carry parent A to the nest, place it in a bowl,
+// pick a second Adult (parent B) from the roster, then Breed: an egg grows in
+// the centre bowl (cinematic camera lock) and is handed to the player, who
+// carries it home to hatch (the existing carry-egg flow, unchanged).
+//
+// Spot offsets are from the nest ORIGIN in world axes — TUNE in-world (the nest
+// is scaled 5x, so the bowls sit well above the base). breedSpot() resolves them
+// against the live nest Transform, so moving the nest in the editor moves the
+// whole rig with it.
+// ---------------------------------------------------------------------------
+const BREED_NEST = EntityNames.DualNest01_glb_2
+const BREED_REACH = 6 // metres from the nest that counts as "arrived" (big model)
+const BREED_BOWL_A_OFF = Vector3.create(-0.17, 2.05, -1.36) // left bowl (dialled in-world)
+const BREED_BOWL_B_OFF = Vector3.create(-0.17, 2.02, 1.28) // right bowl (dialled in-world)
+const BREED_EGG_OFF = Vector3.create(0.16, 1.4, -0.01) // centre egg spot (dialled in-world)
+const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
+// Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
+// on the nest the whole time: the machine trembles, a violet magic orb (UI sprite)
+// swirls + swells with light-blink flashes, then BURSTS — and the egg pops in.
+const BREED_ANIM_S = 4.0 // total cinematic length
+const BREED_ORB_IN_S = 0.5 // orb fade-in + shake ramp-up
+const BREED_BURST_AT = 2.9 // climax: the big flash + burst sprite
+const BREED_BURST_DUR = 0.9 // burst sprite one-shot duration
+const BREED_EGG_POP_AT = 3.05 // egg starts scaling in (just as the burst blooms)
+const BREED_EGG_POP_DUR = 0.85 // egg grow-in duration
+const BREED_ORB_FPS = 12 // orb loop playback speed
+const BREED_SHAKE_AMP = 0.05 // metres, peak nest tremble (subtle so it doesn't read as camera shake)
+const BREED_RESULT_GRACE_S = 4.0 // after the cinematic, how long to wait for breedResult before bailing
+// The breed cinematic is a fixed first-person view: the avatar stands at
+// BREED_CAM_AVATAR_OFF from the nest (dialled in-world with the debug cube) and
+// the camera sits at its eyes looking straight at the egg spot.
+const BREED_CAM_AVATAR_OFF = Vector3.create(4.0, -0.48, 0.15) // where the avatar stands (offset from nest)
+const BREED_CAM_EYE = 1.6 // camera height above the avatar's feet (eye level)
+
+export const BREED_ORB_FRAMES = 8 // p1.png: 8-frame loop
+export const BREED_BURST_FRAMES = 6 // p2.png: 6-frame one-shot
+
+/** Screen-space FX state for the breeding cinematic, read by ui.tsx's overlay. */
+export interface BreedFx {
+  active: boolean
+  orbFrame: number // 0..BREED_ORB_FRAMES-1
+  orbAlpha: number // 0..1 fade
+  orbScale: number // multiplier on the on-screen orb size
+  burstFrame: number // 0..BREED_BURST_FRAMES-1, or -1 when not bursting
+  flash: number // 0..1 full-screen violet blink
+}
+const BREED_FX_OFF: BreedFx = { active: false, orbFrame: 0, orbAlpha: 0, orbScale: 1, burstFrame: -1, flash: 0 }
+
+const BREED_SOUND = 'assets/sounds/breed.mp3' // "the magic happened" — fires at the burst as the egg appears
+
+let breedEgg: Entity | null = null
+let breedAnimT = 0
+let breedResultPending: { species: string; name: string } | null = null
+let breedNestBase: Vector3 | null = null // nest position captured before the shake, so spots/camera stay stable
+let breedFx: BreedFx = BREED_FX_OFF
+let breedSfx: Entity | null = null
+let breedBurstDone = false // one-shot guard so the breed sound fires exactly once per cinematic
+
+function playBreedSound(): void {
+  if (!breedSfx) {
+    breedSfx = engine.addEntity()
+    Transform.create(breedSfx, {})
+    AudioSource.create(breedSfx, { audioClipUrl: BREED_SOUND, playing: false, global: true, volume: 0.7 })
+  }
+  AudioSource.playSound(breedSfx, BREED_SOUND)
+}
+
+export function getBreedFx(): BreedFx {
+  return breedFx
+}
+
+// During the cinematic the nest Transform is jittered for the tremble; spots and
+// camera must read the STABLE base so pets/egg/framing don't shake with it.
+function breedNestPos(): Vector3 {
+  return breedNestBase ?? objectPosition(BREED_NEST)
+}
+function shakeNest(amp: number): void {
+  if (!breedNestBase) return
+  const e = engine.getEntityOrNullByName(BREED_NEST)
+  if (!e || !Transform.has(e)) return
+  Transform.getMutable(e).position = Vector3.create(
+    breedNestBase.x + (Math.random() - 0.5) * 2 * amp,
+    breedNestBase.y + (Math.random() - 0.5) * amp, // less vertical wobble
+    breedNestBase.z + (Math.random() - 0.5) * 2 * amp
+  )
+}
+function restoreNest(): void {
+  if (!breedNestBase) return
+  const e = engine.getEntityOrNullByName(BREED_NEST)
+  if (e && Transform.has(e)) Transform.getMutable(e).position = breedNestBase
+}
+function breedSpot(off: Vector3): Vector3 {
+  const n = breedNestPos()
+  return Vector3.create(n.x + off.x, n.y + off.y, n.z + off.z)
+}
+
+/** Breed step 1 — pick the active Adult up and send the player to the nest. */
+export function startBreedErrand(): void {
+  const a = clientState.activePet
+  if (!a || !localPet) return
+  if (!canStartPetInteraction()) {
+    pushToast(a.sleeping ? 'Your pet is asleep!' : 'Your pet is busy right now!')
+    return
+  }
+  if (petStage(a.size) !== 'ADULT') {
+    pushToast('Grow your pet to Adult to unlock breeding!')
+    return
+  }
+  const others = clientState.player?.pets.filter((x) => x.id !== a.id) ?? []
+  if (!others.some((x) => petStage(x.size) === 'ADULT')) {
+    pushToast('You need a second Adult pet to breed with.')
+    return
+  }
+  const p = clientState.player
+  if (p && p.pets.length >= p.petSlots) {
+    pushToast('No free pet slots for the offspring — buy one first.')
+    return
+  }
+  clientState.breed = { active: true, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+  attachPetToHands(a)
+  actions.setCarried(true)
+  playHoldPetEmote()
+  showArrowTo(breedNestPos(), 'breed')
+  pushToast('Carry your pet to the breeding nest!')
+  clientState.petPanelOpen = false
+}
+
+/** BACK at any pre-breed step — restore both parents, no server call. */
+export function cancelBreed(): void {
+  if (!clientState.breed.active) return
+  if (clientState.breed.phase === 'toNest') {
+    detachPetFromHands()
+    actions.setCarried(false)
+    stopHoldEmote()
+  }
+  if (clientState.breed.phase === 'animating') {
+    endBreedCamera()
+    removeBreedEgg()
+    restoreNest()
+  }
+  hideArrow('breed')
+  clientState.breed = { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+  breedResultPending = null
+  breedAnimT = 0
+  breedNestBase = null
+  breedFx = BREED_FX_OFF
+  mode = clientState.followEnabled ? 'follow' : 'wander' // parent A resumes; parent B wanders again
+}
+
+/** Breed step 2 — drop parent A into the left bowl; the partner picker opens. */
+export function placeParentA(): void {
+  if (!clientState.breed.active || clientState.breed.phase !== 'toNest') return
+  detachPetFromHands()
+  actions.setCarried(false)
+  stopHoldEmote()
+  hideArrow('breed')
+  if (localPet) {
+    const spot = breedSpot(BREED_BOWL_A_OFF)
+    const t = Transform.getMutable(localPet)
+    t.parent = engine.RootEntity
+    t.position = spot
+    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+  }
+  clientState.breed.phase = 'pickB' // ui.tsx shows the partner picker off this phase
+}
+
+/** Breed step 3 — the roster picker's tap: place parent B in the right bowl. */
+export function chooseBreedPartner(id: string): void {
+  if (!clientState.breed.active || clientState.breed.phase !== 'pickB') return
+  const partner = clientState.player?.pets.find((x) => x.id === id)
+  if (!partner || partner.id === clientState.activePet?.id) return
+  if (petStage(partner.size) !== 'ADULT') {
+    pushToast('Both pets must be Adult to breed.')
+    return
+  }
+  clientState.breed.partnerId = id
+  clientState.breed.phase = 'ready'
+  // Park parent B's roamer entity in the right bowl (updateInactivePets skips it now).
+  const roamer = inactivePets.get(id)
+  if (roamer) {
+    const spot = breedSpot(BREED_BOWL_B_OFF)
+    const t = Transform.getMutable(roamer.entity)
+    t.position = spot
+    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(partner.species))
+    setClip(roamer.entity, 'idle')
+  }
+}
+
+/** Breed step 4 — the name/potion modal confirmed: run the egg cinematic and
+ *  send the breed to the server. Called from ui.tsx BreedNamePanel. */
+export function startBreedCross(name: string, usePotion: boolean): void {
+  if (!clientState.breed.active || clientState.breed.phase !== 'ready') return
+  clientState.breed.name = name
+  clientState.breed.usePotion = usePotion
+  clientState.breed.phase = 'animating'
+  breedAnimT = 0
+  breedResultPending = null
+  breedBurstDone = false
+  breedNestBase = objectPosition(BREED_NEST) // capture BEFORE the shake so spots/camera stay put
+  breedFx = { active: true, orbFrame: 0, orbAlpha: 0, orbScale: 0.7, burstFrame: -1, flash: 0 }
+  actions.breed(clientState.breed.partnerId, name, usePotion) // server rolls + sets p.hatchling, echoes breedResult
+  spawnBreedEgg()
+  startBreedCamera()
+}
+
+/** breedResult from the server. During the nest flow it's stashed and consumed
+ *  when the grow-in finishes; outside it (defensive) it hands the egg over now. */
+export function receiveBreedResult(species: string, name: string): void {
+  if (clientState.breed.active) {
+    breedResultPending = { species, name }
+    return
+  }
+  startCarryEgg(species, name, true)
+}
+
+function spawnBreedEgg(): void {
+  if (!breedEgg) breedEgg = engine.addEntity()
+  Transform.createOrReplace(breedEgg, { position: breedSpot(BREED_EGG_OFF), scale: Vector3.Zero() })
+  GltfContainer.createOrReplace(breedEgg, { src: EGG_MODEL })
+}
+
+function removeBreedEgg(): void {
+  if (breedEgg) {
+    engine.removeEntity(breedEgg)
+    breedEgg = null
+  }
+}
+
+/** Grow the egg in over BREED_ANIM_S (ease-out + a little mid-grow pop) with a
+ *  gentle spin, then hand it over once the server's breedResult is in. Also
+ *  tracks arrival during the walk to the nest. */
+function updateBreed(dt: number): void {
+  const b = clientState.breed
+  if (!b.active) return
+
+  if (b.phase === 'toNest') {
+    showArrowTo(breedNestPos(), 'breed') // re-assert: the shared arrow can be stolen by another flow
+    b.atNest = distFlat(playerPos(), breedNestPos()) <= BREED_REACH
+    return
+  }
+
+  if (b.phase === 'animating') {
+    breedAnimT += dt
+    const t = breedAnimT
+
+    // Nest tremble: ramps up to the burst, then settles back to rest.
+    const shakeRamp = t < BREED_BURST_AT ? t / BREED_BURST_AT : Math.max(0, 1 - (t - BREED_BURST_AT) / 0.6)
+    shakeNest(BREED_SHAKE_AMP * shakeRamp)
+
+    // Magic orb: fades in, loops, gently pulses — gone once the burst starts.
+    const orbOn = t < BREED_BURST_AT
+    const orbGrow = Math.min(1, t / BREED_ORB_IN_S)
+    const orbFrame = Math.floor(t * BREED_ORB_FPS) % BREED_ORB_FRAMES
+    const orbAlpha = orbOn ? orbGrow : 0
+    const orbScale = (0.7 + 0.3 * orbGrow) * (1 + 0.08 * Math.sin(t * 6)) // ease in + breathe
+
+    // "The magic happened" — one-shot sound the instant the burst fires.
+    if (!breedBurstDone && t >= BREED_BURST_AT) {
+      breedBurstDone = true
+      playBreedSound()
+    }
+
+    // Burst: one-shot at the climax.
+    const bt = t - BREED_BURST_AT
+    const burstFrame = bt >= 0 && bt < BREED_BURST_DUR ? Math.min(BREED_BURST_FRAMES - 1, Math.floor((bt / BREED_BURST_DUR) * BREED_BURST_FRAMES)) : -1
+
+    // Screen blinks: small growing flickers while processing, a bright flash at the burst.
+    const flicker = t > BREED_ORB_IN_S && t < BREED_BURST_AT ? 0.12 * Math.pow(Math.max(0, Math.sin(t * 8)), 8) * (t / BREED_BURST_AT) : 0
+    const burstFlash = bt >= 0 ? 0.8 * Math.exp(-bt / 0.22) : 0
+    const flash = Math.min(1, Math.max(flicker, burstFlash))
+
+    breedFx = { active: true, orbFrame, orbAlpha, orbScale, burstFrame, flash }
+
+    // Egg pops in as the burst blooms (ease-out + a little overshoot), spinning.
+    if (breedEgg) {
+      const p = Math.max(0, Math.min(1, (t - BREED_EGG_POP_AT) / BREED_EGG_POP_DUR))
+      const eased = 1 - Math.pow(1 - p, 3)
+      const pop = p > 0 && p < 1 ? 1 + 0.12 * Math.sin(p * Math.PI) : 1
+      const s = BREED_EGG_SCALE * eased * pop
+      const tr = Transform.getMutable(breedEgg)
+      tr.scale = Vector3.create(s, s, s)
+      tr.rotation = Quaternion.fromEulerDegrees(0, (t * 60) % 360, 0)
+    }
+
+    if (t >= BREED_ANIM_S) {
+      if (breedResultPending) {
+        finishBreed(breedResultPending)
+      } else if (t >= BREED_ANIM_S + BREED_RESULT_GRACE_S) {
+        // Server never confirmed (rare race / rejection): bail gracefully.
+        endBreedCamera()
+        removeBreedEgg()
+        restoreNest()
+        breedNestBase = null
+        breedFx = BREED_FX_OFF
+        clientState.breed = { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+        mode = clientState.followEnabled ? 'follow' : 'wander'
+        pushToast('Breeding failed — try again.')
+      }
+    }
+  }
+}
+
+function finishBreed(res: { species: string; name: string }): void {
+  removeBreedEgg()
+  endBreedCamera()
+  restoreNest()
+  breedNestBase = null
+  breedFx = BREED_FX_OFF
+  breedResultPending = null
+  breedAnimT = 0
+  clientState.breed = { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+  mode = clientState.followEnabled ? 'follow' : 'wander' // parent A resumes
+  startCarryEgg(res.species, res.name, true) // hand the egg over — existing carry-home -> hatch flow
+}
+
+// Breed cinematic camera: framed on the nest's centre bowl, avatar frozen during
+// the egg grow-in. Reuses the shared petCam/petCamFocus + releasePettingView.
+function startBreedCamera(): void {
+  const nest = breedNestPos()
+  if (!petCam) petCam = engine.addEntity()
+  if (!petCamFocus) petCamFocus = engine.addEntity()
+  const focus = breedSpot(BREED_EGG_OFF)
+  // Fixed first-person view: the avatar stands at the dialled-in spot and the
+  // camera sits at its eyes, looking straight at the egg. No side/overhead swing.
+  const stand = Vector3.create(nest.x + BREED_CAM_AVATAR_OFF.x, nest.y + BREED_CAM_AVATAR_OFF.y, nest.z + BREED_CAM_AVATAR_OFF.z)
+  Transform.createOrReplace(petCamFocus, { position: focus })
+  Transform.createOrReplace(petCam, { position: Vector3.create(stand.x, stand.y + BREED_CAM_EYE, stand.z) })
+  VirtualCamera.createOrReplace(petCam, {
+    lookAtEntity: petCamFocus,
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(BATH_CAM_TRANSITION_S) }
+  })
+  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
+  // Freeze the avatar exactly at that spot (camera is at its eyes, so it's behind
+  // the lens and out of frame), facing the nest.
+  void movePlayerTo({ newRelativePosition: stand, cameraTarget: focus })
+  InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
+}
+
+function endBreedCamera(): void {
+  releasePettingView() // shared camera/input release (clears the virtual cam + InputModifier)
+}
+
+// ---------------------------------------------------------------------------
 // Ground arrow guide — a flowing arrow on the floor that points from the player
 // toward a destination (e.g. home while carrying the egg). Reusable, but there
 // is only ONE arrow, so every user claims it under an ArrowOwner tag: set a
@@ -1269,7 +1613,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet'
+export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet' | 'breed'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -1291,6 +1635,7 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'feed') return clientState.feedTask.active
   if (arrowOwner === 'carryEgg') return clientState.carryEgg.active
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
+  if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
   return false
 }
 
@@ -1624,6 +1969,21 @@ function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
 
+  // While parent A is placed in the breeding nest, hold it in its bowl (facing
+  // the centre) through the picker/breed steps + the egg cinematic — it must not
+  // wander off. During 'toNest' it's still carried in-hand, so skip that phase.
+  if (clientState.breed.active && clientState.breed.phase !== 'toNest') {
+    const spot = breedSpot(BREED_BOWL_A_OFF)
+    const t = Transform.getMutable(localPet)
+    t.parent = engine.RootEntity
+    t.position = spot
+    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    setClip(localPet, 'idle')
+    const petP = clientState.activePet
+    if (localTag && petP) updateTag(localTag, spot, petP.species, petP.size, petP.name, petP)
+    return
+  }
+
   // During the tree game the pet waits beside the lane, sitting and watching
   // rather than disappearing. The final feeding shot takes over separately.
   if (clientState.feedGame.active && clientState.feedGame.phase !== 'feeding' && clientState.feedGame.phase !== 'results') {
@@ -1711,6 +2071,17 @@ function updateLocalPet(dt: number): void {
     setClip(localPet, 'idle')
     const pp = playerPos()
     clientState.carryPet.atStation = distFlat(pp, objectPosition(EntityNames.PetPool_glb)) <= BATH_RADIUS
+    return
+  }
+
+  // Carrying the pet to the breeding nest: same as the bath carry — it's attached
+  // to the player's spine bone, so leave its pose to the renderer and just hold
+  // idle. Without this the normal follow logic below would fight the attachment
+  // and drop the pet out of the player's hands. Arrival (atNest) is tracked in
+  // updateBreed; once placed (phase !== 'toNest') the hold at the top of this
+  // function takes over.
+  if (clientState.breed.active && clientState.breed.phase === 'toNest' && clientState.activePet) {
+    setClip(localPet, 'idle')
     return
   }
 
@@ -2085,6 +2456,13 @@ function updateInactivePets(dt: number): void {
         applyCreatureSkin(st.entity, pet.species, pet.rarity)
       }
 
+      // Parent B stands still in its breeding-nest bowl (chooseBreedPartner placed
+      // it there) — don't let the roam logic walk it back to its slot.
+      if (clientState.breed.active && pet.id === clientState.breed.partnerId && clientState.breed.phase !== 'toNest') {
+        updateTag(st.tag, Transform.get(st.entity).position, pet.species, pet.size, pet.name, pet)
+        continue
+      }
+
       // Wander in a SMALL radius around its slot, so it stays in its own spot.
       let moved = 0
       if (st.pause > 0) {
@@ -2188,6 +2566,7 @@ export function setupPetSystems(): void {
   placeNest() // the in-house hatching nest (eggs hatch on top of it)
   engine.addSystem((dt: number) => {
     updateCarryEgg()
+    updateBreed(dt)
     updateArrow()
     updateHatch(dt)
     updatePetting(dt)
