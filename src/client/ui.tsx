@@ -3119,7 +3119,7 @@ const Root = () => {
 // every UiEntity, so it doesn't block clicks when not in use.
 function ScreenFadeOverlay() {
   const alpha = clientState.screenFade.alpha
-  if (alpha <= 0) return <UiEntity />
+  if (alpha <= 0) return null
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: alpha >= 0.99 ? 'block' : 'none' }}

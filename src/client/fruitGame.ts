@@ -1298,6 +1298,10 @@ function showResults(): void {
 }
 
 function applyResults(): void {
+  // Mobile/Bevy clears the masked hold loop with a loop:false emote. Run it
+  // before disableAll, otherwise the emote cleanup can be swallowed and leave
+  // the carry pose stuck.
+  stopHoldEmote()
   // Nothing needs player input from here on (feeding + results are just
   // watching) — upgrade to a full freeze, INCLUDING camera look, which the
   // movement-only lock used through 'catching' never touched. Camera-look was
@@ -1306,7 +1310,6 @@ function applyResults(): void {
   // to a jarring angle the instant the camera released at the end.
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   const caught = clientState.feedGame.caught
-  stopHoldEmote()
   if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
   for (const f of fruits) {
     Tween.deleteFrom(f.entity)
@@ -1706,6 +1709,9 @@ function computeCinematicGeometry(rawCamPos: Vector3, spawnPos: Vector3, gY: num
 export function startFruitGame(mascotaId: string): void {
   if (phase !== 'idle') return
   if (clientState.petting.active || clientState.hatch.active || clientState.carryPet.active) return
+  // Do not inherit a stale overlay if a prior client frame was interrupted
+  // while its camera hand-off was fading.
+  clientState.screenFade.alpha = 0
   // Fixed camera spot placed in the Creator Hub composite, next to the tree.
   const cinePoint = engine.getEntityOrNullByName(EntityNames.cinematic_point)
   if (!cinePoint || !Transform.has(cinePoint)) {
