@@ -1951,12 +1951,20 @@
           "json": {
             "states": [
               {
+                "clip": "idle",
+                "playing": false,
+                "weight": 1,
+                "speed": 1,
+                "loop": false,
+                "shouldReset": true
+              },
+              {
                 "clip": "TableOpen",
                 "playing": false,
                 "weight": 1,
                 "speed": 1,
                 "loop": false,
-                "shouldReset": false
+                "shouldReset": true
               }
             ]
           }

@@ -117,6 +117,10 @@ const PETTING_CAMERA_LOOK_LIFT = 0.55
 // post-Feed sick shot enough to keep the pet and its bubble above that panel.
 const SAD_CINEMATIC_CAMERA_BACKOFF = 0.55
 const SAD_CINEMATIC_LOOK_DOWN = 0.35
+// Mobile's large bottom dialog occupies more vertical screen space. Widen the
+// illness shot and aim lower so the pet and sick bubble compose above it.
+const SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF = 1.55
+const SAD_MOBILE_CINEMATIC_LOOK_DOWN = 0.8
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -890,7 +894,8 @@ export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
   let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
   direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
   const stage = stageScaleFor(pet.size)
-  const distance = 3 + stage + SAD_CINEMATIC_CAMERA_BACKOFF
+  const mobileShot = mobile()
+  const distance = 3 + stage + (mobileShot ? SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF : SAD_CINEMATIC_CAMERA_BACKOFF)
   // Frame both the pet and the sick emote that petEmotes.ts raises above its
   // tag during this cinematic. The dialog lives at the bottom of the screen,
   // so centering the whole vertical pair keeps the bubble readable.
@@ -900,7 +905,7 @@ export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
   const camPos = Vector3.create(petPos.x + direction.x * distance, lookHeight + 0.3, petPos.z + direction.z * distance)
   // Aim below the pair: it raises the pet/bubble in the frame, clear of the
   // bottom-aligned Caretaker dialog, while retaining some ground context.
-  const look = Vector3.create(petPos.x, lookHeight - SAD_CINEMATIC_LOOK_DOWN, petPos.z)
+  const look = Vector3.create(petPos.x, lookHeight - (mobileShot ? SAD_MOBILE_CINEMATIC_LOOK_DOWN : SAD_CINEMATIC_LOOK_DOWN), petPos.z)
 
   Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
   onArrive = null

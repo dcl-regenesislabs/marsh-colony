@@ -1,6 +1,6 @@
 // The second beat of sickness: once the post-Feed dialog has finished, point
 // the player to the Caretaker. Reaching them plays the medicine-table scene;
-// there is intentionally no Pepito/chase hand-off in this slice.
+// Pepito steals its opened cure, while the chase itself comes in the next beat.
 
 import { Animator, AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
@@ -9,6 +9,7 @@ import { applyCureLocal } from './sim'
 import { actions, clientState, pushToast } from './state'
 import { hideArrow, showArrowTo } from './pet'
 import { openCureDialog } from './ui/dialog'
+import { resetStolenPotion, startPepitoSteal } from './pepitoSteal'
 
 const CARETAKER_RADIUS = 5
 const ENTER_TRANSITION_S = 0.35
@@ -21,7 +22,7 @@ let cureRunning = false
 let cureClosing = false
 let cureCamera: Entity | null = null
 let avatarHideArea: Entity | null = null
-let tableReset = false
+let cureTheftRunning = false
 
 function caretakerEntity(): Entity | null {
   const entity = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
@@ -74,22 +75,41 @@ export function cancelSicknessErrand(): void {
   hideArrow('sickness')
 }
 
-/** PotionTable's authored base mesh is the high, closed cage. Always return
- * there explicitly; this keeps each cure deterministic and avoids a hidden
- * runtime frame selection. */
-function resetPotionCage(): void {
+/** `idle` supplies the Blender-authored closed-cage pose, paused at frame
+ * zero so the renderer cannot autoplay either embedded clip. */
+function closePotionCage(): void {
   const table = tableEntity()
   if (!table || !Animator.has(table)) return
   Animator.stopAllAnimations(table, true)
+  for (const state of Animator.getMutable(table).states) {
+    if (state.clip === 'idle') {
+      state.playing = false
+      state.loop = false
+      state.speed = 1
+      state.weight = 1
+      state.shouldReset = true
+    }
+    if (state.clip === 'TableOpen') {
+      state.playing = false
+      state.loop = false
+      state.speed = 1
+      state.weight = 1
+      state.shouldReset = true
+    }
+  }
 }
 
 function openPotionCage(): void {
   const table = tableEntity()
   if (!table || !Animator.has(table)) return
-  // Start at the authored closed pose every time, then play the reveal.
   Animator.playSingleAnimation(table, 'TableOpen', true)
   for (const state of Animator.getMutable(table).states) {
-    if (state.clip === 'TableOpen') state.speed = CAGE_OPEN_SPEED
+    if (state.clip === 'TableOpen') {
+      state.loop = false
+      state.speed = CAGE_OPEN_SPEED
+      state.weight = 1
+      state.shouldReset = true
+    }
   }
 }
 
@@ -109,10 +129,12 @@ function beginCure(table: Entity, caretaker: Entity): void {
   if (cureRunning) return
   cureRunning = true
   cureClosing = false
+  cureTheftRunning = false
   clientState.screenFade.alpha = 0
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   setAvatarHidden(true)
-  resetPotionCage()
+  resetStolenPotion()
+  closePotionCage()
 
   const shot = tableShot(table, caretaker)
   if (!cureCamera) cureCamera = engine.addEntity()
@@ -124,16 +146,19 @@ function beginCure(table: Entity, caretaker: Entity): void {
     defaultTransition: { transitionMode: VirtualCamera.Transition.Time(ENTER_TRANSITION_S) }
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: cureCamera })
-  // TableOpen's initial frame is the closed cage. It remains frozen there for
-  // the first Caretaker line, then the page-2 reveal plays the one-shot clip.
-  openCureDialog(finishCure, (page) => {
+  // The closed-cage idle stays paused through the first Caretaker line. On
+  // page two it switches to the single non-looping reveal clip.
+  openCureDialog(() => {
+    cureTheftRunning = startPepitoSteal(() => finishCure(false))
+    if (!cureTheftRunning) finishCure()
+  }, (page) => {
     if (page === 1) openPotionCage()
   })
 }
 
-/** Clear sick state while fully black, so the native camera return and bubble
- * change cannot flash through the cure shot. The server remains the authority. */
-function finishCure(): void {
+/** Return from the medicine beat while fully black. Pepito's theft deliberately
+ * leaves the pet sick; the later chase will be the only successful cure. */
+function finishCure(cured = true): void {
   if (!cureRunning || cureClosing) return
   cureClosing = true
   let stage: 'out' | 'hold' | 'in' = 'out'
@@ -146,11 +171,12 @@ function finishCure(): void {
       clientState.screenFade.alpha = 1
       if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
       setAvatarHidden(false)
-      applyCureLocal()
-      actions.cureSickness()
-      // Put the table back at the authored closed pose while the screen is
-      // black, ready for the next cure without a visible snap.
-      resetPotionCage()
+      if (cured) {
+        applyCureLocal()
+        actions.cureSickness()
+      }
+      // Return to Blender's authored closed base pose under the fade.
+      closePotionCage()
       stage = 'hold'
       elapsedMs = 0
       return
@@ -167,6 +193,8 @@ function finishCure(): void {
     if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
     cureRunning = false
     cureClosing = false
+    cureTheftRunning = false
+    if (!cured) pushToast('Pepito stole the cure! We need to get it back.', 'error')
     engine.removeSystem(tick)
   }
   engine.addSystem(tick)
@@ -174,15 +202,9 @@ function finishCure(): void {
 
 export function setupSicknessErrand(): void {
   engine.addSystem(() => {
-    const table = tableEntity()
-    if (!tableReset && table && Animator.has(table)) {
-      resetPotionCage()
-      tableReset = true
-    }
-
     // Safety net: if some future UI path drops the dialog, the camera/freeze
     // still return through the same masked release.
-    if (cureRunning && !cureClosing && !clientState.dialog.open) finishCure()
+    if (cureRunning && !cureClosing && !cureTheftRunning && !clientState.dialog.open) finishCure()
 
     const task = clientState.sicknessErrand
     if (!task.active || cureRunning) return
@@ -197,6 +219,7 @@ export function setupSicknessErrand(): void {
     showArrowTo(target, 'sickness')
     if (flatDistance(position, target) > CARETAKER_RADIUS) return
     cancelSicknessErrand()
+    const table = tableEntity()
     if (table) beginCure(table, caretaker)
   })
 }
