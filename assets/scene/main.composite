@@ -1465,27 +1465,6 @@
             "parent": 0
           }
         },
-        "582": {
-          "json": {
-            "position": {
-              "x": 138.75,
-              "y": 0,
-              "z": 248
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "parent": 0
-          }
-        },
         "583": {
           "json": {
             "position": {
@@ -2427,13 +2406,6 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "582": {
-          "json": {
-            "src": "assets/Models/DualNest01/DualNest01.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
         "583": {
           "json": {
             "src": "assets/Models/DualNest01/DualNest01.glb",
@@ -2861,11 +2833,6 @@
             "value": "HumanBed.glb"
           }
         },
-        "582": {
-          "json": {
-            "value": "DualNest01.glb"
-          }
-        },
         "583": {
           "json": {
             "value": "DualNest01.glb_2"
@@ -3086,7 +3053,6 @@
                   592,
                   512,
                   581,
-                  582,
                   583
                 ]
               },
@@ -3448,10 +3414,6 @@
                 "children": []
               },
               {
-                "entity": 582,
-                "children": []
-              },
-              {
                 "entity": 583,
                 "children": []
               }
@@ -3676,9 +3638,6 @@
           "json": {}
         },
         "581": {
-          "json": {}
-        },
-        "582": {
           "json": {}
         },
         "583": {
