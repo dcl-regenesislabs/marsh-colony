@@ -3107,7 +3107,24 @@ const Root = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       {content}
       {UI_DEBUG_MODE && <DebugBrowserBar />}
+      <ScreenFadeOverlay />
     </UiEntity>
+  )
+}
+
+// Full-screen black mask (see clientState.screenFade's doc comment) — drawn
+// above EVERY branch above, including the full-screen minigame ones, since it
+// has to cover the seam no matter which HUD state the camera hand-off lands
+// in. `pointerFilter: 'none'` while invisible (alpha 0) is the default for
+// every UiEntity, so it doesn't block clicks when not in use.
+function ScreenFadeOverlay() {
+  const alpha = clientState.screenFade.alpha
+  if (alpha <= 0) return null
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: alpha >= 0.99 ? 'block' : 'none' }}
+      uiBackground={{ color: { r: 0, g: 0, b: 0, a: alpha } }}
+    />
   )
 }
 
