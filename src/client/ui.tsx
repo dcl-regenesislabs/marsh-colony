@@ -222,15 +222,19 @@ function PetsCountBar(props: { height: number }) {
   const w = Math.round(h * BAR_PETS_ASPECT)
   const pop = clientState.colonyPopulation
   const goal = Cfg.COLONY_GOAL
+  const textW = Math.round(w * 0.65)
   return (
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_PETS_UVS }}>
-      <Label
-        value={`${pop} / ${goal} pets`}
-        fontSize={S(22)}
-        color={PET_UI.ink}
-        textAlign="middle-right"
-        uiTransform={{ positionType: 'absolute', position: { right: S(16), top: 0 }, width: Math.round(w * 0.65), height: h }}
-      />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { right: S(28), top: 0 }, width: textW, height: h, overflow: 'hidden' }}>
+        <Label
+          value={`${pop}/${goal}`}
+          fontSize={S(22)}
+          color={PET_UI.ink}
+          textAlign="middle-right"
+          textWrap="nowrap"
+          uiTransform={{ width: textW, height: h }}
+        />
+      </UiEntity>
     </UiEntity>
   )
 }
