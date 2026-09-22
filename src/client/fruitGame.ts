@@ -114,6 +114,9 @@ const LAND_BOUNCE_UP_MS = 180
 const LAND_BOUNCE_DOWN_MS = 220
 const CATCH_BURST_TEXTURE = 'assets/images/circle_01.png'
 const CATCH_BURST_COUNT = NUM_FRUIT_SLOTS
+// Where a caught (non-poison) fruit sucks into the drawer, LOCAL to it — the
+// burst itself no longer uses this (see spawnCatchBurst), only the fruit's own
+// suck-in Tween below still does.
 const CATCH_BURST_LOCAL_OFFSET = Vector3.create(0, 0.6, 0.1)
 const CATCH_BURST_START_SCALE = 0.2
 const CATCH_BURST_END_SCALE = 1.6
@@ -126,11 +129,12 @@ const CATCH_BURST_EMISSIVE = 2.4
 // holds, then fades out drifting upward), so the mistake reads instantly.
 const POISON_POP_TEXTURE = 'assets/images/poison.png'
 const POISON_POP_SIZE = 1.7 // metres, the sticker's width and height
-const POISON_POP_HEIGHT = 2.5 // above the player's feet
+const POISON_POP_LIFT = 0.6 // above the spot the fruit was caught at
 const POISON_POP_IN_MS = 220
 const POISON_POP_HOLD_MS = 550
 const POISON_POP_OUT_MS = 350
-const POISON_POP_RISE = 0.5 // metres it drifts up while fading
+const POISON_POP_RISE = 0.6 // metres it drifts up over its whole lifetime
+const POISON_POP_TOTAL_MS = POISON_POP_IN_MS + POISON_POP_HOLD_MS + POISON_POP_OUT_MS
 const SCORCH_TEXTURE = 'assets/images/scorch_03.png'
 const SCORCH_COUNT = GROUND_CLUTTER_COUNT
 const SCORCH_START_SCALE = 0.6
@@ -283,6 +287,20 @@ let scorchIndex = 0
 const scorchStartedAt = new Map<Entity, number>()
 let scorchTexture: ReturnType<typeof Material.Texture.Common> | null = null
 let cinCam: Entity | null = null // the one cinematic camera, re-Tweened rather than swapped
+// Fallback return pose: the player's own camera right before cinCam ever takes
+// over, captured once at the very start (see startFruitGame) — used only when
+// there's no feed shot to derive a proper one from (the caught<=0 path, which
+// never sets up feedReturnCamPos/Rot below).
+let returnCamPos: Vector3 | null = null
+let returnCamRot: Quaternion | null = null
+// Preferred return pose: computed from where the (hidden) avatar gets stood —
+// behind the feeding shot's camera, facing the pet — at the moment the feeding
+// shot is set up (see applyResults). finalizeAndClose zooms cinCam out to this
+// before releasing, so the hand-off to the native third-person camera lands
+// roughly where it should instead of wherever the player's mouse happened to
+// leave it drifting during the round.
+let feedReturnCamPos: Vector3 | null = null
+let feedReturnCamRot: Quaternion | null = null
 let drawerAnchor: Entity | null = null
 let drawerEntity: Entity | null = null
 let sfxEntity: Entity | null = null
@@ -433,6 +451,16 @@ const GROUND_FRUIT_OFFSETS = [
 const EAT_BITE_PATH_FRACTION = 0.85 // a clearly readable one-way hand → mouth movement
 const FEED_STAGE_SIDE_OFFSET = 2.3
 const FEED_CAMERA_DISTANCE = 2.4
+// Where the (hidden) avatar gets stood for the feeding shot: behind the shot's
+// own camera (FEED_CAMERA_DISTANCE/mobileCamera.cameraBack, both under 2.5m),
+// facing the pet+drawer focus point — "the player is watching from right
+// there." AVATAR_RETURN_BACK/HEIGHT then place a natural third-person camera
+// behind THAT avatar position for the end-of-round zoom-out (see
+// returnCameraToPlayer) — comfortably clear of the close feed shot's own
+// framing either way.
+const AVATAR_STAND_BACK = 4.5
+const AVATAR_RETURN_CAM_BACK = 3.2
+const AVATAR_RETURN_CAM_HEIGHT = 1.6
 // Mobile's final frame is deliberately composed as a two-part scene: the pet
 // and its crate occupy one side, while Fruits caught occupies the other.
 type FeedCameraCalibration = {
@@ -914,14 +942,18 @@ function applyCatchBurstMaterial(entity: Entity, alpha: number): void {
   })
 }
 
-function spawnCatchBurst(): void {
+function spawnCatchBurst(at: Vector3): void {
   const entity = catchBursts[catchBurstIndex]
-  if (!entity || !drawerEntity) return
+  if (!entity) return
   catchBurstIndex = (catchBurstIndex + 1) % catchBursts.length
   Tween.deleteFrom(entity)
   const transform = Transform.getMutable(entity)
-  transform.parent = drawerEntity
-  transform.position = CATCH_BURST_LOCAL_OFFSET
+  // World space, fixed at the catch point — NOT parented to the drawer. It used
+  // to ride along with the held crate (drifting with the avatar's hand while it
+  // played), which read as the burst chasing the player instead of marking
+  // where the catch happened.
+  transform.parent = undefined
+  transform.position = at
   transform.scale = Vector3.scale(Vector3.One(), CATCH_BURST_START_SCALE)
   applyCatchBurstMaterial(entity, 1)
   VisibilityComponent.createOrReplace(entity, { visible: true })
@@ -961,9 +993,11 @@ function clearCatchBursts(): void {
 }
 
 // Poison pop-up (see POISON_POP_*). One billboard plane, created once and only
-// hidden/shown; it follows the player while it plays.
+// hidden/shown; it stays put at the spot the fruit was caught (not the player)
+// and just rises/fades in place.
 let poisonPop: Entity | null = null
 let poisonPopStartedAt = -1 // `clock` seconds when it started; -1 = not playing
+let poisonPopOrigin = Vector3.Zero() // where it spawned — fixed for the whole play
 let poisonPopTexture: ReturnType<typeof Material.Texture.Common> | null = null
 
 function applyPoisonPopMaterial(entity: Entity, alpha: number): void {
@@ -981,13 +1015,13 @@ function applyPoisonPopMaterial(entity: Entity, alpha: number): void {
   })
 }
 
-function spawnPoisonPop(): void {
+function spawnPoisonPop(at: Vector3): void {
   if (!poisonPop) return
   poisonPopStartedAt = clock
+  poisonPopOrigin = Vector3.create(at.x, at.y + POISON_POP_LIFT, at.z)
   applyPoisonPopMaterial(poisonPop, 1)
-  const pp = playerPos()
   const t = Transform.getMutable(poisonPop)
-  t.position = Vector3.create(pp.x, pp.y + POISON_POP_HEIGHT, pp.z)
+  t.position = poisonPopOrigin
   t.scale = Vector3.Zero()
   VisibilityComponent.createOrReplace(poisonPop, { visible: true })
 }
@@ -999,27 +1033,27 @@ function easeOutBack(t: number): number {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
 }
 
+function easeOutQuad(t: number): number {
+  return 1 - (1 - t) * (1 - t)
+}
+
 function poisonPopTick(): void {
   if (!poisonPop || poisonPopStartedAt < 0) return
   const ageMs = (clock - poisonPopStartedAt) * 1000
-  let scale = 1
-  let alpha = 1
-  let rise = 0
-  if (ageMs < POISON_POP_IN_MS) {
-    scale = easeOutBack(ageMs / POISON_POP_IN_MS)
-  } else if (ageMs >= POISON_POP_IN_MS + POISON_POP_HOLD_MS) {
-    const u = (ageMs - POISON_POP_IN_MS - POISON_POP_HOLD_MS) / POISON_POP_OUT_MS
-    if (u >= 1) {
-      clearPoisonPop()
-      return
-    }
-    alpha = 1 - u
-    rise = POISON_POP_RISE * u
-    applyPoisonPopMaterial(poisonPop, alpha)
+  if (ageMs >= POISON_POP_TOTAL_MS) {
+    clearPoisonPop()
+    return
   }
-  const pp = playerPos()
+  const scale = ageMs < POISON_POP_IN_MS ? easeOutBack(ageMs / POISON_POP_IN_MS) : 1
+  // Rises continuously for the WHOLE lifetime (not just once the fade starts)
+  // so the pop-in, the drift and the fade all read as one fluid motion instead
+  // of "spawn, sit still, then suddenly move".
+  const rise = POISON_POP_RISE * easeOutQuad(ageMs / POISON_POP_TOTAL_MS)
+  const fadeStart = POISON_POP_IN_MS + POISON_POP_HOLD_MS
+  const alpha = ageMs < fadeStart ? 1 : 1 - (ageMs - fadeStart) / POISON_POP_OUT_MS
+  applyPoisonPopMaterial(poisonPop, alpha)
   const t = Transform.getMutable(poisonPop)
-  t.position = Vector3.create(pp.x, pp.y + POISON_POP_HEIGHT + rise, pp.z)
+  t.position = Vector3.create(poisonPopOrigin.x, poisonPopOrigin.y + rise, poisonPopOrigin.z)
   t.scale = Vector3.scale(Vector3.One(), POISON_POP_SIZE * scale)
 }
 
@@ -1093,8 +1127,8 @@ function resolveFruit(f: FruitRuntime, caught: boolean): void {
     clientState.feedGame.caught += 1
     clientState.feedGame.catchFlashUntil = Date.now() + 350
     if (sfxEntity) AudioSource.playSound(sfxEntity, FRUIT_PICK_SOUND)
-    if (f.poison) spawnPoisonPop() // the poison sticker instead of the green burst
-    else spawnCatchBurst()
+    if (f.poison) spawnPoisonPop(pos) // the poison sticker instead of the green burst
+    else spawnCatchBurst(pos)
     if (drawerEntity) {
       const startLocal = Vector3.add(CATCH_BURST_LOCAL_OFFSET, FRUIT_SUCK_START_LOCAL)
       const transform = Transform.getMutable(f.entity)
@@ -1266,6 +1300,13 @@ function showResults(): void {
 }
 
 function applyResults(): void {
+  // Nothing needs player input from here on (feeding + results are just
+  // watching) — upgrade to a full freeze, INCLUDING camera look, which the
+  // movement-only lock used through 'catching' never touched. Camera-look was
+  // left free the whole round so the player could look around while playing;
+  // left free through this long idle tail too, it silently drifted and popped
+  // to a jarring angle the instant the camera released at the end.
+  InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   const caught = clientState.feedGame.caught
   stopHoldEmote()
   if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
@@ -1289,6 +1330,31 @@ function applyResults(): void {
   if (player && cinCam) {
     feedingShotAnchor = Vector3.create(player.position.x, player.position.y, player.position.z)
     const shot = feedingShot(feedingShotAnchor)
+
+    // Stand the (about to be hidden) avatar behind the feeding shot's own
+    // camera, facing the pet — so once it's revealed again at the end, it's
+    // actually "looking at the pet eating" instead of still standing wherever
+    // 'catching' left it. Safe/invisible: setFeedingAvatarHidden(true) below
+    // hides the avatar for the whole feeding+results tail, and cinCam already
+    // owns the screen — same trick startFruitGame's own entry teleport uses.
+    const standPos = Vector3.create(
+      shot.focus.x - localForward.x * AVATAR_STAND_BACK,
+      groundY,
+      shot.focus.z - localForward.z * AVATAR_STAND_BACK
+    )
+    void movePlayerTo({ newRelativePosition: standPos, cameraTarget: shot.focus })
+    // The zoom-out target for finalizeAndClose: a natural third-person camera
+    // behind THAT stand position, still generally aimed at the pet scene —
+    // computed fresh here (not the drifted "wherever the mouse left it" pose)
+    // so the eventual hand-off to the native camera lands close to where it
+    // will actually pick up.
+    feedReturnCamPos = Vector3.create(
+      standPos.x - localForward.x * AVATAR_RETURN_CAM_BACK,
+      groundY + AVATAR_RETURN_CAM_HEIGHT,
+      standPos.z - localForward.z * AVATAR_RETURN_CAM_BACK
+    )
+    feedReturnCamRot = Quaternion.fromLookAt(feedReturnCamPos, shot.focus)
+
     const cameraStart = Transform.get(cinCam)
     const cameraEndRotation = Quaternion.fromLookAt(shot.camPos, shot.focus)
     Tween.deleteFrom(cinCam)
@@ -1322,6 +1388,60 @@ function applyResults(): void {
   clientState.feedGame.hungerFillProgress = 0
 }
 
+// How long the camera blends from its last shot back to the player's own
+// pose (see returnCamPos/returnCamRot) before the movement/camera freeze
+// lifts. Matches the wide-shot pan's own feel (see GAME_CAM_PAN_MS).
+const CAMERA_RETURN_MS = 700
+
+/** Hard release: clear the active-camera reference, then explicitly tear down
+ *  the camera components so the renderer cannot keep blending toward this
+ *  round's shot, and drop the freeze. The final step of both teardown paths
+ *  below. */
+function releaseCameraAndFreeze(): void {
+  if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+  if (cinCam) {
+    Tween.deleteFrom(cinCam)
+    VirtualCamera.deleteFrom(cinCam)
+  }
+  if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+  returnCamPos = null
+  returnCamRot = null
+  feedReturnCamPos = null
+  feedReturnCamRot = null
+}
+
+/** Zoom cinCam out to a natural third-person pose behind wherever the avatar
+ *  actually ended up (see feedReturnCamPos/Rot — preferred, set up by the
+ *  feeding shot; falls back to the round-start captured pose on the
+ *  caught<=0 path, which never sets those), THEN release — the player stays
+ *  frozen through the blend so the target can't go stale mid-transition.
+ *  Falls back to a hard release if neither is available. */
+function returnCameraToPlayer(): void {
+  const targetPos = feedReturnCamPos ?? returnCamPos
+  const targetRot = feedReturnCamRot ?? returnCamRot
+  if (!cinCam || !targetPos || !targetRot || !Transform.has(cinCam)) {
+    releaseCameraAndFreeze()
+    return
+  }
+  const cur = Transform.get(cinCam)
+  Tween.createOrReplace(cinCam, {
+    mode: Tween.Mode.MoveRotateScale({
+      position: { start: cur.position, end: targetPos },
+      rotation: { start: cur.rotation, end: targetRot }
+    }),
+    duration: CAMERA_RETURN_MS,
+    easingFunction: EasingFunction.EF_EASEQUAD
+  })
+  let elapsedMs = 0
+  const waitForBlend = (dt: number): void => {
+    elapsedMs += dt * 1000
+    if (elapsedMs < CAMERA_RETURN_MS) return
+    engine.removeSystem(waitForBlend)
+    releaseCameraAndFreeze()
+  }
+  engine.addSystem(waitForBlend)
+}
+
 /** Release the camera/movement lock/touch controls and hand the screen back —
  *  called once the player is done looking at the results (Exit), or right
  *  away on an early cancel (no results screen in that case). */
@@ -1332,14 +1452,7 @@ function finalizeAndClose(): void {
   suppressPetTags(false)
   setFeedingAvatarHidden(false)
   setMinigameNametagsHidden(false)
-  // Clear the active-camera reference, then explicitly tear down the camera
-  // components so the renderer cannot keep blending toward this round's shot.
-  if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
-  if (cinCam) {
-    Tween.deleteFrom(cinCam)
-    VirtualCamera.deleteFrom(cinCam)
-  }
-  if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+  returnCameraToPlayer()
   setLaneColliders(false)
   applyDefaultTouchControls()
   clearCatchBursts()
@@ -1616,6 +1729,23 @@ export function startFruitGame(mascotaId: string): void {
   // introTick, once the "move left/right" hint goes away. Desktop skips the
   // zoom entirely — it keeps the original single cut, looking straight at
   // the player (no height/left offset).
+  // Capture the player's own camera pose ONE LAST TIME before cinCam ever takes
+  // over (only if no virtual camera already has it — a stale one shouldn't
+  // overwrite a good captured pose). finalizeAndClose blends back to this at
+  // the end instead of hard-cutting.
+  if (!MainCamera.has(engine.CameraEntity) || MainCamera.get(engine.CameraEntity).virtualCameraEntity === undefined) {
+    const nativeCam = Transform.getOrNull(engine.CameraEntity)
+    if (nativeCam) {
+      returnCamPos = Vector3.create(nativeCam.position.x, nativeCam.position.y, nativeCam.position.z)
+      returnCamRot = Quaternion.create(nativeCam.rotation.x, nativeCam.rotation.y, nativeCam.rotation.z, nativeCam.rotation.w)
+    }
+  }
+  // A fresh round: drop any feed-shot return pose left over from a previous
+  // one, so a caught<=0 round can't inherit a stale target from an earlier
+  // caught>0 round (see returnCameraToPlayer's fallback order).
+  feedReturnCamPos = null
+  feedReturnCamRot = null
+
   if (!cinCam) cinCam = engine.addEntity()
   Transform.createOrReplace(cinCam, { position: camPos, rotation: wideRot })
   VirtualCamera.createOrReplace(cinCam, {
