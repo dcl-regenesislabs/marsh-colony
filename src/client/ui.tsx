@@ -16,7 +16,7 @@ import {
   cancelPetting,
   petTap,
   hatchTap,
-  startCarryEgg,
+  startGetEgg,
   beginHatchFromCarry,
   startCarryPet,
   placePetAtStation,
@@ -900,8 +900,11 @@ function AdoptPanel() {
             pulse
             disabled={!named}
             onClick={() => {
-              // Adoption gives an egg to carry home; you hatch it there (rub/tap).
-              startCarryEgg(sp, uiState.adoptName.trim())
+              // Adoption gives an egg — but you collect it FROM the Caretaker
+              // (an arrow guides you there), not spawned into your hand from
+              // wherever you're standing. startGetEgg hands it over on arrival
+              // (or immediately if you're already at the Caretaker).
+              startGetEgg(sp, uiState.adoptName.trim())
               uiState.adoptName = ''
               ui.close()
             }}

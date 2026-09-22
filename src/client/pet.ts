@@ -1269,7 +1269,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet'
+export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet' | 'getEgg'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -1291,6 +1291,7 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'feed') return clientState.feedTask.active
   if (arrowOwner === 'carryEgg') return clientState.carryEgg.active
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
+  if (arrowOwner === 'getEgg') return pendingEgg !== null
   return false
 }
 
@@ -1358,6 +1359,42 @@ function updateArrow(): void {
 }
 
 /** Adopt handoff: give the player an egg to carry home (held in the hand). */
+// An egg the player adopted but hasn't picked up yet: they must walk to the
+// Caretaker to receive it, instead of it materialising in their hand from
+// wherever they happened to be standing (e.g. right after buying a slot). Once
+// they reach the Caretaker, updateGetEgg() hands it over via startCarryEgg().
+let pendingEgg: { species: string; name: string } | null = null
+const CARETAKER_EGG_REACH = 4.5 // metres from the Caretaker that count as "arrived"
+
+/** Adoption confirmed: send the player to the Caretaker to collect the egg. If
+ *  they're already there (e.g. the first-pet intro parks them at the Caretaker),
+ *  hand it over immediately — no pointless walk. */
+export function startGetEgg(species: string, name: string): void {
+  const caretaker = objectPosition(EntityNames.Caretaker_glb)
+  if (distFlat(playerPos(), caretaker) <= CARETAKER_EGG_REACH) {
+    startCarryEgg(species, name)
+    return
+  }
+  pendingEgg = { species, name }
+  showArrowTo(caretaker, 'getEgg')
+  pushToast('Go to the Caretaker to pick up your egg!')
+}
+
+/** Per-frame while an egg is waiting at the Caretaker: keep the arrow pointing at
+ *  them, and hand the egg over the moment the player arrives. */
+function updateGetEgg(): void {
+  if (!pendingEgg) return
+  const caretaker = objectPosition(EntityNames.Caretaker_glb)
+  if (distFlat(playerPos(), caretaker) <= CARETAKER_EGG_REACH) {
+    const { species, name } = pendingEgg
+    pendingEgg = null
+    hideArrow('getEgg')
+    startCarryEgg(species, name) // now attach the egg — existing carry-home -> hatch flow
+  } else {
+    showArrowTo(caretaker, 'getEgg') // re-assert (the shared arrow can be taken over)
+  }
+}
+
 export function startCarryEgg(species: string, name: string, isBreed = false): void {
   carryIsBreed = isBreed
   clientState.carryEgg = { active: true, species, name, atHome: false }
@@ -2187,6 +2224,7 @@ function updateSleepBedScale(): void {
 export function setupPetSystems(): void {
   placeNest() // the in-house hatching nest (eggs hatch on top of it)
   engine.addSystem((dt: number) => {
+    updateGetEgg()
     updateCarryEgg()
     updateArrow()
     updateHatch(dt)
