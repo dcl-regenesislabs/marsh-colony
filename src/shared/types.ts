@@ -39,6 +39,10 @@ export interface PetData {
   // wake). Set when it is sent to bed, cleared whenever it stops sleeping. This
   // is what makes the play energy gate stick — see SLEEP_LOCK_MS.
   sleepLockUntil: number
+  // Sick from catching a poisonous fruit in the Feed minigame. Cleared by the
+  // Caretaker's cure minigame (Pepito chase) — see server/state.ts's
+  // cureSickness. Care actions are not blocked while true.
+  sick: boolean
   // Bookkeeping
   bornAt: number // ms timestamp
   lastUpdated: number // ms timestamp of last decay calculation

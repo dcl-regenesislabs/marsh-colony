@@ -7,6 +7,8 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState } from './state'
 import { ui } from './ui'
+import { startPepitoChase } from './pepitoChase'
+import { cancelSicknessErrand } from './sicknessErrand'
 
 // Clip names as authored on the Caretaker.glb / auto-populated by the Creator
 // Hub's Animator (assets/scene/main.composite) — case-sensitive.
@@ -31,7 +33,19 @@ function ensureClickHandler(caretaker: Entity): void {
   clickHandlerSet = true
   pointerEventsSystem.onPointerDown(
     { entity: caretaker, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to Caretaker', maxDistance: 16, showHighlight: true } },
-    () => ui.openCaretaker()
+    () => {
+      // Retry path for the sickness cure: if the player cancelled the Pepito
+      // chase (or missed their errand-arrival trigger somehow) while their
+      // pet is still sick, talking to the Caretaker again restarts it instead
+      // of opening the normal menu — otherwise a cancelled chase has no way
+      // back in.
+      if (clientState.activePet?.sick && !clientState.pepitoChase.active) {
+        cancelSicknessErrand() // the walk to the table is over — we're already here
+        startPepitoChase()
+        return
+      }
+      ui.openCaretaker()
+    }
   )
 }
 

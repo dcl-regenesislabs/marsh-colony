@@ -19,7 +19,7 @@ import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
-import { getLocalPet, getInactivePetEntity, petIsPresent, TAG_MIN, TAG_SIZE_MULT } from './pet'
+import { getLocalPet, getInactivePetEntity, petIsPresent, sadCinematicIsActive, TAG_MIN, TAG_SIZE_MULT } from './pet'
 import { petOverheadTuning } from './petOverheadCalibration'
 
 type EmoteId = 'food' | 'clean' | 'play' | 'sick' | 'happy' | 'sad' | 'angry' | 'heart' | 'music' | 'sleep1' | 'sleep2'
@@ -192,21 +192,23 @@ function cycledMoodEmote(st: EmoteState, face: EmoteId, lowNeeds: StatKey[], dt:
 
 /**
  * What a pet shows right now, highest priority first:
- *  1. sleeping — animated between the two sleep frames (checked first: energy
- *               is expected to be near-bottom right when sleep starts, which
- *               would otherwise read as a needs-based icon every time)
- *  2. (active pet only) playing the fruit-catch minigame — music note, with a
+ *  1. sick — a fixed sick bubble that stays up until the Caretaker's cure
+ *            minigame clears pet.sick (see #148), whatever else is going on
+ *  2. sleeping — animated between the two sleep frames (checked before the
+ *               needs: energy is expected to be near-bottom right when sleep
+ *               starts, which would otherwise read as a needs-based icon)
+ *  3. (active pet only) playing the fruit-catch minigame — music note, with a
  *     brief happy flash on each catch (see updateCatchTrigger above)
- *  3. (active pet only) just got love (see updateHeartTriggers above) — heart
- *  4. needs-based face/icon: 0 low = happy, 1 low = that need's icon alone,
+ *  4. (active pet only) just got love (see updateHeartTriggers above) — heart
+ *  5. needs-based face/icon: 0 low = happy, 1 low = that need's icon alone,
  *     2+ low = the mood face (sad at 2, angry at 3+) cycling with each low
  *     need's icon in turn (see cycledMoodEmote above)
- *
- * "sick" has no priority step here — there's no sickness mechanic in the game
- * yet (see #148), so nothing should ever show it. EMOTE_SRC.sick is kept for
- * when that feature lands and this gets a real branch.
  */
 function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, isActive: boolean): EmoteId {
+  // Held back while the feed minigame is running (the pet can turn sick at the
+  // end of a round, before its results): the bubble makes its entrance in the
+  // sick cinematic that follows the round's Exit instead of spoiling it.
+  if (pet.sick && !(isActive && clientState.feedGame.active)) return 'sick'
   if (pet.sleeping) return sleepingEmote(st, dt)
   if (isActive) {
     if (clientState.feedGame.active) return now < catchHappyUntil ? 'happy' : 'music'
@@ -227,7 +229,16 @@ function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, is
  *  pet's emote needs to stay visible for (to show the sleep-frame cycle),
  *  not hide during. */
 function activePetMomentIsTaken(): boolean {
-  return clientState.hatch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.petting.active || clientState.fetch.active || clientState.dialog.open
+  // An open dialog normally hides it, except during the sick cinematic, whose
+  // whole point is the pet with its sick bubble while the Caretaker talks.
+  return (
+    clientState.hatch.active ||
+    clientState.carryEgg.active ||
+    clientState.carryPet.active ||
+    clientState.petting.active ||
+    clientState.fetch.active ||
+    (clientState.dialog.open && !sadCinematicIsActive())
+  )
 }
 
 function update(dt: number): void {

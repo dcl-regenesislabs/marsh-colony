@@ -37,6 +37,7 @@ import { actions, clientState, pushToast } from './state'
 import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchControls'
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
+import { startSicknessCinematic } from './sicknessErrand'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import {
   getLocalPet,
@@ -243,11 +244,13 @@ const DRAWER_HOLD_SCALE = 0.9
 
 // Poisonous fruit (issue #146): the Fruit01 model IS the poisonous fruit —
 // catching one plays the poison pop-up instead of the normal catch burst (see
-// POISON_POP_* / spawnPoisonPop below). A round only ever spawns 1 or 2 of
-// them (a flat per-fruit percentage put ~7 in every round, too many for a
-// "watch out for this one" fruit). Their spawn times are picked when catching
-// begins (see pickPoisonTimes) and spread across the round: each one is the
-// next fruit to respawn once its time has passed.
+// POISON_POP_* / spawnPoisonPop below) and sickens the pet (issue #148 —
+// server/state.ts's feedFromMinigame sets pet.sick, kicking off the
+// sicknessErrand.ts -> pepitoChase.ts cure flow). A round only ever spawns 1
+// or 2 of them (a flat per-fruit percentage put ~7 in every round, too many
+// for a "watch out for this one" fruit). Their spawn times are picked when
+// catching begins (see pickPoisonTimes) and spread across the round: each one
+// is the next fruit to respawn once its time has passed.
 const POISON_FRUITS_MIN = 1
 const POISON_FRUITS_MAX = 2
 // Not before the first respawn wave (~4s in) and early enough that the fruit
@@ -1092,6 +1095,8 @@ function resolveFruit(f: FruitRuntime, caught: boolean): void {
   if (caught) {
     clientState.feedGame.caught += 1
     clientState.feedGame.catchFlashUntil = Date.now() + 350
+    // Sticky for the whole round — see the feedGame.poisoned doc comment (state.ts).
+    if (f.poison) clientState.feedGame.poisoned = true
     if (sfxEntity) AudioSource.playSound(sfxEntity, FRUIT_PICK_SOUND)
     if (f.poison) spawnPoisonPop() // the poison sticker instead of the green burst
     else spawnCatchBurst()
@@ -1280,10 +1285,16 @@ function applyResults(): void {
     return
   }
 
+  const poisoned = clientState.feedGame.poisoned
   const hungerStart = clientState.activePet?.hunger ?? 0
   const hungerTarget = Math.min(100, hungerStart + caught * Cfg.FEED_HUNGER_PER_FRUIT)
-  applyFeedMinigameLocal(caught) // optimistic local effect
-  actions.feedResult(caught) // tell the server (it corrects via snapshot)
+  applyFeedMinigameLocal(caught, poisoned) // optimistic local effect
+  actions.feedResult(caught, poisoned) // tell the server (it corrects via snapshot)
+  // The sickness cinematic is driven by THIS round, not by a server notify: the
+  // server only announces a pet turning sick when it wasn't already sick there,
+  // so a pet left sick by an earlier attempt would get no cinematic at all. It
+  // waits (queued) until this screen's Exit — see sicknessErrand.ts.
+  if (poisoned) startSicknessCinematic()
 
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (player && cinCam) {
@@ -1525,7 +1536,13 @@ function computeCinematicGeometry(rawCamPos: Vector3, spawnPos: Vector3, gY: num
  *  current active pet. */
 export function startFruitGame(mascotaId: string): void {
   if (phase !== 'idle') return
-  if (clientState.petting.active || clientState.hatch.active || clientState.carryPet.active) return
+  if (
+    clientState.petting.active ||
+    clientState.hatch.active ||
+    clientState.carryPet.active ||
+    clientState.sicknessErrand.active ||
+    clientState.pepitoChase.active
+  ) return
   // Fixed camera spot placed in the Creator Hub composite, next to the tree.
   const cinePoint = engine.getEntityOrNullByName(EntityNames.cinematic_point)
   if (!cinePoint || !Transform.has(cinePoint)) {
@@ -1665,7 +1682,8 @@ export function startFruitGame(mascotaId: string): void {
     petSitPos,
     petSitLook: laneMid,
     hungerTarget: 0,
-    hungerFillProgress: 0
+    hungerFillProgress: 0,
+    poisoned: false
   }
   introEmotePlayed = false
   drawerRevealed = false

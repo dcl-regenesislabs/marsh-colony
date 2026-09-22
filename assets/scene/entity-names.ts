@@ -58,6 +58,8 @@ export enum EntityNames {
   Plant07_glb_6 = "Plant07.glb_6",
   Plant07_glb_7 = "Plant07.glb_7",
   Plants = "Plants",
+  Potion01_glb = "Potion01.glb",
+  PotionTable_glb = "PotionTable.glb",
   WaterPool01_glb = "WaterPool01.glb",
   WaterPool01_glb_2 = "WaterPool01.glb_2",
   cinematic_play_spawnpoint = "cinematic_play_spawnpoint",

@@ -59,3 +59,20 @@ export function showFetchTouchButton(iconSrc: string): void {
 export function hideFetchTouchButton(): void {
   setTouchButtonIcon(FETCH_TOUCH_ACTION, null)
 }
+
+// Pepito chase minigame's mobile Throw button (pepitoChase.ts) — same idea as
+// FETCH_TOUCH_ACTION, on the other unclaimed UNUSED_SCENE_TOUCH_BUTTONS slot
+// (IA_SECONDARY) so the two never collide. Mutually exclusive at the flow
+// level too (Fetch and the Pepito chase can't both be active), but a separate
+// InputAction means no shared cooldown/state either way.
+export const ROCK_TOUCH_ACTION = InputAction.IA_SECONDARY
+
+/** Show the Pepito chase's Throw button with the given icon. */
+export function showRockTouchButton(iconSrc: string): void {
+  setTouchButtonIcon(ROCK_TOUCH_ACTION, iconSrc)
+}
+
+/** Hide the Pepito chase's Throw button again. */
+export function hideRockTouchButton(): void {
+  setTouchButtonIcon(ROCK_TOUCH_ACTION, null)
+}

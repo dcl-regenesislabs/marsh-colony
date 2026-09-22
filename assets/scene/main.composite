@@ -65,16 +65,16 @@
               "y": 0,
               "z": 247.5
             },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
             "rotation": {
               "x": 0,
               "y": 0,
               "z": 0,
               "w": 1
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
             },
             "parent": 0
           }
@@ -254,16 +254,16 @@
               "y": 0,
               "z": 240.75
             },
+            "scale": {
+              "x": 2.5,
+              "y": 2.5,
+              "z": 2.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.462848,
               "z": 0,
               "w": -0.886437
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 2.5,
-              "z": 2.5
             },
             "parent": 0
           }
@@ -296,16 +296,16 @@
               "y": 0,
               "z": 243.64999389648438
             },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.7071067811865476,
               "z": 0,
               "w": -0.7071067811865476
-            },
-            "scale": {
-              "x": 1.5,
-              "y": 1.5,
-              "z": 1.5
             },
             "parent": 0
           }
@@ -338,16 +338,16 @@
               "y": 0,
               "z": 238.99000549316406
             },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.340109,
               "z": 0,
               "w": -0.940386
-            },
-            "scale": {
-              "x": 1.5,
-              "y": 1.5,
-              "z": 1.5
             },
             "parent": 0
           }
@@ -1451,16 +1451,58 @@
               "y": 0,
               "z": 251.5
             },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.7071067690849304,
               "z": 0,
               "w": -0.7071067690849304
             },
+            "parent": 0
+          }
+        },
+        "582": {
+          "json": {
+            "position": {
+              "x": 159.75,
+              "y": 0.4000000059604645,
+              "z": 251.25
+            },
             "scale": {
-              "x": 1.5,
-              "y": 1.5,
-              "z": 1.5
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "parent": 0
+          }
+        },
+        "583": {
+          "json": {
+            "position": {
+              "x": 159.72998046875,
+              "y": 1.2277860641479492,
+              "z": 251.24798583984375
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
             },
             "parent": 0
           }
@@ -1898,6 +1940,20 @@
                 "clip": "Hatch",
                 "playing": false,
                 "weight": -1,
+                "speed": 1,
+                "loop": false,
+                "shouldReset": false
+              }
+            ]
+          }
+        },
+        "582": {
+          "json": {
+            "states": [
+              {
+                "clip": "TableOpen",
+                "playing": false,
+                "weight": 1,
                 "speed": 1,
                 "loop": false,
                 "shouldReset": false
@@ -2385,6 +2441,20 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "582": {
+          "json": {
+            "src": "assets/Models/PotionTable.glb",
+            "visibleMeshesCollisionMask": 3,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "583": {
+          "json": {
+            "src": "assets/Models/Potion01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "584": {
           "json": {
             "src": "assets/Models/tree.glb",
@@ -2805,6 +2875,16 @@
             "value": "HumanBed.glb"
           }
         },
+        "582": {
+          "json": {
+            "value": "PotionTable.glb"
+          }
+        },
+        "583": {
+          "json": {
+            "value": "Potion01.glb"
+          }
+        },
         "584": {
           "json": {
             "value": "tree.glb"
@@ -2933,26 +3013,6 @@
       }
     },
     {
-      "name": "inspector::Selection",
-      "jsonSchema": {
-        "type": "object",
-        "properties": {
-          "gizmo": {
-            "type": "integer",
-            "serializationType": "int32"
-          }
-        },
-        "serializationType": "map"
-      },
-      "data": {
-        "581": {
-          "json": {
-            "gizmo": 2
-          }
-        }
-      }
-    },
-    {
       "name": "inspector::Nodes",
       "jsonSchema": {
         "type": "object",
@@ -3039,7 +3099,9 @@
                   590,
                   592,
                   512,
-                  581
+                  581,
+                  582,
+                  583
                 ]
               },
               {
@@ -3398,6 +3460,14 @@
               {
                 "entity": 581,
                 "children": []
+              },
+              {
+                "entity": 582,
+                "children": []
+              },
+              {
+                "entity": 583,
+                "children": []
               }
             ]
           }
@@ -3622,6 +3692,12 @@
         "581": {
           "json": {}
         },
+        "582": {
+          "json": {}
+        },
+        "583": {
+          "json": {}
+        },
         "584": {
           "json": {}
         },
@@ -3661,7 +3737,7 @@
       }
     },
     {
-      "name": "inspector::SceneMetadata-v4",
+      "name": "inspector::SceneMetadata-v5",
       "jsonSchema": {
         "type": "object",
         "properties": {
@@ -3981,6 +4057,14 @@
             }
           },
           "disableNearbyVoiceChat": {
+            "type": "boolean",
+            "serializationType": "optional",
+            "optionalJsonSchema": {
+              "type": "boolean",
+              "serializationType": "boolean"
+            }
+          },
+          "hideLandscapeTerrain": {
             "type": "boolean",
             "serializationType": "optional",
             "optionalJsonSchema": {
@@ -7649,7 +7733,8 @@
               "fixedTime": 36000
             },
             "creator": "",
-            "disableNearbyVoiceChat": false
+            "disableNearbyVoiceChat": false,
+            "hideLandscapeTerrain": false
           }
         }
       }

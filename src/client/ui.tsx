@@ -27,6 +27,8 @@ import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
+import { cancelSicknessErrand } from './sicknessErrand'
+import { cancelPepitoChase, exitPepitoChaseResults, startRockCharge, releaseRockCharge } from './pepitoChase'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -42,6 +44,7 @@ import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, da
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible, getPress, triggerPress } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
 import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './ui/dialog'
+import { PepitoDebugPanel } from './ui/pepitoDebug'
 import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 
@@ -3010,6 +3013,137 @@ function FeedErrandOverlay() {
   )
 }
 
+// Sickness errand (sicknessErrand.ts) — same shape as FeedErrandOverlay, just
+// pointed at the cure on the potion table instead of the tree.
+function SicknessErrandOverlay() {
+  if (!clientState.sicknessErrand.active) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelSicknessErrand()} />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value="Follow the arrow to the cure!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Pepito chase minigame (pepitoChase.ts) — full-screen while active, mirroring
+// the feedGame/bathGame branches in Root. 'steal' just shows the Caretaker's
+// dialog (rendered here directly, since this branch replaces Root's default
+// content and DialogBox otherwise only renders there); 'circling' is the
+// charge/throw HUD, adapted from FetchOverlay's meter; 'hit' shows nothing
+// extra while the medicine falls; 'results' is the reward card.
+// ---------------------------------------------------------------------------
+function PepitoChaseResultsPanel() {
+  const cardW = S(420)
+  const cardH = S(230)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: C.scrim }}
+    >
+      <UiEntity
+        uiTransform={{ width: cardW, height: cardH, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: S(24), padding: { top: S(24), bottom: S(24), left: S(24), right: S(24) } }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value="Cured!" fontSize={S(34)} color={C.green} textAlign="middle-center" uiTransform={{ width: '100%', height: S(46) }} />
+        <Label
+          value={`${clientState.activePet?.name ?? 'Your pet'} is feeling better.`}
+          fontSize={S(20)}
+          color={C.text}
+          textAlign="middle-center"
+          textWrap="wrap"
+          uiTransform={{ width: '100%', height: S(50), margin: { top: S(6) } }}
+        />
+        <Label
+          value={`+${Cfg.SICKNESS_CURE_XP} XP  ·  +${Cfg.SICKNESS_CURE_COINS} coins`}
+          fontSize={S(18)}
+          color={C.gold}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', height: S(28), margin: { top: S(8) } }}
+        />
+        <TactileButton id="pepito_exit" label="Exit" onClick={() => exitPepitoChaseResults()} width={S(200)} height={S(58)} bg={C.green} margin={{ top: S(18) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function PepitoChaseOverlay() {
+  const st = clientState.pepitoChase
+  if (!st.active) return <UiEntity />
+  if (st.phase === 'results') return <PepitoChaseResultsPanel />
+  const isM = mobile()
+  const circling = st.phase === 'circling'
+  const pickup = st.phase === 'pickup'
+  const pct = Math.round(st.charge * 100)
+  const bw = S(300)
+  const bh = S(92)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <DialogBox />
+      <PepitoDebugPanel />
+      {(circling || pickup) && <BackButton disabled={st.busy || st.charging} onClick={() => cancelPepitoChase()} />}
+      {(circling || pickup) && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
+          uiBackground={{ color: C.panelBg }}
+        >
+          <Label
+            value={pickup ? 'Follow the arrow to the cure!' : 'Aim at Pepito and throw a rock!'}
+            fontSize={S(20)}
+            color={C.text}
+            textAlign="middle-center"
+            textWrap="nowrap"
+            uiTransform={{ width: '100%', height: S(30) }}
+          />
+        </UiEntity>
+      )}
+      {circling && st.charging && !isM && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: S(184), left: '50%' }, margin: { left: -S(150) }, width: S(300), height: S(22), borderRadius: S(11) }}
+          uiBackground={{ color: C.trackBg }}
+        >
+          <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(11) }} uiBackground={{ color: C.gold }} />
+        </UiEntity>
+      )}
+      {circling && st.charging && isM && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: S(160), right: S(40) }, width: S(14), height: S(90), borderRadius: S(7), pointerFilter: 'none' }}
+          uiBackground={{ color: { r: 0.5, g: 0.5, b: 0.5, a: 0.35 } }}
+        >
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: `${pct}%`, borderRadius: S(7) }}
+            uiBackground={{ color: { r: 0.75, g: 0.9, b: 0.35, a: 0.65 } }}
+          />
+        </UiEntity>
+      )}
+      {circling && !isM && (
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center' }}>
+          <UiEntity
+            uiTransform={{ width: bw, height: bh, alignItems: 'center', justifyContent: 'center', borderRadius: S(26), pointerFilter: st.busy ? 'none' : 'block' }}
+            uiBackground={{ color: st.busy ? C.cardAlt : st.charging ? C.gold : C.green }}
+            onMouseDown={() => !st.busy && startRockCharge()}
+            onMouseUp={() => releaseRockCharge()}
+            onMouseLeave={() => releaseRockCharge()}
+          >
+            <Label
+              value={st.busy ? 'Throwing…' : st.charging ? 'Release!' : 'Hold to Throw'}
+              fontSize={S(28)}
+              color={st.busy ? C.dim : C.outline}
+              textAlign="middle-center"
+              uiTransform={{ width: bw, height: bh }}
+            />
+          </UiEntity>
+        </UiEntity>
+      )}
+    </UiEntity>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Loading gate — invisible for the normal case (the server usually answers in
 // well under a second), but if it's genuinely taking a while, a small message
@@ -3070,6 +3204,10 @@ const Root = () => {
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <BathGameOverlay />
       </UiEntity>
+    ) : clientState.pepitoChase.active ? (
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        <PepitoChaseOverlay />
+      </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <TopBars />
@@ -3079,6 +3217,8 @@ const Root = () => {
         <CarryHatchButton />
         <BathButton />
         <FeedErrandOverlay />
+        <SicknessErrandOverlay />
+        <PepitoDebugPanel />
         {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
             on top of it instead of the nav icons poking through over them. Moot
             now that bigUiOpen() hides the nav while these are open, but keeps

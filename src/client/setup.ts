@@ -33,6 +33,10 @@ import { setupDebugGrow } from './debugGrow'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
+import { setupSicknessErrand } from './sicknessErrand'
+import { setupPepitoChase } from './pepitoChase'
+import { setupPotionTable } from './potionTable'
+import { setupPepitoDebug } from './pepitoDebug'
 import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
@@ -148,6 +152,14 @@ function registerHandlers(): void {
       clientState.lastTreatedAt = Date.now()
       return
     }
+    // Pet just got sick (server/state.ts's feedFromMinigame). The cinematic is
+    // started by the Feed round itself (fruitGame.ts applyResults) — this note
+    // only fires when the pet wasn't already sick server-side, so it can't be
+    // the trigger — so just swallow it instead of showing a plain toast.
+    if (data.kind === 'sickness') {
+      console.log('[Client] notify: sickness (server flagged the pet sick)')
+      return
+    }
     pushToast(data.message, data.kind)
   })
 
@@ -223,6 +235,10 @@ export function setupClient(): void {
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
+  setupSicknessErrand() // sickness errand: guide arrow to the Caretaker, hands off to the Pepito chase on arrival
+  setupPepitoChase() // Pepito chase minigame: steal cinematic, circling, charge/throw, cure
+  setupPotionTable() // composite potion table: remembers the potion's home + starts the cage closed
+  setupPepitoDebug() // DEBUG: draws Pepito's flight circle for the tuning panel (flip PEPITO_DEBUG off to ship)
   setupPetEmotes() // floating PNG emote showing the pet's current need/mood — supersedes the text speech bubble (speech.ts, unwired but kept in case it's needed again) and the 4-icon mood bar
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)
 
