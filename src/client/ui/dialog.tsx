@@ -92,6 +92,15 @@ export function openLegendaryCreatureDialog(): void {
   openDialog('Caretaker', LEGENDARY_CREATURE_DIALOG, 'Got it!')
 }
 
+export const SICKNESS_DIALOG: string[] = [
+  'Oh no — your pet ate a poisonous fruit and feels really bad.',
+  "Don't worry. I will prepare a cure; come see me again soon."
+]
+
+export function openSicknessDialog(onDone?: () => void): void {
+  openDialog('Caretaker', SICKNESS_DIALOG, 'Got it!', onDone)
+}
+
 export function DialogBox() {
   const d = clientState.dialog
   if (!d.open) return <UiEntity />

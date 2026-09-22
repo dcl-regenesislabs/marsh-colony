@@ -19,7 +19,7 @@ import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
-import { getLocalPet, getInactivePetEntity, petIsPresent, TAG_MIN, TAG_SIZE_MULT } from './pet'
+import { getLocalPet, getInactivePetEntity, petIsPresent, sadCinematicIsActive, TAG_MIN, TAG_SIZE_MULT } from './pet'
 import { petOverheadTuning } from './petOverheadCalibration'
 
 type EmoteId = 'food' | 'clean' | 'play' | 'sick' | 'happy' | 'sad' | 'angry' | 'heart' | 'music' | 'sleep1' | 'sleep2'
@@ -207,6 +207,9 @@ function cycledMoodEmote(st: EmoteState, face: EmoteId, lowNeeds: StatKey[], dt:
  * when that feature lands and this gets a real branch.
  */
 function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, isActive: boolean): EmoteId {
+  // The sickness introduction is visual-only for now, but it needs the sick
+  // bubble to stay visible while the Caretaker dialog is on screen.
+  if (isActive && sadCinematicIsActive()) return 'sick'
   if (pet.sleeping) return sleepingEmote(st, dt)
   if (isActive) {
     if (clientState.feedGame.active) return now < catchHappyUntil ? 'happy' : 'music'
@@ -227,7 +230,14 @@ function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, is
  *  pet's emote needs to stay visible for (to show the sleep-frame cycle),
  *  not hide during. */
 function activePetMomentIsTaken(): boolean {
-  return clientState.hatch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.petting.active || clientState.fetch.active || clientState.dialog.open
+  return (
+    clientState.hatch.active ||
+    clientState.carryEgg.active ||
+    clientState.carryPet.active ||
+    clientState.petting.active ||
+    clientState.fetch.active ||
+    (clientState.dialog.open && !sadCinematicIsActive())
+  )
 }
 
 function update(dt: number): void {

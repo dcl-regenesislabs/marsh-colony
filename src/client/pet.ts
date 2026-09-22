@@ -89,6 +89,7 @@ let interactClip: PetClip = 'idle'
 // back to idle underneath that card.
 let eatCinematicActive = false
 let eatPlaybackSpeed = 1
+let sadCinematicActive = false
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
@@ -112,6 +113,10 @@ const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-o
 // The petting camera tracks this raised focus point instead of the pet's feet,
 // keeping the happy reaction centered rather than looking down at the ground.
 const PETTING_CAMERA_LOOK_LIFT = 0.55
+// The Caretaker dialog covers the lower part of the screen. These offset the
+// post-Feed sick shot enough to keep the pet and its bubble above that panel.
+const SAD_CINEMATIC_CAMERA_BACKOFF = 0.55
+const SAD_CINEMATIC_LOOK_DOWN = 0.35
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -868,6 +873,56 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
   eatCinematicActive = true
   eatPlaybackSpeed = Math.max(0.1, Math.min(3, playbackSpeed))
   restartEatAnimation()
+}
+
+/** Park the active pet in a sad pose and return a close camera shot. This is
+ * used only by the post-Feed sickness introduction; cure gameplay comes later. */
+export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  // A 90 degree side shot keeps both the player and the tree out of the line
+  // of sight. A front/back composition puts one of them directly behind the
+  // pet on this Feed staging area.
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const stage = stageScaleFor(pet.size)
+  const distance = 3 + stage + SAD_CINEMATIC_CAMERA_BACKOFF
+  // Frame both the pet and the sick emote that petEmotes.ts raises above its
+  // tag during this cinematic. The dialog lives at the bottom of the screen,
+  // so centering the whole vertical pair keeps the bubble readable.
+  const tune = petOverheadTuning(pet.species, pet.size)
+  const sickBubbleY = petPos.y + TAG_MIN + TAG_SIZE_MULT * stage + tune.nameLift + 0.65
+  const lookHeight = (petPos.y + 0.35 + sickBubbleY) / 2
+  const camPos = Vector3.create(petPos.x + direction.x * distance, lookHeight + 0.3, petPos.z + direction.z * distance)
+  // Aim below the pair: it raises the pet/bubble in the frame, clear of the
+  // bottom-aligned Caretaker dialog, while retaining some ground context.
+  const look = Vector3.create(petPos.x, lookHeight - SAD_CINEMATIC_LOOK_DOWN, petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-negative'
+  interactTimer = 0
+  sadCinematicActive = true
+  return { camPos, look }
+}
+
+export function endSadCinematic(): void {
+  if (!sadCinematicActive) return
+  sadCinematicActive = false
+  if (mode === 'interact' && interactClip === 'gesture-negative') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+}
+
+/** True only while the post-Feed sickness scene owns the pet pose/head. */
+export function sadCinematicIsActive(): boolean {
+  return sadCinematicActive
 }
 
 // ---------------------------------------------------------------------------
@@ -1807,7 +1862,7 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
-      if (interactClip === 'eat' && eatCinematicActive) break
+      if ((interactClip === 'eat' && eatCinematicActive) || (interactClip === 'gesture-negative' && sadCinematicActive)) break
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {

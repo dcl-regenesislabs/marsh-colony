@@ -15,6 +15,7 @@ import { clientState, openDialog, pushToast } from '../state'
 import { debugForcePanel, debugSetUiState, type Panel } from '../ui'
 import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
+import { queueSicknessCinematic } from '../sicknessCinematic'
 import { C, S, TactileButton } from './theme'
 
 export const UI_DEBUG_MODE = false
@@ -326,6 +327,18 @@ const DEBUG_SCREENS: DebugScreen[] = [
     activate: () => {
       applyFixturePlayer(fakePlayer(), fakePet())
       openDialog('Caretaker', CARETAKER_TIPS, 'Got it!')
+    }
+  },
+  {
+    id: 'sicknessCinematic',
+    label: 'Sickness Cinematic (poisoned Feed)',
+    activate: () => {
+      // Uses the real cinematic path, just without requiring the player to
+      // complete a Feed round first. The module waits for pet.ts to render the
+      // fixture before taking the camera, so this also works right after reload.
+      applyFixturePlayer(fakePlayer(), fakePet())
+      clientState.screenFade.alpha = 0
+      queueSicknessCinematic()
     }
   },
   {
