@@ -996,11 +996,10 @@ function BreedNamePanel() {
           radius={S(18)}
           pulse
           onClick={() => {
-            // Nest flow: partner is already placed; run the egg cinematic which
-            // sends the breed. (Legacy menu path kept as a fallback if somehow
-            // reached without an active breed flow.)
+            // Nest flow: the partner is already placed; run the egg cinematic
+            // (which sends the breed). If the flow was cancelled (world BACK) while
+            // this modal was still open, just close — no stale actions.breed('').
             if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
-            else actions.breed(uiState.breedPartnerId, uiState.breedName, usingPotion)
             uiState.breedName = ''
             uiState.breedUsePotion = false
             ui.close()
@@ -3008,11 +3007,11 @@ function BathButton() {
 // PLACE PET on top, BREED on the bottom (same style as the bath button). Crop
 // each half and render it at its native aspect, like BathButton.
 const BREED_BTN_SHEET = 'assets/images/revamp/breed.png'
-const BREED_BTN_W = 1920
-const BREED_BTN_H = 1320
-const BREED_PLACE_UVS = sheetUvRect(0, 0, 1920, 660, BREED_BTN_W, BREED_BTN_H)
-const BREED_GO_UVS = sheetUvRect(0, 660, 1920, 1320, BREED_BTN_W, BREED_BTN_H)
-const BREED_BTN_ASPECT = 1920 / 660
+const BREED_BTN_W = 812
+const BREED_BTN_H = 666
+const BREED_PLACE_UVS = sheetUvRect(0, 0, BREED_BTN_W, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H) // top half
+const BREED_GO_UVS = sheetUvRect(0, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H, BREED_BTN_W, BREED_BTN_H) // bottom half
+const BREED_BTN_ASPECT = BREED_BTN_W / (BREED_BTN_H / 2)
 
 function BreedButtons() {
   const b = clientState.breed

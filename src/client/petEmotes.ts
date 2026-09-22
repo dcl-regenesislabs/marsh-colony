@@ -227,7 +227,7 @@ function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, is
  *  pet's emote needs to stay visible for (to show the sleep-frame cycle),
  *  not hide during. */
 function activePetMomentIsTaken(): boolean {
-  return clientState.hatch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.petting.active || clientState.fetch.active || clientState.dialog.open
+  return clientState.hatch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.petting.active || clientState.fetch.active || clientState.dialog.open
 }
 
 function update(dt: number): void {

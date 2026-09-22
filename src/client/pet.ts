@@ -31,7 +31,8 @@ import {
   InputModifier,
   AvatarAttach,
   AvatarAnchorPointType,
-  AudioSource
+  AudioSource,
+  AssetLoad
 } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
 import * as C from '../shared/config'
@@ -1312,6 +1313,16 @@ const BREED_FX_OFF: BreedFx = { active: false, orbFrame: 0, orbAlpha: 0, orbScal
 
 const BREED_SOUND = 'assets/sounds/breed.mp3' // "the magic happened" — fires at the burst as the egg appears
 
+// The cinematic sprite sheets are ~14.7 MB decoded — too heavy for the boot
+// preload for a one-off 4 s cinematic. Warm them when the breed errand starts
+// instead; there's a walk + place + partner-pick before the animation plays.
+let breedFxPreloaded = false
+function preloadBreedFx(): void {
+  if (breedFxPreloaded) return
+  breedFxPreloaded = true
+  AssetLoad.create(engine.addEntity(), { assets: ['assets/images/breedEffect/p1.png', 'assets/images/breedEffect/p2.png'] })
+}
+
 let breedParentA: PetData | null = null // parent A's identity, captured at breed start — activePet flips to the offspring mid-breed, so the held pet must render from this, not clientState.activePet
 let breedEgg: Entity | null = null
 let breedAnimT = 0
@@ -1383,6 +1394,7 @@ export function startBreedErrand(): void {
   }
   clientState.breed = { active: true, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
   breedParentA = a // remember who parent A is; activePet flips to the offspring mid-breed
+  preloadBreedFx() // warm the cinematic sprites during the walk to the nest
   attachPetToHands(a)
   actions.setCarried(true)
   playHoldPetEmote()
@@ -1617,9 +1629,11 @@ function startBreedCamera(): void {
     defaultTransition: { transitionMode: VirtualCamera.Transition.Time(BATH_CAM_TRANSITION_S) }
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
-  // Freeze the avatar exactly at that spot (camera is at its eyes, so it's behind
-  // the lens and out of frame), facing the nest.
-  void movePlayerTo({ newRelativePosition: stand, cameraTarget: focus })
+  // Freeze the avatar at that spot but on the GROUND (the camera height above it
+  // is the FPV eye level; parking the avatar itself at the raised camera Y would
+  // leave it floating ~1 m up when the camera cuts back). It's behind the lens
+  // and out of frame during the cinematic either way.
+  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x, C.PET_BASE_Y, stand.z), cameraTarget: focus })
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
 }
 
@@ -2457,6 +2471,12 @@ function updateInactivePets(dt: number): void {
     for (let index = 0; index < p.pets.length; index++) {
       const pet = p.pets[index]
       if (pet.id === shownId) continue
+      // During breeding, parent A is the frozen localPet held in the bowl — the
+      // server snapshot has already flipped `shownId` to the offspring hatchling,
+      // so without this the roamer loop builds a SECOND skinned entity for parent
+      // A at its slot. That duplicate then leaks when finishBreed retires the
+      // original (breaking the pool). breedParentA is cleared when breed ends.
+      if (clientState.breed.active && breedParentA && pet.id === breedParentA.id) continue
       wanted.add(pet.id)
       const home = slotHome(index) // this pet's fixed slot
 

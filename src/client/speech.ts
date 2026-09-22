@@ -455,6 +455,7 @@ function momentIsTaken(): boolean {
     clientState.hatch.active ||
     clientState.carryEgg.active ||
     clientState.carryPet.active ||
+    clientState.breed.active ||
     clientState.petting.active ||
     clientState.fetch.active ||
     clientState.feedGame.active ||
