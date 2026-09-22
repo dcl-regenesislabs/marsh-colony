@@ -30,7 +30,6 @@ import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupCaretakerPet } from './caretakerPet'
 import { setupDebugGrow } from './debugGrow'
-import { setupDebugCube } from './debugCube'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
@@ -210,7 +209,6 @@ export function setupClient(): void {
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
-  setupDebugCube() // DEBUG cube: move with 1/2/3/4/E/F, SPACE/click prints its offset from the nest
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()

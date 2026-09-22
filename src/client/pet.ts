@@ -724,6 +724,16 @@ function registerPetOpenClick(entity: Entity): void {
 }
 
 function ensureLocalPet(): void {
+  // During the breeding cinematic the localPet entity IS parent A, held in its
+  // bowl. But the server's activePet flips to the freshly-rolled offspring the
+  // instant breeding resolves (activePet = p.hatchling ?? …), which would re-skin
+  // parent A into the offspring right there on the machine — the "I saw the
+  // parent turn into the baby" bug. Freeze the entity on parent A until breeding
+  // ends; the offspring then takes over through the normal carry/hatch flow (and
+  // is hidden while carried, so no flash). Excludes 'toNest' (still just carrying
+  // parent A, no hatchling exists yet).
+  if (localPet && clientState.breed.active && clientState.breed.phase !== 'toNest') return
+
   const pet = clientState.activePet
   if (!pet) {
     // No active pet (lost your last one / state cleared). Retire the entity by
@@ -1270,12 +1280,13 @@ const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
 // Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
 // on the nest the whole time: the machine trembles, a violet magic orb (UI sprite)
 // swirls + swells with light-blink flashes, then BURSTS — and the egg pops in.
-const BREED_ANIM_S = 4.0 // total cinematic length
 const BREED_ORB_IN_S = 0.5 // orb fade-in + shake ramp-up
 const BREED_BURST_AT = 2.9 // climax: the big flash + burst sprite
 const BREED_BURST_DUR = 0.9 // burst sprite one-shot duration
 const BREED_EGG_POP_AT = 3.05 // egg starts scaling in (just as the burst blooms)
 const BREED_EGG_POP_DUR = 0.85 // egg grow-in duration
+const BREED_EGG_HOLD_S = 1.5 // linger on the fully-formed egg before cutting the camera (mobile needs time to actually see it spawn)
+const BREED_ANIM_S = BREED_EGG_POP_AT + BREED_EGG_POP_DUR + BREED_EGG_HOLD_S // total cinematic length
 const BREED_ORB_FPS = 12 // orb loop playback speed
 const BREED_SHAKE_AMP = 0.05 // metres, peak nest tremble (subtle so it doesn't read as camera shake)
 const BREED_RESULT_GRACE_S = 4.0 // after the cinematic, how long to wait for breedResult before bailing
@@ -1301,6 +1312,7 @@ const BREED_FX_OFF: BreedFx = { active: false, orbFrame: 0, orbAlpha: 0, orbScal
 
 const BREED_SOUND = 'assets/sounds/breed.mp3' // "the magic happened" — fires at the burst as the egg appears
 
+let breedParentA: PetData | null = null // parent A's identity, captured at breed start — activePet flips to the offspring mid-breed, so the held pet must render from this, not clientState.activePet
 let breedEgg: Entity | null = null
 let breedAnimT = 0
 let breedResultPending: { species: string; name: string } | null = null
@@ -1370,6 +1382,7 @@ export function startBreedErrand(): void {
     return
   }
   clientState.breed = { active: true, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+  breedParentA = a // remember who parent A is; activePet flips to the offspring mid-breed
   attachPetToHands(a)
   actions.setCarried(true)
   playHoldPetEmote()
@@ -1397,6 +1410,7 @@ export function cancelBreed(): void {
   breedAnimT = 0
   breedNestBase = null
   breedFx = BREED_FX_OFF
+  breedParentA = null
   mode = clientState.followEnabled ? 'follow' : 'wander' // parent A resumes; parent B wanders again
 }
 
@@ -1546,6 +1560,7 @@ function updateBreed(dt: number): void {
         breedNestBase = null
         breedFx = BREED_FX_OFF
         clientState.breed = { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+        breedParentA = null
         mode = clientState.followEnabled ? 'follow' : 'wander'
         pushToast('Breeding failed — try again.')
       }
@@ -1580,6 +1595,7 @@ function finishBreed(res: { species: string; name: string }): void {
   breedResultPending = null
   breedAnimT = 0
   clientState.breed = { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
+  breedParentA = null
   mode = clientState.followEnabled ? 'follow' : 'wander' // parent A resumes
   startCarryEgg(res.species, res.name, true) // hand the egg over — existing carry-home -> hatch flow
 }
@@ -1991,13 +2007,16 @@ function updateLocalPet(dt: number): void {
   // the centre) through the picker/breed steps + the egg cinematic — it must not
   // wander off. During 'toNest' it's still carried in-hand, so skip that phase.
   if (clientState.breed.active && clientState.breed.phase !== 'toNest') {
+    // Render from the CAPTURED parent A — clientState.activePet has already
+    // flipped to the offspring hatchling by now (ensureLocalPet is frozen so the
+    // model/skin stay parent A; use the same identity for yaw + tag).
+    const petP = breedParentA ?? clientState.activePet
     const spot = breedSpot(BREED_BOWL_A_OFF)
     const t = Transform.getMutable(localPet)
     t.parent = engine.RootEntity
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(petP?.species ?? ''))
     setClip(localPet, 'idle')
-    const petP = clientState.activePet
     if (localTag && petP) updateTag(localTag, spot, petP.species, petP.size, petP.name, petP)
     return
   }

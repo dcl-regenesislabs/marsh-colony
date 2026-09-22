@@ -3019,7 +3019,7 @@ function BreedButtons() {
   if (!b.active || b.phase === 'pickB' || b.phase === 'animating') return <UiEntity />
   const showPlace = b.phase === 'toNest' && b.atNest
   const showBreed = b.phase === 'ready'
-  const bh = S(96)
+  const bh = S(92) // match the bath/hatch button height
   const bw = Math.round(bh * BREED_BTN_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
