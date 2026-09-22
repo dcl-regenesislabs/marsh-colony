@@ -1328,8 +1328,8 @@ function applyResults(): void {
 
   const hungerStart = clientState.activePet?.hunger ?? 0
   const hungerTarget = Math.min(100, hungerStart + caught * Cfg.FEED_HUNGER_PER_FRUIT)
-  applyFeedMinigameLocal(caught) // optimistic local effect
-  actions.feedResult(caught) // tell the server (it corrects via snapshot)
+  applyFeedMinigameLocal(caught, caughtPoisonThisRound) // optimistic local effect
+  actions.feedResult(caught, caughtPoisonThisRound) // tell the server (it corrects via snapshot)
 
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (player && cinCam) {

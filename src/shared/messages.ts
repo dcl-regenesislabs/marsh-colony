@@ -12,8 +12,12 @@ export const Messages = {
   adopt: Schemas.Map({ species: Schemas.String, name: Schemas.String }),
   // Trigger a care action: feed | clean | sleep | play. onBed = slept on the Bed.
   careAction: Schemas.Map({ action: Schemas.String, onBed: Schemas.Boolean }),
-  // Feed tree minigame result: how many fruit were caught (sent once, at game end).
-  feedResult: Schemas.Map({ caught: Schemas.Int }),
+  // Feed tree minigame result: how many fruit were caught and whether the
+  // round caught poisonous fruit (sent once, at game end).
+  feedResult: Schemas.Map({ caught: Schemas.Int, poisoned: Schemas.Boolean }),
+  // Caretaker cure cinematic completed. The server re-validates that the pet
+  // is actually sick before applying its reward.
+  cureSickness: Schemas.Map({}),
   // Pet your own active pet (instant happiness).
   petSelf: Schemas.Map({}),
   // Pet/treat another player's pet.

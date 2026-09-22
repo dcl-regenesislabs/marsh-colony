@@ -34,6 +34,7 @@ import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
 import { setupSicknessCinematic } from './sicknessCinematic'
+import { setupSicknessErrand } from './sicknessErrand'
 import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
@@ -225,6 +226,7 @@ export function setupClient(): void {
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
   setupSicknessCinematic() // poisoned Feed round: sad pet + Caretaker introduction
+  setupSicknessErrand() // walk to the Caretaker, then play the medicine-table cure scene
   setupPetEmotes() // floating PNG emote showing the pet's current need/mood — supersedes the text speech bubble (speech.ts, unwired but kept in case it's needed again) and the 4-icon mood bar
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)
 

@@ -140,6 +140,7 @@ function newPet(species: string, name: string): PetData {
     sleeping: false,
     sleepOnBed: false,
     sleepLockUntil: 0,
+    sick: false,
     bornAt: t,
     lastUpdated: t
   }
@@ -602,8 +603,10 @@ export function careAction(p: PlayerData, action: CareAction, onBed: boolean): N
 
 /** Feed tree minigame result: hunger restored scales with fruit caught (client-
  *  submitted, so `caught` isn't trusted beyond this — but clamp(0,100) already
- *  ceilings any inflated value at the same cap a legitimate great run reaches). */
-export function feedFromMinigame(p: PlayerData, caught: number): Notify[] {
+ *  ceilings any inflated value at the same cap a legitimate great run reaches).
+ *  `poisoned` is reported alongside the result and persists the sickness here,
+ *  where the client will receive it back in its authoritative snapshot. */
+export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false): Notify[] {
   const notes: Notify[] = []
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
@@ -618,6 +621,33 @@ export function feedFromMinigame(p: PlayerData, caught: number): Notify[] {
     return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
   }
   applyCompletedCare(p, pet, { hunger: caught * C.FEED_HUNGER_PER_FRUIT }, 'feedCount', notes)
+  // Do not re-announce an existing sickness if another poisonous fruit is
+  // caught before the cure flow has been completed.
+  if (poisoned && !pet.sick) {
+    pet.sick = true
+    notes.push({ kind: 'sickness', message: `${pet.name} ate something bad and feels sick! Go see the Caretaker for medicine.` })
+  }
+  return notes
+}
+
+/** Complete the Caretaker medicine flow. This state change is deliberately
+ * server-side: clients may only request a cure after their local cinematic. */
+export function cureSickness(p: PlayerData): Notify[] {
+  const notes: Notify[] = []
+  const pet = activePet(p)
+  if (!pet) return [{ kind: 'error', message: 'No active pet' }]
+  tickPlayer(p)
+  const lockLeft = C.sleepLockRemaining(pet, now())
+  if (lockLeft > 0) {
+    return [{ kind: 'sleep', message: `${pet.name} is fast asleep — ${C.formatLockCountdown(lockLeft)} left.` }]
+  }
+  if (!pet.sick) return [{ kind: 'error', message: `${pet.name} is not sick.` }]
+  if (!cooldownOk(p.address, 'cure', C.SICKNESS_CURE_COOLDOWN_MS)) {
+    return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
+  }
+  pet.sick = false
+  applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS)
+  notes.push({ kind: 'success', message: `${pet.name} is cured!` })
   return notes
 }
 

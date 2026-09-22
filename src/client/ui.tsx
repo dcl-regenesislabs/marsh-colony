@@ -27,6 +27,7 @@ import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
+import { cancelSicknessErrand } from './sicknessErrand'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -399,13 +400,15 @@ function PetPanel() {
   // Energy gate: below PLAY_MIN_ENERGY the pet refuses to play until it sleeps.
   const tired = !canPlayNow()
   // Why the panel is locked, phrased as something the player can act on. The
-  // Feed errand is the only lock with its own on-screen exit (the BACK button
-  // over the world), so it gets named instead of the generic "busy".
+  // World errands have their own on-screen BACK button, so name the active one
+  // instead of leaving the player with a generic "busy" message.
   const busyMessage = () =>
     lockLeft > 0
       ? `${pet.name} is fast asleep — ${Cfg.formatLockCountdown(lockLeft)} left.`
       : clientState.feedTask.active
         ? 'Finish the tree errand or tap BACK first!'
+        : clientState.sicknessErrand.active
+          ? 'Go see the Caretaker or tap BACK first!'
         : 'Your pet is busy right now!'
   const guard = (fn: () => void) => () => {
     if (locked) {
@@ -1816,11 +1819,11 @@ function Toasts() {
 
   // Toasts only ever mount in Root's default branch (petting/hatch/feedGame/
   // bathGame each own the whole screen instead), where a BackButton shows up
-  // in exactly these three spots — FetchOverlay, BathButton (carry-to-bath),
-  // FeedErrandOverlay. When one's actually up, rest BELOW it so the two never
+  // in exactly these four spots — FetchOverlay, BathButton (carry-to-bath),
+  // FeedErrandOverlay, SicknessErrandOverlay. When one's actually up, rest BELOW it so the two never
   // overlap; otherwise sit AT the same height the button would be, instead of
   // leaving that vertical space empty.
-  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active
+  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active
 
   // Slide in from the LEFT edge + fade, resting anchored top-left just below where
   // the BACK button sits (top ~25% + its S(90) height) when one's showing, so it
@@ -3010,6 +3013,23 @@ function FeedErrandOverlay() {
   )
 }
 
+// Sickness errand — exactly the same escape hatch as the Feed walk, but the
+// destination is the Caretaker who starts the medicine scene on arrival.
+function SicknessErrandOverlay() {
+  if (!clientState.sicknessErrand.active) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelSicknessErrand()} />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value="Follow the arrow to the Caretaker!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Loading gate — invisible for the normal case (the server usually answers in
 // well under a second), but if it's genuinely taking a while, a small message
@@ -3079,6 +3099,7 @@ const Root = () => {
         <CarryHatchButton />
         <BathButton />
         <FeedErrandOverlay />
+        <SicknessErrandOverlay />
         {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
             on top of it instead of the nav icons poking through over them. Moot
             now that bigUiOpen() hides the nav while these are open, but keeps

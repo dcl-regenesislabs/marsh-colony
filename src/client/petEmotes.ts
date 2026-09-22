@@ -192,24 +192,26 @@ function cycledMoodEmote(st: EmoteState, face: EmoteId, lowNeeds: StatKey[], dt:
 
 /**
  * What a pet shows right now, highest priority first:
- *  1. sleeping — animated between the two sleep frames (checked first: energy
+ *  1. sick — fixed sick bubble until the Caretaker cure flow clears the
+ *            persisted status, whatever other needs are active
+ *  2. sleeping — animated between the two sleep frames (checked first: energy
  *               is expected to be near-bottom right when sleep starts, which
  *               would otherwise read as a needs-based icon every time)
- *  2. (active pet only) playing the fruit-catch minigame — music note, with a
+ *  3. (active pet only) playing the fruit-catch minigame — music note, with a
  *     brief happy flash on each catch (see updateCatchTrigger above)
- *  3. (active pet only) just got love (see updateHeartTriggers above) — heart
- *  4. needs-based face/icon: 0 low = happy, 1 low = that need's icon alone,
+ *  4. (active pet only) just got love (see updateHeartTriggers above) — heart
+ *  5. needs-based face/icon: 0 low = happy, 1 low = that need's icon alone,
  *     2+ low = the mood face (sad at 2, angry at 3+) cycling with each low
  *     need's icon in turn (see cycledMoodEmote above)
  *
- * "sick" has no priority step here — there's no sickness mechanic in the game
- * yet (see #148), so nothing should ever show it. EMOTE_SRC.sick is kept for
- * when that feature lands and this gets a real branch.
  */
 function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, isActive: boolean): EmoteId {
-  // The sickness introduction is visual-only for now, but it needs the sick
-  // bubble to stay visible while the Caretaker dialog is on screen.
+  // The cinematic needs the bubble before Feed's state is released; after that
+  // the persisted `pet.sick` status owns it until the cure.
   if (isActive && sadCinematicIsActive()) return 'sick'
+  // Do not spoil the post-Feed reveal if the server snapshot arrives before
+  // the player has pressed Exit on the results screen.
+  if (pet.sick && !(isActive && clientState.feedGame.active)) return 'sick'
   if (pet.sleeping) return sleepingEmote(st, dt)
   if (isActive) {
     if (clientState.feedGame.active) return now < catchHappyUntil ? 'happy' : 'music'

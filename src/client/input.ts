@@ -56,6 +56,8 @@ export function triggerCare(action: CareAction): void {
               // thing that's blocking, and how to get out of it.
               clientState.feedTask.active
               ? 'Finish the tree errand or tap BACK first!'
+              : clientState.sicknessErrand.active
+                ? 'Go see the Caretaker or tap BACK first!'
               : 'Your pet is busy right now!'
     )
     return

@@ -15,6 +15,9 @@ export type DialogState = {
   page: number
   finalLabel: string
   onDone: (() => void) | null
+  // Optional per-page hook. Used by the Caretaker cure to reveal the medicine
+  // exactly when the player advances the dialogue.
+  onPage: ((page: number) => void) | null
   // Show the "Adopt" button art on the final page (only the Caretaker intro,
   // whose CTA is adopting). Everything else uses the neutral "Next" art.
   adoptCta: boolean
@@ -77,6 +80,9 @@ export const clientState: {
   // player cancels it with BACK. `petId` is the pet Feed was pressed for, so the
   // errand can drop itself if the player switches pets mid-walk.
   feedTask: { active: boolean; petId: string }
+  // After a poisonous Feed round, this owns the guide arrow while the player
+  // walks to the Caretaker for the cure scene.
+  sicknessErrand: { active: boolean; petId: string }
   // Hatch gesture: rubbing/tapping the egg fills this progress, then it hatches.
   // Reuses the petting gesture input.
   hatch: { active: boolean; progress: number }
@@ -153,7 +159,7 @@ export const clientState: {
   reward: null,
   screenFade: { alpha: 0 },
   lastSpin: null,
-  dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, adoptCta: false },
+  dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
   introShown: false,
   petPanelOpen: false,
   viewingPetAddress: null,
@@ -164,6 +170,7 @@ export const clientState: {
   carryEgg: { active: false, species: '', name: '', atHome: false },
   carryPet: { active: false, atStation: false },
   feedTask: { active: false, petId: '' },
+  sicknessErrand: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
   feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
@@ -203,8 +210,15 @@ export function serverConnected(): boolean {
 }
 
 /** Open a multi-page NPC dialog. Advancing past the last page closes it. */
-export function openDialog(npcName: string, pages: string[], finalLabel = 'Got it!', onDone?: () => void, adoptCta = false): void {
-  clientState.dialog = { open: true, npcName, pages, page: 0, finalLabel, onDone: onDone ?? null, adoptCta }
+export function openDialog(
+  npcName: string,
+  pages: string[],
+  finalLabel = 'Got it!',
+  onDone?: () => void,
+  adoptCta = false,
+  onPage?: (page: number) => void
+): void {
+  clientState.dialog = { open: true, npcName, pages, page: 0, finalLabel, onDone: onDone ?? null, onPage: onPage ?? null, adoptCta }
 }
 
 export function advanceDialog(): void {
@@ -212,17 +226,20 @@ export function advanceDialog(): void {
   if (!d.open) return
   if (d.page < d.pages.length - 1) {
     d.page += 1
+    if (d.onPage) d.onPage(d.page)
     return
   }
   d.open = false
   const cb = d.onDone
   d.onDone = null
+  d.onPage = null
   if (cb) cb()
 }
 
 export function closeDialog(): void {
   clientState.dialog.open = false
   clientState.dialog.onDone = null
+  clientState.dialog.onPage = null
 }
 
 export function applySnapshot(snap: PlayerSnapshot): void {
@@ -277,6 +294,7 @@ function makeLocalPet(species: string, name: string): PetData {
     sleeping: false,
     sleepOnBed: false,
     sleepLockUntil: 0,
+    sick: false,
     bornAt: t,
     lastUpdated: t
   }
@@ -304,7 +322,8 @@ export function switchActivePet(petId: string): void {
     s.fetch.active ||
     s.feedGame.active ||
     s.bathGame.active ||
-    s.feedTask.active
+    s.feedTask.active ||
+    s.sicknessErrand.active
   ) {
     pushToast('Finish what your pet is doing first!')
     return
@@ -408,8 +427,11 @@ export const actions = {
   care(action: CareAction, onBed = false): void {
     room.send('careAction', { action, onBed })
   },
-  feedResult(caught: number): void {
-    room.send('feedResult', { caught })
+  feedResult(caught: number, poisoned: boolean): void {
+    room.send('feedResult', { caught, poisoned })
+  },
+  cureSickness(): void {
+    room.send('cureSickness', {})
   },
   keepPet(): void {
     room.send('keepPet', {})

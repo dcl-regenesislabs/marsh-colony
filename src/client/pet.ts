@@ -542,7 +542,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.feedGame.active || clientState.bathGame.active
 }
 
 /**
@@ -876,7 +876,8 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
 }
 
 /** Park the active pet in a sad pose and return a close camera shot. This is
- * used only by the post-Feed sickness introduction; cure gameplay comes later. */
+ * used only by the post-Feed sickness introduction; the Caretaker cure scene
+ * releases this hold before the player begins walking. */
 export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
   const pet = clientState.activePet
   if (!localPet || !pet) return null
@@ -1324,7 +1325,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -1344,6 +1345,7 @@ export function hideArrow(owner: ArrowOwner): void {
  *  trusting every exit path of every flow to call hideArrow(). */
 function arrowOwnerActive(): boolean {
   if (arrowOwner === 'feed') return clientState.feedTask.active
+  if (arrowOwner === 'sickness') return clientState.sicknessErrand.active
   if (arrowOwner === 'carryEgg') return clientState.carryEgg.active
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
   return false

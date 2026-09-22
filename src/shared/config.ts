@@ -431,6 +431,11 @@ export const FEED_HUNGER_PER_FRUIT = 6
 /** Three deliberately unhurried bites; the pet and fruit path slow together. */
 export const FEED_EAT_CINEMATIC_S = 6.6
 
+/** Caretaker's medicine is a completed care beat, not a repeatable HUD tap. */
+export const SICKNESS_CURE_XP = 14
+export const SICKNESS_CURE_COINS = 9
+export const SICKNESS_CURE_COOLDOWN_MS = 8000
+
 /** Server-side per-action cooldown (ms) to stop spam. */
 export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {
   feed: 8000,

@@ -1,12 +1,12 @@
 // First beat of the sickness flow: after a poisoned Feed round has fully
 // released its camera, frame the pet in a sad pose while the Caretaker explains
-// what happened. The cure errand and persisted `pet.sick` state deliberately
-// come in a later step.
+// what happened. Once it ends, the player walks to the Caretaker for the cure.
 
 import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import { clientState } from './state'
 import { endSadCinematic, startSadCinematic } from './pet'
+import { startSicknessErrand } from './sicknessErrand'
 import { openSicknessDialog } from './ui/dialog'
 
 const ENTER_TRANSITION_S = 0.35
@@ -65,14 +65,12 @@ function setAvatarHidden(hidden: boolean): void {
 function begin(underBlackout = false): boolean {
   const shot = startSadCinematic()
   if (!shot) {
-    // This is also reachable from the UI Debug Browser, which may have just
-    // swapped in its fixture pet. Keep the request queued until pet.ts has
-    // created that local render entity.
     return false
   }
 
   queued = false
   running = true
+  clientState.screenFade.alpha = 0
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   setAvatarHidden(true)
 
@@ -130,6 +128,10 @@ function finish(): void {
     if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
     running = false
     closing = false
+    // The local Feed result already marked this pet sick. Waiting until the
+    // camera has returned prevents the arrow/HUD from flashing over the pet
+    // close-up or the black hand-off.
+    if (clientState.activePet?.sick) startSicknessErrand()
     engine.removeSystem(tick)
   }
   engine.addSystem(tick)
