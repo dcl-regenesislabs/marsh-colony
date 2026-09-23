@@ -1002,9 +1002,12 @@ const EGG_MODEL = 'models/stylized_dino_egg.glb'
 // The Nest: a fixture inside the house. Eggs hatch ON it — startHatch() drops the
 // egg here (not in front of the player), so hatching always happens on the nest.
 const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
-const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
-const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
-const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
+// Position/rotation/scale match the "SpawNest.glb" placeholder placed in Creator Hub
+// (assets/scene/main.composite) to mark where this code-spawned nest should sit.
+const NEST_POS = Vector3.create(199.85373, C.PET_BASE_Y, 247.44547) // inside the house, just past HOME_BASE (204,240)
+const NEST_SCALE = 2.2903 // matches the SpawNest.glb placeholder's scale
+const NEST_EGG_LIFT = 0.5 * NEST_SCALE // how high the egg sits on the nest (tune to the model's bowl)
+const NEST_YAW = -90 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
 // Hatch reveal camera, relative to the egg on the nest. HATCH_CAM_YAW is the bearing
 // FROM the egg TO the camera (0 = +Z). Aligned with the nest's facing so the shot is
 // head-on with the nest+egg instead of viewing it from the side. Tune freely.
@@ -1015,7 +1018,11 @@ const HATCH_CAM_HEIGHT = 1.2 // metres above the egg
 /** Place the (static, non-blocking) hatching nest inside the house. Called once. */
 function placeNest(): void {
   const e = engine.addEntity()
-  Transform.create(e, { position: NEST_POS, rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0) })
+  Transform.create(e, {
+    position: NEST_POS,
+    rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0),
+    scale: Vector3.create(NEST_SCALE, NEST_SCALE, NEST_SCALE)
+  })
   // No collision — decorative hatch surface; must not block the player walking in.
   GltfContainer.create(e, { src: NEST_MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
 }
@@ -1024,8 +1031,11 @@ function placeNest(): void {
 const HATCH_ANIM_SECONDS = 2.0 // total Hatch clip length -> when the egg is removed
 const PET_EMERGE_AT = 1.4 // when the pet pops out (egg is open)
 const HATCH_POP_SECONDS = HATCH_ANIM_SECONDS - PET_EMERGE_AT // pop lasts until the egg is gone
-const HATCH_ADMIRE_SECONDS = 1.2 // camera lingers on the newborn before handing back control
-const HATCH_PET_LIFT = 0.35 // raise the newborn ~35 cm during the reveal (sits on the nest, not the floor)
+const HATCH_ADMIRE_SECONDS = 3.2 // camera lingers on the newborn before handing back control
+const HATCH_PET_LIFT = 1.1 // raise the newborn during the reveal (sits on the nest bowl, not the floor)
+// Nudge the newborn's reveal spot toward the camera/player bearing (HATCH_CAM_YAW),
+// so it doesn't sit deep inside the (now bigger) nest bowl.
+const HATCH_PET_FORWARD_OFFSET = 0.4
 let egg: Entity | null = null
 let hatchSpecies = ''
 let hatchName = ''
@@ -2169,7 +2179,14 @@ function updateLocalPet(dt: number): void {
     const f = hatchPopT > 0 ? Math.max(0.05, 1 - hatchPopT / HATCH_POP_SECONDS) : 1 // 0 -> 1
     const t = Transform.getMutable(localPet)
     t.scale = Vector3.scale(full, f)
-    if (hatchRevealPos) t.position = Vector3.create(hatchRevealPos.x, C.PET_BASE_Y + HATCH_PET_LIFT, hatchRevealPos.z)
+    if (hatchRevealPos) {
+      const camRad = (HATCH_CAM_YAW * Math.PI) / 180
+      t.position = Vector3.create(
+        hatchRevealPos.x + Math.sin(camRad) * HATCH_PET_FORWARD_OFFSET,
+        C.PET_BASE_Y + HATCH_PET_LIFT,
+        hatchRevealPos.z + Math.cos(camRad) * HATCH_PET_FORWARD_OFFSET
+      )
+    }
     // The hatch camera sits on this bearing, so explicitly face the newborn
     // toward it instead of retaining its orientation from before the reveal.
     t.rotation = Quaternion.fromEulerDegrees(0, HATCH_CAM_YAW + yawOffsetForSpecies(petH.species), 0)
