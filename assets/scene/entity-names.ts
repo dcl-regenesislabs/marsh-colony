@@ -9,7 +9,6 @@ export enum EntityNames {
   CareCentreDome01_glb = "CareCentreDome01.glb",
   CarecenterMud_glb = "CarecenterMud.glb",
   Caretaker_glb = "Caretaker.glb",
-  DualNest01_glb = "DualNest01.glb",
   DualNest01_glb_2 = "DualNest01.glb_2",
   Grassmound01_glb = "Grassmound01.glb",
   Grassmound01_glb_2 = "Grassmound01.glb_2",
