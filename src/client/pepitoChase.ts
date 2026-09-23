@@ -1,6 +1,6 @@
 // Second beat of the Pepito cure arc. After stealing the medicine, Pepito
-// circles nearby with it in tow. A direct hit drops the real Potion01 model,
-// then hands off to the short happy-pet recovery cinematic.
+// circles nearby with it in tow. A direct hit drops the real Potion01 model;
+// the player must then walk to the marked bottle to begin the recovery.
 
 import {
   Animator,
@@ -14,10 +14,12 @@ import {
   inputSystem,
   PointerEventType,
   PrimaryPointerInfo,
+  ParticleSystem,
+  PBParticleSystem_BlendMode,
   Transform,
   VisibilityComponent
 } from '@dcl/sdk/ecs'
-import { Quaternion, Vector3 } from '@dcl/sdk/math'
+import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { triggerSceneEmote } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { SIZE_BASE, clipForSpecies, modelForSpecies, scaleForSpecies, stageScaleFor, yawOffsetForSpecies } from '../shared/config'
@@ -75,11 +77,24 @@ const TARGET_ARROW_HEIGHT = 1.3
 const TARGET_ARROW_SCALE = 0.62
 const TARGET_ARROW_BOB_HEIGHT = 0.14
 const TARGET_ARROW_BOB_PERIOD_S = 1.1
+const POTION_TARGET_HEIGHT = 0.9
+const POTION_TARGET_SCALE = 0.48
+const POTION_TARGET_BOB_HEIGHT = 0.12
+const POTION_TARGET_BOB_PERIOD_S = 1.05
+const POTION_PICKUP_RADIUS = 1.8
 const POTION_DROP_GRAVITY = 14
-const POTION_GROUND_CLEARANCE = 0.12
+// Potion01's measured mesh base is only 0.0016m below its pivot. A tiny
+// clearance keeps it out of the ground without the visibly floating gap.
+const POTION_GROUND_CLEARANCE = 0.01
 const PEPITO_FLEE_DURATION_S = 1.4
 const PEPITO_FLEE_SPEED = 7
 const PEPITO_FLEE_RISE = 3
+const PEPITO_HIT_REACTION_S = 0.28
+const PEPITO_HIT_RECOIL_HEIGHT = 0.38
+const PEPITO_HIT_SCALE = 1.22
+// Calibrated in-scene: the Care Center's visual floor is Y=0 while the table
+// origin is Y=0.4, so the bottle needs this correction to land on the floor.
+const POTION_GROUND_ADJUSTMENT = -0.4
 
 type RockFlight = { entity: Entity; position: Vector3; velocity: Vector3; elapsed: number; spin: number }
 type PotionDrop = { position: Vector3; velocity: Vector3 }
@@ -88,6 +103,8 @@ type PepitoFlee = { origin: Vector3; direction: Vector3; elapsed: number }
 let pepito: Entity | null = null
 let pepitoPool: Entity | null = null
 let targetArrow: Entity | null = null
+let potionTargetArrow: Entity | null = null
+let hitFx: Entity | null = null
 let pepitoPosition = Vector3.Zero()
 let pepitoYaw = 0
 let orbitCenter = Vector3.Zero()
@@ -105,6 +122,9 @@ let recoveryStarted = false
 let celebrationStarted = false
 let awaitingCaretakerInstruction = false
 let caretakerDialogOpened = false
+let potionPickupReady = false
+let potionTargetClock = 0
+let pepitoHitReaction = 0
 
 function createPepito(at: Vector3, visible: boolean): Entity {
   const entity = engine.addEntity()
@@ -163,6 +183,90 @@ function placePepito(position: Vector3): void {
 
 function potionEntity(): Entity | null {
   return getPotionEntity()
+}
+
+function potionLandingY(): number {
+  return floorY + POTION_GROUND_CLEARANCE + POTION_GROUND_ADJUSTMENT
+}
+
+function playPepitoHitFeedback(): void {
+  if (!hitFx) {
+    hitFx = engine.addEntity()
+    Transform.createOrReplace(hitFx, { position: Vector3.Zero() })
+  }
+  Transform.getMutable(hitFx).position = Vector3.create(pepitoPosition.x, pepitoPosition.y + 0.7, pepitoPosition.z)
+  ParticleSystem.createOrReplace(hitFx, {
+    active: true,
+    loop: false,
+    rate: 0,
+    lifetime: 0.48,
+    maxParticles: 24,
+    initialSize: { start: 0.07, end: 0.16 },
+    sizeOverTime: { start: 1, end: 0 },
+    initialColor: { start: Color4.create(1, 0.86, 0.18, 1), end: Color4.create(1, 0.42, 0.06, 1) },
+    colorOverTime: { start: Color4.create(1, 0.86, 0.18, 1), end: Color4.create(1, 0.25, 0, 0) },
+    initialVelocitySpeed: { start: 1.8, end: 3.8 },
+    gravity: 0.35,
+    blendMode: PBParticleSystem_BlendMode.PSB_ADD,
+    shape: ParticleSystem.Shape.Sphere({ radius: 0.18 }),
+    bursts: { values: [{ time: 0, count: 24, cycles: 1, interval: 0.01, probability: 1 }] }
+  })
+  pepitoHitReaction = PEPITO_HIT_REACTION_S
+  pushToast('Direct hit!', 'success')
+}
+
+/** Yellow 3D marker above the bottle once Pepito has dropped it. It is a child
+ * of the potion so its hover stays correctly aligned with the actual pickup. */
+function showPotionTargetArrow(): void {
+  const potion = potionEntity()
+  if (!potion) return
+  if (!potionTargetArrow) {
+    potionTargetArrow = engine.addEntity()
+    Transform.createOrReplace(potionTargetArrow, {
+      parent: potion,
+      position: Vector3.create(0, POTION_TARGET_HEIGHT, 0),
+      scale: Vector3.scale(Vector3.One(), POTION_TARGET_SCALE)
+    })
+    GltfContainer.createOrReplace(potionTargetArrow, { src: TARGET_ARROW_MODEL, ...NO_COLLISION })
+    VisibilityComponent.createOrReplace(potionTargetArrow, { visible: false })
+  }
+  VisibilityComponent.createOrReplace(potionTargetArrow, { visible: true })
+}
+
+function hidePotionTargetArrow(): void {
+  if (potionTargetArrow) VisibilityComponent.createOrReplace(potionTargetArrow, { visible: false })
+}
+
+function preparePotionPickup(): void {
+  if (!recoveryStarted || celebrationStarted || potionDrop || pepitoFlee || potionPickupReady) return
+  if (!potionEntity()) {
+    startRecoveryWhenReady()
+    return
+  }
+  potionPickupReady = true
+  potionTargetClock = 0
+  showPotionTargetArrow()
+  pushToast('Go get the cure on the ground!', 'success')
+}
+
+function potionPickupTick(dt: number): void {
+  if (!potionPickupReady) return
+  const potion = potionEntity()
+  const player = Transform.getOrNull(engine.PlayerEntity)
+  if (!potion || !player) return
+
+  potionTargetClock += dt
+  if (potionTargetArrow && Transform.has(potionTargetArrow)) {
+    const bob = Math.sin((potionTargetClock / POTION_TARGET_BOB_PERIOD_S) * TAU) * POTION_TARGET_BOB_HEIGHT
+    Transform.getMutable(potionTargetArrow).position = Vector3.create(0, POTION_TARGET_HEIGHT + bob, 0)
+  }
+
+  const at = Transform.get(potion).position
+  if (Math.hypot(player.position.x - at.x, player.position.z - at.z) > POTION_PICKUP_RADIUS) return
+  potionPickupReady = false
+  hidePotionTargetArrow()
+  VisibilityComponent.createOrReplace(potion, { visible: false })
+  startRecoveryWhenReady()
 }
 
 function hidePepito(): void {
@@ -385,6 +489,7 @@ function beginPotionDrop(): void {
     return
   }
   const transform = Transform.get(potion)
+  playPepitoHitFeedback()
   potionDrop = {
     position: Vector3.create(transform.position.x, transform.position.y, transform.position.z),
     velocity: Vector3.create(0, -0.25, 0)
@@ -418,6 +523,15 @@ function beginPepitoFlee(): void {
 
 function pepitoFleeTick(dt: number): void {
   if (!pepitoFlee || !pepito) return
+  if (pepitoHitReaction > 0) {
+    pepitoHitReaction = Math.max(0, pepitoHitReaction - dt)
+    const t = 1 - pepitoHitReaction / PEPITO_HIT_REACTION_S
+    const recoil = Math.sin(t * Math.PI)
+    const transform = Transform.getMutable(pepito)
+    transform.position = Vector3.create(pepitoPosition.x, pepitoPosition.y + recoil * PEPITO_HIT_RECOIL_HEIGHT, pepitoPosition.z)
+    transform.scale = Vector3.scale(Vector3.One(), PEPITO_CHASE_SCALE * (1 + recoil * (PEPITO_HIT_SCALE - 1)))
+    return
+  }
   pepitoFlee.elapsed += dt
   const t = Math.min(1, pepitoFlee.elapsed / PEPITO_FLEE_DURATION_S)
   const distance = PEPITO_FLEE_SPEED * pepitoFlee.elapsed
@@ -436,18 +550,18 @@ function pepitoFleeTick(dt: number): void {
   if (t < 1) return
   pepitoFlee = null
   hidePepito()
-  startRecoveryWhenReady()
+  preparePotionPickup()
 }
 
 function finishPotionDrop(): void {
   potionDrop = null
-  startRecoveryWhenReady()
+  preparePotionPickup()
 }
 
 /** Wait for BOTH readable results of the hit: bottle on ground and Pepito
  * leaving frame. Starting the cure camera earlier would cut the escape off. */
 function startRecoveryWhenReady(): void {
-  if (!recoveryStarted || celebrationStarted || potionDrop || pepitoFlee) return
+  if (!recoveryStarted || celebrationStarted || potionDrop || pepitoFlee || potionPickupReady) return
   celebrationStarted = true
   const potion = potionEntity()
   if (potion) VisibilityComponent.createOrReplace(potion, { visible: false })
@@ -470,7 +584,7 @@ function potionDropTick(dt: number): void {
     potionDrop.velocity.z
   )
   potionDrop.position = Vector3.add(potionDrop.position, Vector3.scale(potionDrop.velocity, dt))
-  const groundY = floorY + POTION_GROUND_CLEARANCE
+  const groundY = potionLandingY()
   if (potionDrop.position.y <= groundY) {
     potionDrop.position = Vector3.create(potionDrop.position.x, groundY, potionDrop.position.z)
     Transform.getMutable(potion).position = potionDrop.position
@@ -501,6 +615,7 @@ function tickPepitoChase(dt: number): void {
   rockFlightTick(dt)
   pepitoFleeTick(dt)
   potionDropTick(dt)
+  potionPickupTick(dt)
   showThrowButton()
   if (inputSystem.isTriggered(ROCK_TOUCH_ACTION, PointerEventType.PET_DOWN)) startPepitoRockCharge()
   if (inputSystem.isTriggered(ROCK_TOUCH_ACTION, PointerEventType.PET_UP)) releasePepitoRockCharge()
@@ -524,6 +639,10 @@ function beginPepitoChase(): boolean {
   celebrationStarted = false
   potionDrop = null
   pepitoFlee = null
+  potionPickupReady = false
+  potionTargetClock = 0
+  pepitoHitReaction = 0
+  hidePotionTargetArrow()
   awaitingCaretakerInstruction = true
   caretakerDialogOpened = false
   resetStolenPotion()
@@ -549,6 +668,10 @@ export function stopPepitoChase(): void {
   }
   potionDrop = null
   pepitoFlee = null
+  potionPickupReady = false
+  potionTargetClock = 0
+  pepitoHitReaction = 0
+  hidePotionTargetArrow()
   hidePepito()
   throwWindup = false
   recoveryStarted = false

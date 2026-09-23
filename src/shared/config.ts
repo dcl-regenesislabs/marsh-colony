@@ -428,6 +428,11 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
+/** Poison fruit per Feed round. They are spaced by the minigame so the player
+ * has to keep dodging them instead of surviving one isolated bad catch. */
+export const FEED_POISON_FRUITS_MIN = 5
+export const FEED_POISON_FRUITS_MAX = 6
+
 /** Three deliberately unhurried bites; the pet and fruit path slow together. */
 export const FEED_EAT_CINEMATIC_S = 6.6
 

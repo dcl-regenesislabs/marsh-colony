@@ -1774,10 +1774,10 @@ function endBreedCamera(): void {
 const ARROW_MODEL = 'models/arrow_indicator.glb'
 const ARROW_LEAD = 1 // metres ahead of the player, toward the target
 const ARROW_GROUND_CLEARANCE = 0.05 // desired world height above the floor (~player's feet at rest)
-const ARROW_INDOOR_LIFT = 0.6 // extra world height indoors so the arrow clears raised floors / trim
+const ARROW_INDOOR_LIFT = 0.9 // extra world height indoors so the arrow clears raised floors / trim
 const ARROW_YAW_OFFSET = 180 // model points backwards; flip it to point at the target
 const ARROW_SCALE = 1 // tune the arrow size
-const CARE_CENTER_ARROW_RADIUS = 4.5 // arrow-only footprint around the Care Center interior
+const CARE_CENTER_ARROW_RADIUS = 7 // arrow-only footprint around the Care Center interior
 let arrow: Entity | null = null
 let arrowTarget: Vector3 | null = null
 

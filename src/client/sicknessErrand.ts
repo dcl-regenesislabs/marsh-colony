@@ -53,7 +53,6 @@ export function startSicknessErrand(): void {
   clientState.sicknessErrand = { active: true, petId: pet.id }
   clientState.petPanelOpen = false
   showArrowTo(Transform.get(caretaker).position, 'sickness')
-  pushToast('Follow the arrow to the Caretaker!')
 }
 
 export function cancelSicknessErrand(): void {

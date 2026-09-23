@@ -248,13 +248,9 @@ const DRAWER_HOLD_SCALE = 0.9
 
 // Poisonous fruit (issue #146): the Fruit01 model IS the poisonous fruit —
 // catching one plays the poison pop-up instead of the normal catch burst (see
-// POISON_POP_* / spawnPoisonPop below). A round only ever spawns 1 or 2 of
-// them (a flat per-fruit percentage put ~7 in every round, too many for a
-// "watch out for this one" fruit). Their spawn times are picked when catching
-// begins (see pickPoisonTimes) and spread across the round: each one is the
-// next fruit to respawn once its time has passed.
-const POISON_FRUITS_MIN = 1
-const POISON_FRUITS_MAX = 2
+// POISON_POP_* / spawnPoisonPop below). Their spawn times are picked when
+// catching begins (see pickPoisonTimes) and spread across the round: each one
+// is the next fruit to respawn once its time has passed.
 // Not before the first respawn wave (~4s in) and early enough that the fruit
 // still has time to hang + fall (up to ~4.3s) before the round ends.
 const POISON_EARLIEST_S = 4
@@ -842,7 +838,7 @@ function randomFruitModel(): string {
 let poisonDueTimes: number[] = []
 
 function pickPoisonTimes(): number[] {
-  const count = POISON_FRUITS_MIN + Math.floor(Math.random() * (POISON_FRUITS_MAX - POISON_FRUITS_MIN + 1))
+  const count = Cfg.FEED_POISON_FRUITS_MIN + Math.floor(Math.random() * (Cfg.FEED_POISON_FRUITS_MAX - Cfg.FEED_POISON_FRUITS_MIN + 1))
   const seg = (POISON_LATEST_S - POISON_EARLIEST_S) / count
   const times: number[] = []
   for (let i = 0; i < count; i++) times.push(POISON_EARLIEST_S + seg * i + Math.random() * seg)
