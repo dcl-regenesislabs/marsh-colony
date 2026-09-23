@@ -1862,14 +1862,13 @@ function JukeboxPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Toasts (screen center, slide in/out from the right)
+// Toasts (screen right, slide in/out from the right)
 // ---------------------------------------------------------------------------
 // Shows one toast at a time from clientState.toasts (a queue) — advances to the
 // next message once the current one expires, instead of stacking every pushed
-// toast on screen at once. It deploys from the right edge into the middle of the
-// screen (the one region with no HUD), holds, then retracts back to the right —
-// so it never covers the top coin bar, the right-rail buttons, or a modal. The
-// server `notify` kind picks the accent color (error/reward/progress/info).
+// toast on screen at once. It deploys from the right edge at the same vertical
+// position as the former left-side notification, holds, then retracts right.
+// The server `notify` kind picks the accent color (error/reward/progress/info).
 const TOAST_ENTER_MS = 240 // slide-in from the right
 const TOAST_HOLD_MS = 3100 // fully-shown dwell
 const TOAST_EXIT_MS = 300 // retract back to the right
@@ -1904,49 +1903,41 @@ function Toasts() {
   // leaving that vertical space empty.
   const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active || getEggPending()
 
-  // Slide in from the LEFT edge + fade, resting anchored top-left just below where
-  // the BACK button sits (top ~25% + its S(90) height) when one's showing, so it
-  // never covers it. Enter: from off-screen left -> rest. Exit: retract back off
-  // the left + fade.
+  // Slide in from the RIGHT edge + fade. Enter: from off-screen right -> rest.
+  // Exit: retract back off the right + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
   const w = S(500)
   const h = S(92)
-  // Left inset: flush on desktop, nudged in on mobile so the native explorer's
-  // corner HUD doesn't clip the left edge (the point of #213). NOT as far in as the
-  // BackButton's S(210) — that reads too central for a notification; this is a
-  // middle ground. Bump it up if it collides with the native corner UI on device,
-  // down if it still feels too central. offMax must clear the resting inset + width.
-  const leftInset = mobile() ? S(96) : S(16)
-  const offMax = leftInset + w + S(20) // far enough left to sit fully off-screen while hidden
+  const rightInset = mobile() ? S(24) : S(16)
+  const offMax = rightInset + w + S(20) // far enough right to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
     const e = easeOutCubic(elapsed / TOAST_ENTER_MS)
-    slide = -offMax * (1 - e)
+    slide = offMax * (1 - e)
     alpha = e
   } else if (remaining < TOAST_EXIT_MS) {
     const p = remaining / TOAST_EXIT_MS // 1 -> 0
-    slide = -offMax * (1 - p)
+    slide = offMax * (1 - p)
     alpha = p
   }
 
-  // NOT wrapped in ScreenInsetArea: it sits in the same (non-inset) coordinate
+  // NOT wrapped in ScreenInsetArea: it sits in the same non-inset coordinate
   // space as the BackButton and the rest of the HUD (getUiRendererConfig's
-  // screenInset:'none'), so the two use one frame of reference and the vertical
-  // gap to the BACK button is a constant S(104), not inset-dependent. The mobile
-  // leftInset + the 25% top already keep it clear of notches/rounded corners.
+  // screenInset:'none'), so its vertical spacing stays identical to the
+  // original left-side notification.
   const border = S(TOAST_BORDER)
   return (
-    // Top-left, below the BACK button, slide-in from the left. Same coordinate space
-    // as the BackButton / rest of the HUD (no ScreenInsetArea). The pill is drawn in
-    // code: a brown border (outer) wrapping a cream fill (inner), both fully rounded.
+    // Right side, slide-in from the right. Same vertical layout as the former
+    // left-side notification. The pill is drawn in code: a brown border (outer)
+    // wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: '25%', left: leftInset },
-          margin: { top: backButtonVisible ? S(96) : 0, left: slide }, // top: clear the BACK button (S(90) + gap) when it's showing, else sit at its height; left: slide-in offset
+          position: { top: '25%', right: rightInset },
+          margin: { top: backButtonVisible ? S(96) : 0, right: -slide },
           width: w,
           height: h,
           padding: border, // this padding IS the visible brown border
