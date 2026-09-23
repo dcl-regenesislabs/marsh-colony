@@ -15,10 +15,10 @@ const NO_COLLISION = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisi
 // Do not rush the one shot that establishes the medicine: even if the player
 // advances the Caretaker dialog immediately, the open cage and bottle get a
 // readable beat before Pepito arrives.
-const TABLE_REVEAL_HOLD_S = 2.2
-const APPROACH_S = 1.4
-const GRAB_HOLD_S = 0.42
-const ESCAPE_S = 1.55
+const TABLE_REVEAL_HOLD_S = 1.15
+const APPROACH_S = 0.82
+const GRAB_HOLD_S = 0.12
+const ESCAPE_S = 1.0
 
 type PepitoStealTuning = {
   cameraDistance: number
@@ -60,7 +60,21 @@ let shotTablePos: Vector3 | null = null
 let shotPotionPos: Vector3 | null = null
 let shotCameraSide: Vector3 | null = null
 
-const smooth = (t: number): number => t * t * (3 - 2 * t)
+/** A shallow flight bow reads as a deliberate dive/swoop instead of a model
+ * interpolating between two points in a straight line. */
+function curvedFlight(from: Vector3, to: Vector3, t: number, side: number, lift: number): Vector3 {
+  const position = Vector3.lerp(from, to, t)
+  const dx = to.x - from.x
+  const dz = to.z - from.z
+  const length = Math.sqrt(dx * dx + dz * dz)
+  const arc = Math.sin(Math.PI * t)
+  if (length <= 0.001) return Vector3.create(position.x, position.y + lift * arc, position.z)
+  return Vector3.create(
+    position.x - (dz / length) * side * arc,
+    position.y + lift * arc,
+    position.z + (dx / length) * side * arc
+  )
+}
 
 function tableEntity(): Entity | null {
   const entity = engine.getEntityOrNullByName(EntityNames.PotionTable_glb)
@@ -199,7 +213,7 @@ function tickSteal(dt: number): void {
   if (elapsed < TABLE_REVEAL_HOLD_S) return
   const flightElapsed = elapsed - TABLE_REVEAL_HOLD_S
   if (flightElapsed < APPROACH_S) {
-    placePepito(Vector3.lerp(entry, grab, smooth(flightElapsed / APPROACH_S)))
+    placePepito(curvedFlight(entry, grab, flightElapsed / APPROACH_S, -0.34, 0.26))
     return
   }
   if (flightElapsed < APPROACH_S + GRAB_HOLD_S) {
@@ -208,8 +222,7 @@ function tickSteal(dt: number): void {
     return
   }
   const u = Math.min(1, (flightElapsed - APPROACH_S - GRAB_HOLD_S) / ESCAPE_S)
-  const position = Vector3.lerp(grab, escape, smooth(u))
-  position.y += Math.sin(u * Math.PI) * 0.8
+  const position = curvedFlight(grab, escape, u, 0.48, 0.7)
   placePepito(position)
   if (u >= 1) endSteal()
 }
@@ -238,6 +251,7 @@ export function startPepitoSteal(onDone: () => void): boolean {
   yaw = (Math.atan2(grab.x - entry.x, grab.z - entry.z) * 180) / Math.PI
   pepito = spawnPepito(entry)
   Transform.getMutable(pepito).rotation = Quaternion.fromEulerDegrees(0, yaw + yawOffsetForSpecies(PEPITO_SPECIES), 0)
+  for (const state of Animator.getMutable(pepito).states) state.speed = 1.45
 
   if (!camera) camera = engine.addEntity()
   shotTablePos = Vector3.create(tablePos.x, tablePos.y, tablePos.z)

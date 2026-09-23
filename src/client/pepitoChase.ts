@@ -13,6 +13,7 @@ import {
   GltfContainer,
   inputSystem,
   PointerEventType,
+  PrimaryPointerInfo,
   Transform,
   VisibilityComponent
 } from '@dcl/sdk/ecs'
@@ -31,6 +32,7 @@ import { mobile } from './ui/theme'
 
 const PEPITO_SPECIES = 'pepito-original'
 const PEPITO_SCALE = stageScaleFor(SIZE_BASE) * scaleForSpecies(PEPITO_SPECIES)
+const PEPITO_CHASE_SCALE = PEPITO_SCALE * 1.45
 const NO_COLLISION = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE }
 
 // Restored from the V2 chase: this is a world-fixed orbit, not a circle around
@@ -55,7 +57,7 @@ const HAND_RIGHT_OFFSET = 0.26
 const HAND_HEIGHT = 1.68
 const ROCK_GRAVITY = 12
 const ROCK_MAX_LIFE_S = 1.8
-const ROCK_HIT_RADIUS = 1.3
+const ROCK_HIT_RADIUS = 1.05
 const ROCK_SPIN_SPEED = 540
 const THROW_EMOTE = 'models/throw_ball_emote.glb'
 const THROW_RELEASE_DELAY_S = 0.2
@@ -63,6 +65,13 @@ const THROW_ICON = 'assets/images/throwrockicon.png'
 const ROCK_CHARGE_TIME_S = 1.1
 const ROCK_MIN_FLIGHT_S = 0.35
 const ROCK_MAX_FLIGHT_S = 0.85
+const ROCK_MIN_DISTANCE = 8
+const ROCK_MAX_DISTANCE = 20
+const TARGET_ARROW_MODEL = 'assets/Models/target_arrow.glb'
+const TARGET_ARROW_HEIGHT = 1.3
+const TARGET_ARROW_SCALE = 0.62
+const TARGET_ARROW_BOB_HEIGHT = 0.14
+const TARGET_ARROW_BOB_PERIOD_S = 1.1
 const POTION_DROP_GRAVITY = 14
 const POTION_GROUND_CLEARANCE = 0.12
 const PEPITO_FLEE_DURATION_S = 1.4
@@ -75,6 +84,7 @@ type PepitoFlee = { origin: Vector3; direction: Vector3; elapsed: number }
 
 let pepito: Entity | null = null
 let pepitoPool: Entity | null = null
+let targetArrow: Entity | null = null
 let pepitoPosition = Vector3.Zero()
 let pepitoYaw = 0
 let orbitCenter = Vector3.Zero()
@@ -96,7 +106,7 @@ let caretakerDialogOpened = false
 
 function createPepito(at: Vector3, visible: boolean): Entity {
   const entity = engine.addEntity()
-  Transform.create(entity, { position: at, scale: Vector3.scale(Vector3.One(), PEPITO_SCALE) })
+  Transform.create(entity, { position: at, scale: Vector3.scale(Vector3.One(), PEPITO_CHASE_SCALE) })
   GltfContainer.createOrReplace(entity, { src: modelForSpecies(PEPITO_SPECIES), ...NO_COLLISION })
   Animator.createOrReplace(entity, {
     states: [{ clip: clipForSpecies(PEPITO_SPECIES, 'walk'), playing: true, loop: true, speed: 1, weight: 1 }]
@@ -109,7 +119,7 @@ function createPepito(at: Vector3, visible: boolean): Entity {
 
 function spawnPepito(at: Vector3): Entity {
   if (!pepitoPool) return createPepito(at, true)
-  Transform.createOrReplace(pepitoPool, { position: at, scale: Vector3.scale(Vector3.One(), PEPITO_SCALE) })
+  Transform.createOrReplace(pepitoPool, { position: at, scale: Vector3.scale(Vector3.One(), PEPITO_CHASE_SCALE) })
   VisibilityComponent.createOrReplace(pepitoPool, { visible: true })
   return pepitoPool
 }
@@ -156,7 +166,28 @@ function potionEntity(): Entity | null {
 
 function hidePepito(): void {
   if (pepito) VisibilityComponent.createOrReplace(pepito, { visible: false })
+  if (targetArrow) VisibilityComponent.createOrReplace(targetArrow, { visible: false })
   pepito = null
+}
+
+/** The marker is a child of Pepito, so it follows the orbit without an extra
+ * world-space sync. Only its local height changes for the hovering motion. */
+function syncTargetArrow(): void {
+  const visible = !!pepito && clientState.pepitoChase.active && !awaitingCaretakerInstruction && !recoveryStarted
+  if (visible && !targetArrow && pepito) {
+    targetArrow = engine.addEntity()
+    Transform.createOrReplace(targetArrow, {
+      parent: pepito,
+      position: Vector3.create(0, TARGET_ARROW_HEIGHT, 0),
+      scale: Vector3.scale(Vector3.One(), TARGET_ARROW_SCALE)
+    })
+    GltfContainer.createOrReplace(targetArrow, { src: TARGET_ARROW_MODEL, ...NO_COLLISION })
+  }
+  if (!targetArrow) return
+  VisibilityComponent.createOrReplace(targetArrow, { visible })
+  if (!visible) return
+  const bob = Math.sin((orbitClock / TARGET_ARROW_BOB_PERIOD_S) * TAU) * TARGET_ARROW_BOB_HEIGHT
+  Transform.getMutable(targetArrow).position = Vector3.create(0, TARGET_ARROW_HEIGHT + bob, 0)
 }
 
 function clearHandRock(): void {
@@ -205,6 +236,14 @@ function hideThrowButton(): void {
   touchButtonShown = false
 }
 
+function aimDirection(playerRotation: Quaternion): Vector3 {
+  const ray = PrimaryPointerInfo.getOrNull(engine.RootEntity)?.worldRayDirection
+  if (ray && Vector3.length(ray) > 0.001) return Vector3.normalize(ray)
+  const camera = Transform.getOrNull(engine.CameraEntity)
+  if (camera) return Vector3.normalize(Vector3.rotate(Vector3.create(0, 0, 1), camera.rotation))
+  return flatForward(playerRotation)
+}
+
 function launchRock(power: number): void {
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (!player || !pepito) {
@@ -219,10 +258,12 @@ function launchRock(power: number): void {
     player.position.y + HAND_HEIGHT,
     player.position.z + forward.z * HAND_FORWARD_OFFSET + right.z * HAND_RIGHT_OFFSET
   )
-  // Predict Pepito's orbit by the charged flight time, so every charge level
-  // still lands on the moving target.
+  // No auto-aim: the rock follows the camera/crosshair ray. Charge controls
+  // how far and how quickly it travels, so leading Pepito is part of the hit.
   const flightTime = ROCK_MAX_FLIGHT_S + (ROCK_MIN_FLIGHT_S - ROCK_MAX_FLIGHT_S) * power
-  const target = orbitPosition(orbitClock + flightTime)
+  const direction = aimDirection(player.rotation)
+  const distance = ROCK_MIN_DISTANCE + (ROCK_MAX_DISTANCE - ROCK_MIN_DISTANCE) * power
+  const target = Vector3.add(hand, Vector3.scale(direction, distance))
   const flatVelocity = Vector3.scale(Vector3.subtract(target, hand), 1 / flightTime)
   const velocity = Vector3.create(flatVelocity.x, flatVelocity.y + 0.5 * ROCK_GRAVITY * flightTime, flatVelocity.z)
   const entity = engine.addEntity()
@@ -281,8 +322,18 @@ function rockChargeTick(dt: number): void {
   chase.charge = Math.min(1, chase.charge + dt / ROCK_CHARGE_TIME_S)
 }
 
+function pointToSegmentDistance(point: Vector3, from: Vector3, to: Vector3): number {
+  const segment = Vector3.subtract(to, from)
+  const lengthSquared = Vector3.dot(segment, segment)
+  if (lengthSquared <= 0.000001) return Vector3.distance(point, from)
+  const projection = Vector3.dot(Vector3.subtract(point, from), segment) / lengthSquared
+  const t = Math.max(0, Math.min(1, projection))
+  return Vector3.distance(point, Vector3.add(from, Vector3.scale(segment, t)))
+}
+
 function rockFlightTick(dt: number): void {
   if (!rock) return
+  const previousPosition = rock.position
   rock.elapsed += dt
   rock.spin += ROCK_SPIN_SPEED * dt
   rock.velocity = Vector3.create(rock.velocity.x, rock.velocity.y - ROCK_GRAVITY * dt, rock.velocity.z)
@@ -291,7 +342,8 @@ function rockFlightTick(dt: number): void {
   transform.position = rock.position
   transform.rotation = Quaternion.fromEulerDegrees(rock.spin, rock.spin * 0.6, 0)
 
-  const hit = pepito && Vector3.distance(rock.position, Vector3.create(pepitoPosition.x, pepitoPosition.y + 0.5, pepitoPosition.z)) <= ROCK_HIT_RADIUS
+  const target = Vector3.create(pepitoPosition.x, pepitoPosition.y + 0.5, pepitoPosition.z)
+  const hit = pepito && pointToSegmentDistance(target, previousPosition, rock.position) <= ROCK_HIT_RADIUS
   if (!hit && rock.elapsed < ROCK_MAX_LIFE_S && rock.position.y > floorY) return
 
   engine.removeEntity(rock.entity)
@@ -317,6 +369,7 @@ function beginPotionDrop(): void {
   throwWindup = false
   clientState.pepitoChase.charging = false
   clientState.pepitoChase.charge = 0
+  if (targetArrow) VisibilityComponent.createOrReplace(targetArrow, { visible: false })
   clearHandRock()
   hideThrowButton()
   VisibilityComponent.createOrReplace(potion, { visible: true })
@@ -354,7 +407,7 @@ function pepitoFleeTick(dt: number): void {
   const transform = Transform.getMutable(pepito)
   transform.position = position
   transform.rotation = Quaternion.fromEulerDegrees(0, pepitoYaw + yawOffsetForSpecies(PEPITO_SPECIES), 0)
-  transform.scale = Vector3.scale(Vector3.One(), PEPITO_SCALE * (1 - t))
+  transform.scale = Vector3.scale(Vector3.One(), PEPITO_CHASE_SCALE * (1 - t))
   if (t < 1) return
   pepitoFlee = null
   hidePepito()
@@ -418,6 +471,7 @@ function tickPepitoChase(dt: number): void {
     orbitClock += dt
     placePepito(orbitPosition(orbitClock))
   }
+  syncTargetArrow()
   syncHandRock()
   rockFlightTick(dt)
   pepitoFleeTick(dt)
