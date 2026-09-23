@@ -14,12 +14,14 @@ export function applyDefaultTouchControls(): void {
   TouchScreenControls.hide(UNUSED_SCENE_TOUCH_BUTTONS)
   TouchScreenControls.showJoystick()
   TouchScreenControls.showCrosshair()
+  petTouchControlsVisible = false
 }
 
 export function applyFruitGameTouchControls(): void {
   TouchScreenControls.hideAll()
   TouchScreenControls.hideJoystick()
   TouchScreenControls.hideCrosshair()
+  petTouchControlsVisible = false
 }
 
 // The Fetch minigame's mobile Throw button: IA_PRIMARY (E on desktop, one of
@@ -29,6 +31,15 @@ export function applyFruitGameTouchControls(): void {
 // fetchTouchInputSystem). The joystick/crosshair are left alone — the player
 // can still walk/aim around while charging.
 export const FETCH_TOUCH_ACTION = InputAction.IA_PRIMARY
+export const PET_FOLLOW_TOUCH_ACTION = InputAction.IA_ACTION_3
+export const PET_ACTIONS_TOUCH_ACTION = InputAction.IA_ACTION_4
+
+const WHISTLE_ICON = 'assets/images/whistle_icon.png'
+const STOP_ICON = 'assets/images/stop_icon.png'
+
+// React-ECS renders each frame, so cache the last native-button configuration.
+let petTouchControlsVisible = false
+let petTouchControlsKey = ''
 
 /** Merges one custom button's icon/visibility into whatever TouchScreenControls
  *  config is already active. createOrReplace() on this component replaces the
@@ -58,4 +69,29 @@ export function showFetchTouchButton(iconSrc: string): void {
 /** Hide the Fetch Throw button again (back to this scene's normal default). */
 export function hideFetchTouchButton(): void {
   setTouchButtonIcon(FETCH_TOUCH_ACTION, null)
+}
+
+/** Whether the companion controls are installed in the native mobile HUD. */
+export function petTouchControlsAreVisible(): boolean {
+  return petTouchControlsVisible
+}
+
+/** Show the tap controls for follow/stay and the active pet's actions. */
+export function showPetTouchControls(following: boolean, petIcon: string): void {
+  const key = `${following ? 'follow' : 'stay'}|${petIcon}`
+  if (petTouchControlsVisible && petTouchControlsKey === key) return
+
+  setTouchButtonIcon(PET_FOLLOW_TOUCH_ACTION, following ? STOP_ICON : WHISTLE_ICON)
+  setTouchButtonIcon(PET_ACTIONS_TOUCH_ACTION, petIcon)
+  petTouchControlsVisible = true
+  petTouchControlsKey = key
+}
+
+/** Hide companion controls without affecting joystick, crosshair or Fetch. */
+export function hidePetTouchControls(): void {
+  if (!petTouchControlsVisible) return
+  setTouchButtonIcon(PET_FOLLOW_TOUCH_ACTION, null)
+  setTouchButtonIcon(PET_ACTIONS_TOUCH_ACTION, null)
+  petTouchControlsVisible = false
+  petTouchControlsKey = ''
 }

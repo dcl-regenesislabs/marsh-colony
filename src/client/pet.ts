@@ -23,6 +23,7 @@ import {
   pointerEventsSystem,
   inputSystem,
   InputAction,
+  PointerEventType,
   PlayerIdentityData,
   PrimaryPointerInfo,
   UiCanvasInformation,
@@ -59,6 +60,7 @@ import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import { petOverheadTuning } from './petOverheadCalibration'
 import { isInsidePrivateAvatarArea } from './privacyAreas'
+import { hidePetTouchControls, PET_ACTIONS_TOUCH_ACTION, PET_FOLLOW_TOUCH_ACTION, petTouchControlsAreVisible } from './touchControls'
 
 type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 
@@ -1997,6 +1999,36 @@ export function setFollow(enabled: boolean): void {
   }
 }
 
+// Full-screen gameplay paths bypass ui.tsx's normal HUD branch, so ensure the
+// persistent native controls disappear as soon as one starts.
+function suppressPetTouchControlsDuringExclusiveActivity(): void {
+  if (
+    clientState.petting.active ||
+    clientState.fetch.active ||
+    clientState.hatch.active ||
+    clientState.feedGame.active ||
+    clientState.bathGame.active ||
+    clientState.carryEgg.active ||
+    clientState.carryPet.active ||
+    clientState.breed.active
+  ) {
+    hidePetTouchControls()
+  }
+}
+
+// Unlike Fetch's separate hold/release button, both companion controls are
+// instant taps: toggle Follow/Stay and open the active pet's existing panel.
+function petTouchControlsInputSystem(): void {
+  if (!petTouchControlsAreVisible()) return
+  if (inputSystem.isTriggered(PET_FOLLOW_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    setFollow(!clientState.followEnabled)
+  }
+  if (inputSystem.isTriggered(PET_ACTIONS_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    if (!clientState.activePet || hasPendingHatchling()) return
+    clientState.petPanelOpen = true
+  }
+}
+
 function playerPos(): Vector3 {
   if (!Transform.has(engine.PlayerEntity)) return Vector3.create(199.2, 0, 231.8)
   return Transform.get(engine.PlayerEntity).position
@@ -2688,6 +2720,8 @@ function updateSleepBedScale(): void {
 export function setupPetSystems(): void {
   placeNest() // the in-house hatching nest (eggs hatch on top of it)
   engine.addSystem((dt: number) => {
+    suppressPetTouchControlsDuringExclusiveActivity()
+    petTouchControlsInputSystem()
     updateGetEgg()
     updateCarryEgg()
     updateBreed(dt)

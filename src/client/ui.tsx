@@ -2,7 +2,7 @@
 //  - TOP: player profile bar (Caretaker level + XP) -> taps to Goals
 //  - TOP (when a pet is selected): pet stat bars + care actions
 //  - BOTTOM: 3 big nav buttons (Pets / Inventory / Goals)
-//  - SIDES: Spin + Shop (right), Whistle (left)
+//  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
 import ReactEcs, { ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
@@ -11,7 +11,6 @@ import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
-  setFollow,
   startPetting,
   cancelPetting,
   petTap,
@@ -33,6 +32,7 @@ import {
   BREED_ORB_FRAMES,
   BREED_BURST_FRAMES
 } from './pet'
+import { hidePetTouchControls, showPetTouchControls } from './touchControls'
 import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
@@ -728,11 +728,27 @@ function BottomNav() {
 }
 
 // ---------------------------------------------------------------------------
-// Side buttons: Spin + Shop (right), Whistle (left)
+// Native mobile companion controls: Whistle/Stay + active pet actions.
 // ---------------------------------------------------------------------------
-// Spin and Stay/Whistle are suspended until they get revamped — the logic
-// (ui.openSpin(), setFollow()) stays wired, just not reachable from the HUD.
+// Each control maps to the existing follow/stay and pet-panel behavior.
 function SideButtons() {
+  const pet = clientState.activePet
+  // Keep native controls out of the way of panels and exclusive gameplay. The
+  // pet system has an additional safety hide for full-screen Root branches.
+  const blocked =
+    !pet ||
+    bigUiOpen() ||
+    hasPendingHatchling() ||
+    clientState.fetch.active ||
+    clientState.carryEgg.active ||
+    clientState.carryPet.active ||
+    clientState.breed.active ||
+    clientState.hatch.active ||
+    clientState.feedGame.active ||
+    clientState.bathGame.active
+  const icon = pet ? Cfg.speciesControlIcon(pet.species) : undefined
+  if (blocked || !icon) hidePetTouchControls()
+  else showPetTouchControls(clientState.followEnabled, icon)
   return <UiEntity />
 }
 

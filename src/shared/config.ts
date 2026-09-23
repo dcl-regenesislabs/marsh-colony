@@ -322,6 +322,19 @@ export function speciesImage(species: string): string | undefined {
   return SPECIES_IMAGE[species]
 }
 
+// Compact, monochrome icons for native mobile controls. Cross-bred pets use
+// their head family: sprout_pepito therefore renders the Sprout icon.
+const FAMILY_CONTROL_ICON: Record<Family, string> = {
+  sprout: 'assets/images/pets/sprout_mono.png',
+  pepito: 'assets/images/pets/pepito_mono.png',
+  amebita: 'assets/images/pets/amebita_mono.png',
+  fluflito: 'assets/images/pets/fluflito_mono.png'
+}
+
+export function speciesControlIcon(species: string): string | undefined {
+  return FAMILY_CONTROL_ICON[speciesParts(species).head]
+}
+
 // ---------------------------------------------------------------------------
 // NOTE: scene object positions (PetFeeder, PetPool, PetBed, Dome01/home,
 // Caretaker, Shop) are NOT hardcoded here anymore — they used to be, and
