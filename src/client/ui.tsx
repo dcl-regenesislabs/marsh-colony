@@ -676,6 +676,12 @@ const BATH_BUTTON_ASPECT = 812 / 323
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
+// Mobile-only: the 3 nav squares (Pets / Inventory / Goals) live in a collapsible
+// right-edge drawer instead of a fixed bottom bar, so they don't eat screen.
+let mobileNavOpen = false
+let mobileNavIntroShown = false // first time the drawer appears we open it, then auto-tuck it into the arrow so the player learns where it is
+let mobileNavAutoCollapseAt = 0
+
 function BottomNav() {
   const p = clientState.player
   // Hidden while any big panel/dialog is open (bigUiOpen) — it sits where these
@@ -718,8 +724,50 @@ function BottomNav() {
       </UiEntity>
     )
   }
+  // MOBILE: a collapsible drawer on the right edge — only the arrow shows when
+  // closed (frees the screen), the 3 squares slide out to its left when tapped.
+  if (mobile()) {
+    // First appearance (right after the first hatch): open the drawer so the
+    // player sees the 3 buttons, then auto-collapse it into the arrow after a beat.
+    if (!mobileNavIntroShown) {
+      mobileNavIntroShown = true
+      mobileNavOpen = true
+      mobileNavAutoCollapseAt = Date.now() + 2500
+    } else if (mobileNavAutoCollapseAt > 0 && Date.now() >= mobileNavAutoCollapseAt) {
+      mobileNavAutoCollapseAt = 0
+      mobileNavOpen = false
+    }
+    const pick = (open: () => void) => () => {
+      mobileNavOpen = false // collapse once a panel is chosen
+      mobileNavAutoCollapseAt = 0
+      open()
+    }
+    return (
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { right: S(6), top: '40%' }, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
+        {mobileNavOpen && (
+          <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { right: S(6) } }}>
+            {nav('nav_pets', NAV_PAW_UVS, 'roster', pick(() => ui.openRoster()))}
+            {nav('nav_inv', NAV_INV_UVS, 'inventory', pick(() => ui.openInventory()))}
+            {nav('nav_goals', NAV_GOALS_UVS, 'goals', pick(() => ui.openGoals()))}
+          </UiEntity>
+        )}
+        <UiEntity
+          uiTransform={{ width: S(58), height: S(86), alignItems: 'center', justifyContent: 'center', borderRadius: S(16), pointerFilter: 'block' }}
+          uiBackground={{ color: LOC.blue }}
+          onMouseDown={() => {
+            mobileNavOpen = !mobileNavOpen
+            mobileNavAutoCollapseAt = 0 // user took over — stop the intro auto-tuck
+          }}
+        >
+          <Label value={mobileNavOpen ? '›' : '‹'} fontSize={S(44)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+        </UiEntity>
+      </UiEntity>
+    )
+  }
+
+  // DESKTOP: the classic centered bottom bar.
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: mobile() ? S(70) : S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
       {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster())}
       {nav('nav_inv', NAV_INV_UVS, 'inventory', () => ui.openInventory())}
       {nav('nav_goals', NAV_GOALS_UVS, 'goals', () => ui.openGoals())}
