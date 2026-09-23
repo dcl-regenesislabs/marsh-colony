@@ -67,6 +67,8 @@ const ROCK_MIN_FLIGHT_S = 0.35
 const ROCK_MAX_FLIGHT_S = 0.85
 const ROCK_MIN_DISTANCE = 8
 const ROCK_MAX_DISTANCE = 20
+const LOCK_ACQUIRE_DOT = Math.cos((13 * Math.PI) / 180)
+const LOCK_RELEASE_DOT = Math.cos((21 * Math.PI) / 180)
 const TARGET_ARROW_MODEL = 'assets/Models/target_arrow.glb'
 const TARGET_ARROW_HEIGHT = 1.3
 const TARGET_ARROW_SCALE = 0.62
@@ -100,7 +102,6 @@ let handRock: Entity | null = null
 let touchButtonShown = false
 let recoveryStarted = false
 let celebrationStarted = false
-let previewRun = false
 let awaitingCaretakerInstruction = false
 let caretakerDialogOpened = false
 
@@ -187,7 +188,10 @@ function syncTargetArrow(): void {
   VisibilityComponent.createOrReplace(targetArrow, { visible })
   if (!visible) return
   const bob = Math.sin((orbitClock / TARGET_ARROW_BOB_PERIOD_S) * TAU) * TARGET_ARROW_BOB_HEIGHT
-  Transform.getMutable(targetArrow).position = Vector3.create(0, TARGET_ARROW_HEIGHT + bob, 0)
+  const pulse = clientState.pepitoChase.targetLocked ? 1.12 + Math.sin(orbitClock * TAU * 2.8) * 0.08 : 1
+  const transform = Transform.getMutable(targetArrow)
+  transform.position = Vector3.create(0, TARGET_ARROW_HEIGHT + bob, 0)
+  transform.scale = Vector3.scale(Vector3.One(), TARGET_ARROW_SCALE * pulse)
 }
 
 function clearHandRock(): void {
@@ -244,7 +248,19 @@ function aimDirection(playerRotation: Quaternion): Vector3 {
   return flatForward(playerRotation)
 }
 
-function launchRock(power: number): void {
+function softLockTarget(): boolean {
+  if (!pepito) return false
+  const player = Transform.getOrNull(engine.PlayerEntity)
+  if (!player) return false
+  const origin = Transform.getOrNull(engine.CameraEntity)?.position ?? player.position
+  const target = Vector3.create(pepitoPosition.x, pepitoPosition.y + 0.5, pepitoPosition.z)
+  const toTarget = Vector3.subtract(target, origin)
+  if (Vector3.length(toTarget) <= 0.001) return false
+  const dot = Vector3.dot(aimDirection(player.rotation), Vector3.normalize(toTarget))
+  return dot >= (clientState.pepitoChase.targetLocked ? LOCK_RELEASE_DOT : LOCK_ACQUIRE_DOT)
+}
+
+function launchRock(power: number, locked: boolean): void {
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (!player || !pepito) {
     clientState.pepitoChase.rockBusy = false
@@ -258,12 +274,14 @@ function launchRock(power: number): void {
     player.position.y + HAND_HEIGHT,
     player.position.z + forward.z * HAND_FORWARD_OFFSET + right.z * HAND_RIGHT_OFFSET
   )
-  // No auto-aim: the rock follows the camera/crosshair ray. Charge controls
-  // how far and how quickly it travels, so leading Pepito is part of the hit.
+  // A lock follows Pepito's predicted position; otherwise the rock follows
+  // the camera/crosshair ray and behaves as a normal free shot.
   const flightTime = ROCK_MAX_FLIGHT_S + (ROCK_MIN_FLIGHT_S - ROCK_MAX_FLIGHT_S) * power
   const direction = aimDirection(player.rotation)
   const distance = ROCK_MIN_DISTANCE + (ROCK_MAX_DISTANCE - ROCK_MIN_DISTANCE) * power
-  const target = Vector3.add(hand, Vector3.scale(direction, distance))
+  const target = locked
+    ? Vector3.add(orbitPosition(orbitClock + flightTime), Vector3.create(0, 0.5, 0))
+    : Vector3.add(hand, Vector3.scale(direction, distance))
   const flatVelocity = Vector3.scale(Vector3.subtract(target, hand), 1 / flightTime)
   const velocity = Vector3.create(flatVelocity.x, flatVelocity.y + 0.5 * ROCK_GRAVITY * flightTime, flatVelocity.z)
   const entity = engine.addEntity()
@@ -282,19 +300,23 @@ export function startPepitoRockCharge(): void {
   if (!canChargeRock() || clientState.pepitoChase.charging) return
   clientState.pepitoChase.charging = true
   clientState.pepitoChase.charge = 0
+  clientState.pepitoChase.targetLocked = softLockTarget()
 }
 
 /** Release a held rock and launch it with the selected charge. */
 export function releasePepitoRockCharge(): void {
   if (!clientState.pepitoChase.charging) return
-  const power = clientState.pepitoChase.charge
-  clientState.pepitoChase.charging = false
-  clientState.pepitoChase.charge = 0
-  throwPepitoRock(power)
+  const chase = clientState.pepitoChase
+  const power = chase.charge
+  const locked = chase.targetLocked
+  chase.charging = false
+  chase.charge = 0
+  chase.targetLocked = false
+  throwPepitoRock(power, locked)
 }
 
 /** Throw a single visual rock. The hit does not resolve the cure yet. */
-function throwPepitoRock(power: number): void {
+function throwPepitoRock(power: number, locked: boolean): void {
   if (!canChargeRock()) return
   clientState.pepitoChase.rockBusy = true
   throwWindup = true
@@ -305,7 +327,7 @@ function throwPepitoRock(power: number): void {
   const release = (dt: number): void => {
     elapsed += dt
     if (elapsed < THROW_RELEASE_DELAY_S) return
-    launchRock(power)
+    launchRock(power, locked)
     engine.removeSystem(release)
   }
   engine.addSystem(release)
@@ -317,9 +339,11 @@ function rockChargeTick(dt: number): void {
   if (!canChargeRock()) {
     chase.charging = false
     chase.charge = 0
+    chase.targetLocked = false
     return
   }
   chase.charge = Math.min(1, chase.charge + dt / ROCK_CHARGE_TIME_S)
+  chase.targetLocked = softLockTarget()
 }
 
 function pointToSegmentDistance(point: Vector3, from: Vector3, to: Vector3): number {
@@ -369,6 +393,7 @@ function beginPotionDrop(): void {
   throwWindup = false
   clientState.pepitoChase.charging = false
   clientState.pepitoChase.charge = 0
+  clientState.pepitoChase.targetLocked = false
   if (targetArrow) VisibilityComponent.createOrReplace(targetArrow, { visible: false })
   clearHandRock()
   hideThrowButton()
@@ -426,7 +451,7 @@ function startRecoveryWhenReady(): void {
   celebrationStarted = true
   const potion = potionEntity()
   if (potion) VisibilityComponent.createOrReplace(potion, { visible: false })
-  const started = startCureCelebration(previewRun, stopPepitoChase)
+  const started = startCureCelebration(stopPepitoChase)
   // A missing local pet should never soft-lock the chase. Normal gameplay has
   // one; this fallback is only for a mid-load interruption.
   if (!started) stopPepitoChase()
@@ -481,8 +506,8 @@ function tickPepitoChase(dt: number): void {
   if (inputSystem.isTriggered(ROCK_TOUCH_ACTION, PointerEventType.PET_UP)) releasePepitoRockCharge()
 }
 
-function beginPepitoChase(requireSickPet: boolean): boolean {
-  if (clientState.pepitoChase.active || (requireSickPet && !clientState.activePet?.sick)) return false
+function beginPepitoChase(): boolean {
+  if (clientState.pepitoChase.active || !clientState.activePet?.sick) return false
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (!player) return false
 
@@ -497,7 +522,6 @@ function beginPepitoChase(requireSickPet: boolean): boolean {
   orbitClock = 0
   recoveryStarted = false
   celebrationStarted = false
-  previewRun = !requireSickPet
   potionDrop = null
   pepitoFlee = null
   awaitingCaretakerInstruction = true
@@ -507,14 +531,14 @@ function beginPepitoChase(requireSickPet: boolean): boolean {
   pepitoPosition = first
   pepito = spawnPepito(first)
   placePepito(first)
-  clientState.pepitoChase = { active: true, rockBusy: false, charging: false, charge: 0 }
+  clientState.pepitoChase = { active: true, rockBusy: false, charging: false, charge: 0, targetLocked: false }
   pushToast('Pepito stole the cure!')
   return true
 }
 
 /** Begin the free-roam chase state after Pepito's table theft. */
 export function startPepitoChase(): boolean {
-  return beginPepitoChase(true)
+  return beginPepitoChase()
 }
 
 /** Temporary escape hatch while the hit/pickup continuation is still WIP. */
@@ -529,13 +553,12 @@ export function stopPepitoChase(): void {
   throwWindup = false
   recoveryStarted = false
   celebrationStarted = false
-  previewRun = false
   awaitingCaretakerInstruction = false
   caretakerDialogOpened = false
   clearHandRock()
   hideThrowButton()
   resetStolenPotion()
-  clientState.pepitoChase = { active: false, rockBusy: false, charging: false, charge: 0 }
+  clientState.pepitoChase = { active: false, rockBusy: false, charging: false, charge: 0, targetLocked: false }
 }
 
 export function setupPepitoChase(): void {

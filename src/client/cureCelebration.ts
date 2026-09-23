@@ -17,12 +17,10 @@ let running = false
 let camera: Entity | null = null
 
 /**
- * Play the final recovery camera after the physical medicine drop. `preview`
- * is only for the local Pepito tuning panel: it shows the exact animation but
- * never changes sickness, rewards, or server state.
+ * Play the final recovery camera after the physical medicine drop.
  */
-export function startCureCelebration(preview: boolean, onDone: () => void): boolean {
-  if (running || (!preview && !clientState.activePet?.sick)) return false
+export function startCureCelebration(onDone: () => void): boolean {
+  if (running || !clientState.activePet?.sick) return false
   const shot = startCureCinematic()
   if (!shot) return false
 
@@ -38,14 +36,12 @@ export function startCureCelebration(preview: boolean, onDone: () => void): bool
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
 
-  if (!preview) {
-    // The happy cinematic is the feedback for this win. Do not cover it with
-    // the usual purple XP / orange coin chips right after the stone hits.
-    clientState.reward = null
-    applyCureLocal(false)
-    actions.cureSickness()
-    pushToast(`${clientState.activePet?.name ?? 'Your pet'} is healthy again!`, 'success')
-  }
+  // The happy cinematic is the feedback for this win. Do not cover it with
+  // the usual purple XP / orange coin chips right after the stone hits.
+  clientState.reward = null
+  applyCureLocal(false)
+  actions.cureSickness()
+  pushToast(`${clientState.activePet?.name ?? 'Your pet'} is healthy again!`, 'success')
 
   let stage: 'happy' | 'out' | 'hold' | 'in' = 'happy'
   let elapsedMs = 0

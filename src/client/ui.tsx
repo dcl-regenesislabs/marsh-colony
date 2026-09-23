@@ -2191,6 +2191,7 @@ function PepitoRockChargeOverlay() {
   if (!st.active || clientState.dialog.open) return <UiEntity />
   const isM = mobile()
   const charging = st.charging
+  const locked = st.targetLocked
   const pct = Math.round(st.charge * 100)
   const bw = S(300)
   const bh = S(92)
@@ -2225,7 +2226,7 @@ function PepitoRockChargeOverlay() {
             onMouseLeave={() => releasePepitoRockCharge()}
           >
             <Label
-              value={st.rockBusy ? 'Throwing...' : charging ? 'Release!' : 'Hold to throw rock'}
+              value={st.rockBusy ? 'Throwing...' : charging ? locked ? 'Locked - release!' : 'Aim at Pepito' : 'Hold to throw rock'}
               fontSize={S(24)}
               color={st.rockBusy ? C.dim : C.outline}
               textAlign="middle-center"

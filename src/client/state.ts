@@ -129,7 +129,7 @@ export const clientState: {
   fetch: { active: boolean; busy: boolean; charging: boolean; charge: number }
   // Pepito's post-theft loop. This is local/transient only: the server keeps
   // the pet sick until the later successful-cure step is built.
-  pepitoChase: { active: boolean; rockBusy: boolean; charging: boolean; charge: number }
+  pepitoChase: { active: boolean; rockBusy: boolean; charging: boolean; charge: number; targetLocked: boolean }
   // Optimistic adoption: render the new pet instantly while the server catches
   // up, so adoption never feels like "nothing happened" if a message is slow.
   pendingPet: PetData | null
@@ -178,7 +178,7 @@ export const clientState: {
   feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
-  pepitoChase: { active: false, rockBusy: false, charging: false, charge: 0 },
+  pepitoChase: { active: false, rockBusy: false, charging: false, charge: 0, targetLocked: false },
   pendingPet: null,
   pendingUntil: 0,
   pendingHatchlingDecision: null,
