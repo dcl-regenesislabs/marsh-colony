@@ -8,44 +8,14 @@ import { engine, Entity, Transform } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 
-const PLANT_NAMES: EntityNames[] = [
-  EntityNames.Plant01_glb,
-  EntityNames.Plant01_glb_2,
-  EntityNames.Plant01_glb_3,
-  EntityNames.Plant01_glb_4,
-  EntityNames.Plant01_glb_5,
-  EntityNames.Plant01_glb_6,
-  EntityNames.Plant01_glb_7,
-  EntityNames.Plant01_glb_8,
-  EntityNames.Plant01_glb_9,
-  EntityNames.Plant01_glb_10,
-  EntityNames.Plant01_glb_11,
-  EntityNames.Plant01_glb_12,
-  EntityNames.Plant02_glb,
-  EntityNames.Plant02_glb_2,
-  EntityNames.Plant02_glb_3,
-  EntityNames.Plant03_glb,
-  EntityNames.Plant03_glb_2,
-  EntityNames.Plant03_glb_3,
-  EntityNames.Plant03_glb_4,
-  EntityNames.Plant03_glb_5,
-  EntityNames.Plant03_glb_6,
-  EntityNames.Plant03_glb_7,
-  EntityNames.Plant04_glb,
-  EntityNames.Plant04_glb_2,
-  EntityNames.Plant05_glb,
-  EntityNames.Plant05_glb_2,
-  EntityNames.Plant06_glb,
-  EntityNames.Plant06_glb_2,
-  EntityNames.Plant06_glb_3,
-  EntityNames.Plant07_glb,
-  EntityNames.Plant07_glb_2,
-  EntityNames.Plant07_glb_3,
-  EntityNames.Plant07_glb_4,
-  EntityNames.Plant07_glb_5,
-  EntityNames.Plant07_glb_6,
-  EntityNames.Plant07_glb_7
-]
+// Matches every PlantNN entity name Creator Hub generates — the base
+// "PlantNN.glb" and each duplicate's "_2", "_3", ... suffix. Derived instead of
+// hardcoded so a newly placed plant sways automatically instead of silently
+// sitting still until someone remembers to add it to a list here.
+const PLANT_NAME_PATTERN = /^Plant\d{2}\.glb(_\d+)?$/
+const PLANT_NAMES: EntityNames[] = (Object.values(EntityNames) as string[]).filter((name) =>
+  PLANT_NAME_PATTERN.test(name)
+) as EntityNames[]
 
 interface SwayStyle {
   ampDeg: number

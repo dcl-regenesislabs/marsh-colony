@@ -24,6 +24,7 @@ import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
 import { setupArk } from './ark'
+import { setupPenDoor } from './penDoor'
 import { setupSkybox } from './skybox'
 import { setupMusic } from './music'
 import { setupEggShake } from './eggShake'
@@ -206,12 +207,13 @@ export function setupClient(): void {
   setupSkybox() // Mars ground + boundary colliders
   setupMusic() // background ambient track (jukebox: HUD button switches / mutes it)
   setupEggShake() // subtle constant tremble on the placed decor eggs
-  setupPlantSway() // subtle wind sway on a random subset of the placed plants
+  setupPlantSway() // subtle wind sway on every placed plant, in one of two random styles
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
+  setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
   preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
