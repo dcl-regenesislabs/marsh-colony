@@ -65,16 +65,16 @@
               "y": 0,
               "z": 247.5
             },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
             "rotation": {
               "x": 0,
               "y": 0,
               "z": 0,
               "w": 1
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
             },
             "parent": 0
           }
@@ -254,16 +254,16 @@
               "y": 0,
               "z": 240.75
             },
+            "scale": {
+              "x": 2.5,
+              "y": 2.5,
+              "z": 2.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.462848,
               "z": 0,
               "w": -0.886437
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 2.5,
-              "z": 2.5
             },
             "parent": 0
           }
@@ -296,16 +296,16 @@
               "y": 0,
               "z": 243.64999389648438
             },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.7071067811865476,
               "z": 0,
               "w": -0.7071067811865476
-            },
-            "scale": {
-              "x": 1.5,
-              "y": 1.5,
-              "z": 1.5
             },
             "parent": 0
           }
@@ -338,16 +338,16 @@
               "y": 0,
               "z": 238.99000549316406
             },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.340109,
               "z": 0,
               "w": -0.940386
-            },
-            "scale": {
-              "x": 1.5,
-              "y": 1.5,
-              "z": 1.5
             },
             "parent": 0
           }
@@ -1451,16 +1451,37 @@
               "y": 0,
               "z": 251.5
             },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
             "rotation": {
               "x": 0,
               "y": 0.7071067690849304,
               "z": 0,
               "w": -0.7071067690849304
             },
-            "scale": {
-              "x": 1.5,
+            "parent": 0
+          }
+        },
+        "583": {
+          "json": {
+            "position": {
+              "x": 138,
               "y": 1.5,
-              "z": 1.5
+              "z": 248.25
+            },
+            "scale": {
+              "x": 5,
+              "y": 5,
+              "z": 5
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.7071067690849304,
+              "z": 0,
+              "w": 0.7071067690849304
             },
             "parent": 0
           }
@@ -2449,6 +2470,13 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "583": {
+          "json": {
+            "src": "assets/Models/DualNest01/DualNest01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "584": {
           "json": {
             "src": "assets/Models/tree.glb",
@@ -2883,6 +2911,11 @@
             "value": "HumanBed.glb"
           }
         },
+        "583": {
+          "json": {
+            "value": "DualNest01.glb_2"
+          }
+        },
         "584": {
           "json": {
             "value": "tree.glb"
@@ -3021,26 +3054,6 @@
       }
     },
     {
-      "name": "inspector::Selection",
-      "jsonSchema": {
-        "type": "object",
-        "properties": {
-          "gizmo": {
-            "type": "integer",
-            "serializationType": "int32"
-          }
-        },
-        "serializationType": "map"
-      },
-      "data": {
-        "581": {
-          "json": {
-            "gizmo": 2
-          }
-        }
-      }
-    },
-    {
       "name": "inspector::Nodes",
       "jsonSchema": {
         "type": "object",
@@ -3129,7 +3142,8 @@
                   512,
                   581,
                   66095,
-                  66096
+                  66096,
+                  583
                 ]
               },
               {
@@ -3496,6 +3510,10 @@
               {
                 "entity": 66096,
                 "children": []
+              },
+              {
+                "entity": 583,
+                "children": []
               }
             ]
           }
@@ -3720,6 +3738,9 @@
         "581": {
           "json": {}
         },
+        "583": {
+          "json": {}
+        },
         "584": {
           "json": {}
         },
@@ -3765,7 +3786,7 @@
       }
     },
     {
-      "name": "inspector::SceneMetadata-v4",
+      "name": "inspector::SceneMetadata-v5",
       "jsonSchema": {
         "type": "object",
         "properties": {
@@ -4085,6 +4106,14 @@
             }
           },
           "disableNearbyVoiceChat": {
+            "type": "boolean",
+            "serializationType": "optional",
+            "optionalJsonSchema": {
+              "type": "boolean",
+              "serializationType": "boolean"
+            }
+          },
+          "hideLandscapeTerrain": {
             "type": "boolean",
             "serializationType": "optional",
             "optionalJsonSchema": {
@@ -7753,7 +7782,8 @@
               "fixedTime": 36000
             },
             "creator": "",
-            "disableNearbyVoiceChat": false
+            "disableNearbyVoiceChat": false,
+            "hideLandscapeTerrain": false
           }
         }
       }

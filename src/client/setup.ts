@@ -20,7 +20,7 @@ import { setupUi, ui } from './ui'
 import { applyDefaultTouchControls } from './touchControls'
 import { openCaretakerIntro } from './ui/dialog'
 import { setupInput } from './input'
-import { setupPetSystems, startCarryEgg } from './pet'
+import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
 import { setupSkybox } from './skybox'
@@ -155,13 +155,13 @@ function registerHandlers(): void {
     pushToast(data.message, data.kind)
   })
 
-  // Breeding result — the offspring is an egg (server hatchling). Carry it home
-  // and hatch it, just like a fresh adoption; the rarity is the surprise inside.
+  // Breeding result — the offspring is an egg (server hatchling). During the nest
+  // flow receiveBreedResult stashes it so the egg is handed over only when the
+  // grow-in cinematic finishes; outside that flow it kicks off carry-egg-home now.
   room.onMessage('breedResult', (data) => {
     markServerAlive()
-    // No toast here — the server's 'breed' note already announced the rarity;
-    // this message just kicks off the carry-egg-home flow.
-    if (data.species) startCarryEgg(data.species, data.name, true)
+    // No toast here — the server's 'breed' note already announced the rarity.
+    if (data.species) receiveBreedResult(data.species, data.name)
   })
 
   // Incoming pet-swap offer — pop the Accept/Decline modal with the offered pet.

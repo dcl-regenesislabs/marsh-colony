@@ -13,7 +13,7 @@
 
 import { engine, Entity, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
-import { hideArrow, showArrowTo, canStartPetInteraction } from './pet'
+import { hideArrow, showArrowTo, canStartPetInteraction, getEggPending } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState, pushToast, hasPendingHatchling } from './state'
 import { ui } from './ui'
@@ -87,10 +87,10 @@ export function setupFeedTask(): void {
   engine.addSystem(() => {
     const task = clientState.feedTask
     if (!task.active) return
-    // Yield the shared guide arrow to a carry flow (egg / bath): those also drive
-    // pet.ts's arrow, so if the player starts Feed then Bath, the errand must bow
-    // out instead of fighting to keep the arrow pointed at the tree.
-    if (clientState.carryEgg.active || clientState.carryPet.active) {
+    // Yield the shared guide arrow to a carry flow (egg / bath) or a pending
+    // egg pickup: those also drive pet.ts's arrow, so if the player starts Feed
+    // then one of those, the errand must bow out instead of fighting for it.
+    if (clientState.carryEgg.active || clientState.carryPet.active || getEggPending()) {
       cancelFeedTask()
       return
     }

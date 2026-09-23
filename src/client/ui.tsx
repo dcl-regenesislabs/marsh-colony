@@ -16,12 +16,22 @@ import {
   cancelPetting,
   petTap,
   hatchTap,
-  startCarryEgg,
+  startGetEgg,
+  getEggPending,
+  cancelGetEgg,
   beginHatchFromCarry,
   startCarryPet,
   placePetAtStation,
   cancelCarryPet,
-  canStartPetInteraction
+  canStartPetInteraction,
+  startBreedErrand,
+  cancelBreed,
+  placeParentA,
+  chooseBreedPartner,
+  startBreedCross,
+  getBreedFx,
+  BREED_ORB_FRAMES,
+  BREED_BURST_FRAMES
 } from './pet'
 import { startCharge, releaseCharge } from './play'
 import { releasePepitoRockCharge, startPepitoRockCharge } from './pepitoChase'
@@ -73,6 +83,12 @@ export const ui = {
     // One hatchling at a time: finish (keep/discard) the current one first.
     if (hasPendingHatchling()) {
       pushToast('Place or discard your current pet first.')
+      return
+    }
+    // One egg at a time — don't let a second adoption overwrite an egg that's
+    // still waiting at the Caretaker (its species/name would be lost silently).
+    if (getEggPending()) {
+      pushToast('Go to the Caretaker to pick up your egg first!')
       return
     }
     uiState.panel = 'adopt'
@@ -225,15 +241,19 @@ function PetsCountBar(props: { height: number }) {
   const w = Math.round(h * BAR_PETS_ASPECT)
   const pop = clientState.colonyPopulation
   const goal = Cfg.COLONY_GOAL
+  const textW = Math.round(w * 0.65)
   return (
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_PETS_UVS }}>
-      <Label
-        value={`${pop} / ${goal} pets`}
-        fontSize={S(22)}
-        color={PET_UI.ink}
-        textAlign="middle-right"
-        uiTransform={{ positionType: 'absolute', position: { right: S(16), top: 0 }, width: Math.round(w * 0.65), height: h }}
-      />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { right: S(28), top: 0 }, width: textW, height: h, overflow: 'hidden' }}>
+        <Label
+          value={`${pop}/${goal}`}
+          fontSize={S(22)}
+          color={PET_UI.ink}
+          textAlign="middle-right"
+          textWrap="nowrap"
+          uiTransform={{ width: textW, height: h }}
+        />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -254,6 +274,7 @@ function TopBars() {
     !clientState.fetch.active &&
     !clientState.carryEgg.active &&
     !clientState.carryPet.active &&
+    !clientState.breed.active &&
     !clientState.hatch.active
   const iconsW = gap + iconSize + gap + iconSize
   const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
@@ -536,12 +557,9 @@ function PetPanel() {
               pushToast('You need a second Adult pet to breed with.')
               return
             }
-            // Name the offspring first (like adoption), then breed on confirm.
-            uiState.breedPartnerId = partner.id
-            uiState.breedName = ''
-            uiState.breedUsePotion = false
-            uiState.panel = 'breedName'
-            clientState.petPanelOpen = false
+            // New flow: carry this pet to the breeding nest, place it, pick the
+            // partner there, then breed (name/potion modal → egg cinematic).
+            startBreedErrand()
           }}
         />
       </UiEntity>
@@ -669,7 +687,7 @@ function BottomNav() {
   // buttons are, or on top of them. Also hidden in Fetch mode, while carrying an
   // egg or the pet, and during the hatch animation (so Keep/Discard only appears
   // once the newborn has emerged).
-  if (!p || bigUiOpen() || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.hatch.active) return <UiEntity />
+  if (!p || bigUiOpen() || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.hatch.active) return <UiEntity />
   const bh = Sbtn(72)
 
   // Just hatched: a new pet is waiting on a Keep/Discard decision. It takes over
@@ -905,8 +923,11 @@ function AdoptPanel() {
             pulse
             disabled={!named}
             onClick={() => {
-              // Adoption gives an egg to carry home; you hatch it there (rub/tap).
-              startCarryEgg(sp, uiState.adoptName.trim())
+              // Adoption gives an egg — but you collect it FROM the Caretaker
+              // (an arrow guides you there), not spawned into your hand from
+              // wherever you're standing. startGetEgg hands it over on arrival
+              // (or immediately if you're already at the Caretaker).
+              startGetEgg(sp, uiState.adoptName.trim())
               uiState.adoptName = ''
               ui.close()
             }}
@@ -937,72 +958,130 @@ function AdoptPanel() {
 // server's surprise inside the egg; the name is prefixed "Gen-N" server-side.
 // A rarity potion (bought in the Shop) can be spent on this roll to tilt the
 // odds toward rare/legendary — it is consumed server-side by this breed only.
+// breed_ui_hud.png — one 1024² sheet of the illustrated Name-your-Offspring modal
+// pieces (title card, egg+gems decoration, two potion pills, close X, Breed button).
+// Boxes measured off the source art; each renders at its native aspect (no stretch).
+const BREED_HUD = 'assets/images/revamp/breed_ui_hud.png'
+function breedHudUv(x0: number, y0: number, x1: number, y1: number): number[] {
+  return sheetUvRect(x0, y0, x1, y1, 1024, 1024)
+}
+const BH_CARD = { uvs: breedHudUv(17, 163, 703, 577), aspect: (703 - 17) / (577 - 163) }
+const BH_EGG = { uvs: breedHudUv(706, 43, 1018, 541), aspect: (1018 - 706) / (541 - 43) }
+const BH_POTION_FULL = { uvs: breedHudUv(18, 614, 570, 742), aspect: (570 - 18) / (742 - 614) } // "have potions" state
+const BH_POTION_EMPTY = { uvs: breedHudUv(18, 762, 702, 895), aspect: (702 - 18) / (895 - 762) } // "no potions" state
+const BH_CLOSE = { uvs: breedHudUv(590, 614, 718, 742), aspect: 1 }
+const BH_BREED = { uvs: breedHudUv(18, 896, 500, 1014), aspect: (500 - 18) / (1014 - 896) }
+
+// Inline notice for the breed modal — toasts are hidden while a modal is open
+// (bigUiOpen), so buy-potion feedback shows here instead. Auto-expires.
+let breedNotice = { text: '', until: 0 }
+
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
   const potions = clientState.player?.inventory.rarityPotions ?? 0
   const hasPotion = potions > 0
   const usingPotion = hasPotion && uiState.breedUsePotion
+
+  // On-screen sizes (tune these on the first run).
+  const cardW = S(560)
+  const cardH = Math.round(cardW / BH_CARD.aspect)
+  const pill = hasPotion ? BH_POTION_FULL : BH_POTION_EMPTY
+  const pillH = S(74) // same thickness both states (the potion bottle is baked in, so this shrinks it too)
+  const pillW = Math.round(pillH * pill.aspect) // width from the native aspect — no stretch
+  const pillPadL = Math.round(pillW * 0.24) // where the text starts, right of the baked-in potion bottle
+  const breedW = S(340)
+  const breedH = Math.round(breedW / BH_BREED.aspect)
+
   return (
-    <LightModal title="Name your Offspring" width={S(680)} height={S(660)} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-        <Label value="🥚" fontSize={S(90)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(120), margin: { top: S(6) } }} />
-        <Label value="Cross your two Adults — the species and rarity are a surprise inside the egg!" fontSize={S(17)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: S(520), height: S(48) }} />
-        <Input
-          placeholder="Type a name..."
-          fontSize={S(20)}
-          color={LOC.body}
-          placeholderColor={LOC.dim}
-          uiTransform={{ width: S(440), height: S(60), margin: { top: S(14), bottom: S(6) } }}
-          uiBackground={{ color: LOC.tile }}
-          onChange={(v) => {
-            uiState.breedName = v
-          }}
-        />
-        <Label value="It hatches named  Gen-1  +  your name." fontSize={S(14)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
-        <TactileButton
-          id="breed_potion"
-          label={`${usingPotion ? '✓ ' : ''}${Cfg.RARITY_POTION_LABEL}  x${potions}`}
-          width={S(400)}
-          height={S(60)}
-          bg={usingPotion ? LOC.violet : LOC.neutral}
-          textColor={usingPotion ? LOC.white : LOC.body}
-          fontSize={S(19)}
-          radius={S(18)}
-          disabled={!hasPotion}
-          margin={{ top: S(10) }}
-          onClick={() => {
-            uiState.breedUsePotion = !uiState.breedUsePotion
-          }}
-        />
-        <Label
-          value={hasPotion ? 'Tap to spend one potion on this roll — better rare/legendary odds.' : 'No potions — buy one in your Inventory to boost your rare/legendary odds.'}
-          fontSize={S(14)}
-          color={LOC.dim}
-          textAlign="middle-center"
-          uiTransform={{ width: S(520), height: S(22), margin: { top: S(4) } }}
-        />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', width: cardW }}>
+        {/* Title card (title baked into the art) with the name input overlaid. */}
+        <UiEntity uiTransform={{ width: cardW, height: cardH, positionType: 'relative' }} uiBackground={{ texture: { src: BREED_HUD }, textureMode: 'stretch', uvs: BH_CARD.uvs }}>
+          {/* name input, dropped into the card's empty cream area */}
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(178), left: '50%' }, margin: { left: -S(220) }, width: S(440), height: S(58), borderRadius: S(14) }} uiBackground={{ color: LOC.white }}>
+            <Input
+              placeholder="Type a name..."
+              fontSize={S(22)}
+              color={LOC.body}
+              placeholderColor={LOC.dim}
+              uiTransform={{ width: '100%', height: '100%' }}
+              onChange={(v) => {
+                uiState.breedName = v
+              }}
+            />
+          </UiEntity>
+        </UiEntity>
+
+        {/* Potion pill: two states. Have potions -> tappable "Apply Rarity Potion"
+            toggle showing the count. None -> the buy prompt (informational). */}
+        <UiEntity
+          uiTransform={{ width: pillW, height: pillH, margin: { top: S(20) }, positionType: 'relative', pointerFilter: 'block' }}
+          uiBackground={{ texture: { src: BREED_HUD }, textureMode: 'stretch', uvs: pill.uvs }}
+          onMouseDown={
+            hasPotion
+              ? () => (uiState.breedUsePotion = !uiState.breedUsePotion)
+              : () => {
+                  // No potions: buy one on the spot with coins. buyPotionLocal is the
+                  // optimistic mirror (deducts coins + adds the potion, false if broke);
+                  // the server call confirms. Auto-apply it — you bought it for THIS roll.
+                  // Feedback goes to an INLINE notice, not pushToast: toasts are
+                  // suppressed while a modal (bigUiOpen) is on screen, so they'd be invisible.
+                  if (buyPotionLocal()) {
+                    uiState.breedUsePotion = true
+                    actions.buyPotion()
+                    breedNotice = { text: 'Bought a Rarity Potion!', until: Date.now() + 2500 }
+                  } else {
+                    breedNotice = { text: `Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`, until: Date.now() + 2500 }
+                  }
+                }
+          }
+        >
+          {/* Text absolutely placed to the RIGHT of the baked-in bottle — kept off
+              the sprite's flex box so it can't affect how the pill renders. */}
+          <Label
+            value={hasPotion ? `${usingPotion ? '✓ ' : ''}Apply Rarity Potion  x${potions}` : 'Buy potions to improve rare/legendary odds'}
+            fontSize={hasPotion ? S(17) : S(13)}
+            color={LOC.body}
+            textAlign="middle-left"
+            uiTransform={{ positionType: 'absolute', position: { left: pillPadL, top: 0 }, width: pillW - pillPadL - S(18), height: '100%' }}
+          />
+        </UiEntity>
+
+        {/* Inline notice (buy feedback) — toasts are suppressed under a modal. */}
+        {Date.now() < breedNotice.until && (
+          <UiEntity
+            uiTransform={{ margin: { top: S(8) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
+            uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
+          >
+            <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
+          </UiEntity>
+        )}
+
+        {/* Breed! */}
+        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(18) } }}>
+          <TactileButton
+            id="breed_confirm"
+            label=""
+            texture={BREED_HUD}
+            uvs={BH_BREED.uvs}
+            width={breedW}
+            height={breedH}
+            pulse
+            onClick={() => {
+              // Nest flow: the partner is already placed; run the egg cinematic
+              // (which sends the breed). If the flow was cancelled (world BACK) while
+              // this modal was still open, just close — no stale actions.breed('').
+              if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
+              uiState.breedName = ''
+              uiState.breedUsePotion = false
+              ui.close()
+            }}
+          />
+        </UiEntity>
       </UiEntity>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(6) } }}>
-        <TactileButton id="breed_back" label="< Back" width={S(160)} height={S(66)} bg={LOC.neutral} textColor={LOC.body} fontSize={S(20)} radius={S(18)} margin={{ right: S(12) }} onClick={() => ui.close()} />
-        <TactileButton
-          id="breed_confirm"
-          label="Breed!"
-          width={S(260)}
-          height={S(66)}
-          bg={LOC.green}
-          textColor={LOC.white}
-          fontSize={S(26)}
-          radius={S(18)}
-          pulse
-          onClick={() => {
-            actions.breed(uiState.breedPartnerId, uiState.breedName, usingPotion)
-            uiState.breedName = ''
-            uiState.breedUsePotion = false
-            ui.close()
-          }}
-        />
-      </UiEntity>
-    </LightModal>
+      {/* Standard red BACK (top-left, like the other flows) instead of an X. */}
+      <BackButton onClick={() => ui.close()} />
+    </UiEntity>
   )
 }
 
@@ -1825,7 +1904,7 @@ function Toasts() {
   // FeedErrandOverlay, SicknessErrandOverlay. When one's actually up, rest BELOW it so the two never
   // overlap; otherwise sit AT the same height the button would be, instead of
   // leaving that vertical space empty.
-  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active
+  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active || getEggPending()
 
   // Slide in from the LEFT edge + fade, resting anchored top-left just below where
   // the BACK button sits (top ~25% + its S(90) height) when one's showing, so it
@@ -3019,11 +3098,151 @@ function BathButton() {
   )
 }
 
+// World buttons for the breeding-nest flow. 'pickB' (partner picker modal) and
+// 'animating' (frozen egg cinematic) render no world buttons; 'toNest' shows a
+// "Place Pet" once you reach the nest; 'ready' shows "Breed" (opens the
+// name/potion modal). BACK cancels the whole flow at any step.
+// breed.png is a 1920x1320 sheet stacking the two illustrated pill buttons:
+// PLACE PET on top, BREED on the bottom (same style as the bath button). Crop
+// each half and render it at its native aspect, like BathButton.
+const BREED_BTN_SHEET = 'assets/images/revamp/breed.png'
+const BREED_BTN_W = 812
+const BREED_BTN_H = 666
+const BREED_PLACE_UVS = sheetUvRect(0, 0, BREED_BTN_W, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H) // top half
+const BREED_GO_UVS = sheetUvRect(0, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H, BREED_BTN_W, BREED_BTN_H) // bottom half
+const BREED_BTN_ASPECT = BREED_BTN_W / (BREED_BTN_H / 2)
+
+function BreedButtons() {
+  const b = clientState.breed
+  // Also hidden while the name/potion modal is up — otherwise the world "Breed"
+  // button (phase 'ready') shows through behind it.
+  if (!b.active || b.phase === 'pickB' || b.phase === 'animating' || uiState.panel === 'breedName') return <UiEntity />
+  const showPlace = b.phase === 'toNest' && b.atNest
+  const showBreed = b.phase === 'ready'
+  const bh = S(92) // match the bath/hatch button height
+  const bw = Math.round(bh * BREED_BTN_ASPECT)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelBreed()} />
+      {(showPlace || showBreed) && (
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
+          {showPlace ? (
+            <TactileButton id="breed_place" label="" texture={BREED_BTN_SHEET} uvs={BREED_PLACE_UVS} width={bw} height={bh} pulse onClick={() => placeParentA()} />
+          ) : (
+            <TactileButton
+              id="breed_go"
+              label=""
+              texture={BREED_BTN_SHEET}
+              uvs={BREED_GO_UVS}
+              width={bw}
+              height={bh}
+              pulse
+              onClick={() => {
+                uiState.breedName = ''
+                uiState.breedUsePotion = false
+                uiState.panel = 'breedName'
+              }}
+            />
+          )}
+        </UiEntity>
+      )}
+    </UiEntity>
+  )
+}
+
+// Partner picker (breed phase 'pickB'): tap a second Adult to place it in the
+// right bowl. Non-Adults are shown but rejected with a toast. Close/BACK cancels.
+function BreedPickerPanel() {
+  const p = clientState.player
+  const activeId = clientState.activePet?.id
+  const others = (p?.pets ?? []).filter((x) => x.id !== activeId)
+  const cardW = S(180)
+  const cardH = Math.round(cardW / PET_CARD_ASPECT)
+  const disc = S(78)
+  return (
+    <PetHudModal title="Choose a Partner" subtitle="Pick a second Adult pet to breed with." width={S(620)} height={Math.round(S(620) / PET_MODAL_ASPECT)} onClose={() => cancelBreed()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'flex-start' }}>
+        {others.map((pet) => {
+          const adult = Cfg.petStage(pet.size) === 'ADULT'
+          const img = Cfg.speciesImage(pet.species)
+          return (
+            <PetGridCard
+              selected={false}
+              width={cardW}
+              height={cardH}
+              onClick={() => (adult ? chooseBreedPartner(pet.id) : pushToast('That pet must be an Adult to breed.'))}
+            >
+              <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: S(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
+              <Label value={pet.name} fontSize={S(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
+              <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
+            </PetGridCard>
+          )
+        })}
+      </UiEntity>
+    </PetHudModal>
+  )
+}
+
+// Screen-space effects for the breeding cinematic (pet.ts updateBreed drives the
+// state via getBreedFx): a violet magic orb that swirls + swells over the nest, a
+// one-shot burst at the climax, and full-screen light blinks. The camera is locked
+// on the nest, so the effect sits at a fixed spot on screen (BREED_FX_CX/CY tune it
+// over the centre bowl). The 3D egg pops in underneath as the burst fades.
+const BREED_ORB_SHEET = 'assets/images/breedEffect/p1.png'
+const BREED_BURST_SHEET = 'assets/images/breedEffect/p2.png'
+const BREED_FX_CX = '50%' // horizontal centre of the effect on screen (TUNE)
+const BREED_FX_CY = '44%' // vertical centre — a touch above middle, over the bowl (TUNE)
+const BREED_FX_SIZE = 380 // base on-screen size of the orb/burst, pre-S (TUNE)
+
+function BreedFxOverlay() {
+  const fx = getBreedFx()
+  if (!fx.active) return <UiEntity />
+  const base = S(BREED_FX_SIZE)
+  const orb = Math.round(base * fx.orbScale)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      {fx.orbAlpha > 0.01 && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { left: BREED_FX_CX, top: BREED_FX_CY }, margin: { left: -orb / 2, top: -orb / 2 }, width: orb, height: orb, pointerFilter: 'none' }}
+          uiBackground={{ texture: { src: BREED_ORB_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(fx.orbFrame, BREED_ORB_FRAMES), color: { r: 1, g: 1, b: 1, a: fx.orbAlpha } }}
+        />
+      )}
+      {fx.burstFrame >= 0 && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { left: BREED_FX_CX, top: BREED_FX_CY }, margin: { left: -base / 2, top: -base / 2 }, width: base, height: base, pointerFilter: 'none' }}
+          uiBackground={{ texture: { src: BREED_BURST_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(fx.burstFrame, BREED_BURST_FRAMES) }}
+        />
+      )}
+      {fx.flash > 0.01 && (
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }} uiBackground={{ color: { r: 0.72, g: 0.45, b: 1, a: fx.flash } }} />
+      )}
+    </UiEntity>
+  )
+}
+
 // Feed errand — the player is out walking to the tree behind the guide arrow
 // (feed.ts). Same shape as the bath carry: a banner saying where to go and a
 // BACK button, which is the whole point here — the errand blocks every other
 // care action while it runs, so there has to be a way out of it that doesn't
 // require finishing the walk.
+// Guide overlay while an adopted egg waits at the Caretaker: BACK cancels the
+// adoption, the banner reinforces the arrow. Hidden while a carry flow owns the
+// screen (updateGetEgg yields the arrow to it), so the two never stack.
+function GetEggOverlay() {
+  if (!getEggPending() || clientState.carryEgg.active || clientState.carryPet.active) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelGetEgg()} />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value="Follow the arrow to the Caretaker to get your egg!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FeedErrandOverlay() {
   if (!clientState.feedTask.active) return <UiEntity />
   return (
@@ -3116,7 +3335,9 @@ const Root = () => {
             <PepitoRockChargeOverlay />
             <CarryHatchButton />
             <BathButton />
+            <BreedButtons />
             <FeedErrandOverlay />
+            <GetEggOverlay />
             <SicknessErrandOverlay />
             {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
                 on top of it instead of the nav icons poking through over them. Moot
@@ -3126,6 +3347,7 @@ const Root = () => {
             <SwapOfferPanel />
             <PetPanel />
             {uiState.panel === 'adopt' && <AdoptPanel />}
+            {clientState.breed.active && clientState.breed.phase === 'pickB' && <BreedPickerPanel />}
             {uiState.panel === 'breedName' && <BreedNamePanel />}
             {uiState.panel === 'shop' && <ShopPanel />}
             {uiState.panel === 'roster' && <RosterPanel />}
@@ -3139,8 +3361,11 @@ const Root = () => {
           </UiEntity>
         )}
         <DialogBox />
-        {/* The single global notification surface is the white top-left toast. */}
+        {/* Toasts are the only global notification surface. */}
         {!hideHudForPepitoTheft && <Toasts />}
+        {/* Breeding cinematic FX sit on top of everything (the flashes should
+            wash over the whole HUD during the "creation" moment). */}
+        {!hideHudForPepitoTheft && <BreedFxOverlay />}
       </UiEntity>
     )
   return (

@@ -74,6 +74,14 @@ export const clientState: {
   // Carrying the pet to the bath: the pet is held in the player's hands; walk it
   // to the tub (`atStation` true when close) and place it there to bathe it.
   carryPet: { active: boolean; atStation: boolean }
+  // Breeding at the nest (pet.ts): carry the active pet (parent A) to the
+  // DualNest, place it in a bowl, pick a second Adult (parent B), then Breed —
+  // an egg grows in the centre bowl and is handed to the player to carry home.
+  // 'toNest' is the walk (atNest true within reach), 'pickB' waits for the
+  // partner pick, 'ready' has both parents placed (Breed button shows), and
+  // 'animating' is the egg-grow cinematic. Like the carry flows this OWNS the
+  // moment — no other care action can start until it resolves or BACK cancels it.
+  breed: { active: boolean; phase: 'toNest' | 'pickB' | 'ready' | 'animating'; partnerId: string; atNest: boolean; name: string; usePotion: boolean }
   // Feed errand (feed.ts): the guide arrow is up and the player is walking to
   // the tree, where the feeding minigame takes over. Like the carry flows this
   // OWNS the moment — no other care action can start until it resolves or the
@@ -172,6 +180,7 @@ export const clientState: {
   petting: { active: false, progress: 0, celebrationUntil: 0 },
   carryEgg: { active: false, species: '', name: '', atHome: false },
   carryPet: { active: false, atStation: false },
+  breed: { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false },
   feedTask: { active: false, petId: '' },
   sicknessErrand: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
@@ -322,6 +331,7 @@ export function switchActivePet(petId: string): void {
     s.hatch.active ||
     s.carryEgg.active ||
     s.carryPet.active ||
+    s.breed.active ||
     s.petting.active ||
     s.fetch.active ||
     s.feedGame.active ||
