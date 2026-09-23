@@ -37,6 +37,7 @@ import { actions, clientState, pushToast } from './state'
 import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchControls'
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
+import { startSicknessCinematicFromFeedBlackout } from './sicknessCinematic'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import {
   getLocalPet,
@@ -247,13 +248,9 @@ const DRAWER_HOLD_SCALE = 0.9
 
 // Poisonous fruit (issue #146): the Fruit01 model IS the poisonous fruit —
 // catching one plays the poison pop-up instead of the normal catch burst (see
-// POISON_POP_* / spawnPoisonPop below). A round only ever spawns 1 or 2 of
-// them (a flat per-fruit percentage put ~7 in every round, too many for a
-// "watch out for this one" fruit). Their spawn times are picked when catching
-// begins (see pickPoisonTimes) and spread across the round: each one is the
-// next fruit to respawn once its time has passed.
-const POISON_FRUITS_MIN = 1
-const POISON_FRUITS_MAX = 2
+// POISON_POP_* / spawnPoisonPop below). Their spawn times are picked when
+// catching begins (see pickPoisonTimes) and spread across the round: each one
+// is the next fruit to respawn once its time has passed.
 // Not before the first respawn wave (~4s in) and early enough that the fruit
 // still has time to hang + fall (up to ~4.3s) before the round ends.
 const POISON_EARLIEST_S = 4
@@ -274,6 +271,7 @@ let phaseAt = 0
 let clock = 0
 let introEmotePlayed = false
 let drawerRevealed = false
+let caughtPoisonThisRound = false
 // Exit keeps the results scene mounted until the screen is fully black. That
 // prevents Unity from briefly exposing the HUD/avatar re-mount while handing
 // its camera rig back to the player.
@@ -840,7 +838,7 @@ function randomFruitModel(): string {
 let poisonDueTimes: number[] = []
 
 function pickPoisonTimes(): number[] {
-  const count = POISON_FRUITS_MIN + Math.floor(Math.random() * (POISON_FRUITS_MAX - POISON_FRUITS_MIN + 1))
+  const count = Cfg.FEED_POISON_FRUITS_MIN + Math.floor(Math.random() * (Cfg.FEED_POISON_FRUITS_MAX - Cfg.FEED_POISON_FRUITS_MIN + 1))
   const seg = (POISON_LATEST_S - POISON_EARLIEST_S) / count
   const times: number[] = []
   for (let i = 0; i < count; i++) times.push(POISON_EARLIEST_S + seg * i + Math.random() * seg)
@@ -1124,6 +1122,7 @@ function resolveFruit(f: FruitRuntime, caught: boolean): void {
   if (caught) {
     clientState.feedGame.caught += 1
     clientState.feedGame.catchFlashUntil = Date.now() + 350
+    if (f.poison) caughtPoisonThisRound = true
     if (sfxEntity) AudioSource.playSound(sfxEntity, FRUIT_PICK_SOUND)
     if (f.poison) spawnPoisonPop(pos) // the poison sticker instead of the green burst
     else spawnCatchBurst(pos)
@@ -1245,6 +1244,10 @@ export function startCatchingCountdown(): void {
     if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = true
     drawerRevealed = true
   }
+  // The server records a short-lived, position-validated round before any
+  // fruit result can be accepted. This keeps Feed (and its sickness outcome)
+  // tied to the actual tree minigame rather than a naked result RPC.
+  actions.beginFeedMinigame()
   phase = 'countdown'
   phaseAt = clock
   clientState.feedGame.phase = 'countdown'
@@ -1324,8 +1327,8 @@ function applyResults(): void {
 
   const hungerStart = clientState.activePet?.hunger ?? 0
   const hungerTarget = Math.min(100, hungerStart + caught * Cfg.FEED_HUNGER_PER_FRUIT)
-  applyFeedMinigameLocal(caught) // optimistic local effect
-  actions.feedResult(caught) // tell the server (it corrects via snapshot)
+  applyFeedMinigameLocal(caught) // optimistic stats; sickness waits for the server snapshot
+  actions.feedResult(caught, caughtPoisonThisRound) // tell the server (it corrects via snapshot)
 
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (player && cinCam) {
@@ -1413,8 +1416,8 @@ const CAMERA_RETURN_MS = 700
  *  fade lifts. The ORIGINAL movePlayerTo call, made back when the feeding shot
  *  was set up (see applyResults), already had the whole feeding+results tail
  *  to finish turning — that one is left alone. */
-function startCameraHandoff(): void {
-  if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+function startCameraHandoff(keepVirtualCamera = false): void {
+  if (!keepVirtualCamera && MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
   if (cinCam) Tween.deleteFrom(cinCam)
   feedReturnCamPos = null
   feedReturnCamRot = null
@@ -1430,8 +1433,8 @@ function startCameraHandoff(): void {
 
 /** The player remains frozen until the fade is completely gone, so native
  *  third-person camera settling cannot be disturbed by new movement/input. */
-function finishCameraHandoff(): void {
-  if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+function finishCameraHandoff(releaseInput = true): void {
+  if (releaseInput && InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
   phase = 'idle'
   closing = false
 }
@@ -1456,13 +1459,24 @@ type FadeStage = 'out' | 'hold' | 'in'
 function fadeAndRelease(): void {
   let stage: FadeStage = 'out'
   let t = 0
+  let sicknessOwnsHandoff = false
   const tick = (dt: number): void => {
     t += dt * 1000
     if (stage === 'out') {
       clientState.screenFade.alpha = Math.min(1, t / EXIT_FADE_OUT_MS)
       if (t < EXIT_FADE_OUT_MS) return
       clientState.screenFade.alpha = 1
-      startCameraHandoff() // fully covered: release camera + re-mount avatar/UI here, not before the fade
+      // A poisoned round goes straight into its Caretaker beat while black.
+      // Do not release to Unity's native camera between the two virtual shots:
+      // that was both visible as a pause and prone to the avatar/camera reset.
+      sicknessOwnsHandoff = startSicknessCinematicFromFeedBlackout()
+      startCameraHandoff(sicknessOwnsHandoff) // fully covered: release Feed UI/avatar state here, not before the fade
+      if (sicknessOwnsHandoff) {
+        finishCameraHandoff(false) // Feed is done; sickness keeps the freeze.
+        stage = 'in'
+        t = 0
+        return
+      }
       stage = 'hold'
       t = 0
       return
@@ -1477,7 +1491,7 @@ function fadeAndRelease(): void {
     clientState.screenFade.alpha = Math.max(0, 1 - t / EXIT_FADE_IN_MS)
     if (t >= EXIT_FADE_IN_MS) {
       clientState.screenFade.alpha = 0
-      finishCameraHandoff()
+      if (!sicknessOwnsHandoff) finishCameraHandoff()
       engine.removeSystem(tick)
     }
   }
@@ -1858,6 +1872,7 @@ export function startFruitGame(mascotaId: string): void {
     hungerTarget: 0,
     hungerFillProgress: 0
   }
+  caughtPoisonThisRound = false
   introEmotePlayed = false
   drawerRevealed = false
   phase = 'arrival'

@@ -31,6 +31,7 @@ const STATIC_UI_ASSETS = [
   'assets/images/right_arrow.png',
   'assets/images/right_arrow_pressed.png',
   'assets/images/throwicon.png',
+  'assets/images/throwrockicon.png',
   'assets/images/tutorialUi/btn_close.png',
   'assets/images/tutorialUi/btn_next.png',
   // World-space, not screen UI, but the same AssetLoad pipeline below preloads

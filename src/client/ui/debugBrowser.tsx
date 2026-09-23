@@ -43,6 +43,7 @@ function fakePet(overrides: Partial<PetData> = {}): PetData {
     sleeping: false,
     sleepOnBed: false,
     sleepLockUntil: 0,
+    sick: false,
     bornAt: t,
     lastUpdated: t,
     ...overrides
@@ -380,14 +381,6 @@ const DEBUG_SCREENS: DebugScreen[] = [
     }
   },
   {
-    id: 'reward',
-    label: 'Reward Popup (+XP +coins)',
-    activate: () => {
-      applyFixturePlayer(fakePlayer(), fakePet())
-      clientState.reward = { xp: 8, coins: 5, until: Date.now() + 60000 }
-    }
-  },
-  {
     id: 'toasts',
     label: 'Toasts',
     activate: () => {
@@ -413,7 +406,6 @@ function resetAllDebugFlags(): void {
   clientState.incomingSwap = null
   clientState.viewingPetAddress = null
   clientState.petPanelOpen = false
-  clientState.reward = null
   clientState.lastSpin = null
   clientState.toasts = []
   clientState.currentToast = null

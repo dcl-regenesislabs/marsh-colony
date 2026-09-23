@@ -15,6 +15,9 @@ export type DialogState = {
   page: number
   finalLabel: string
   onDone: (() => void) | null
+  // Optional per-page hook. Used by the Caretaker cure to reveal the medicine
+  // exactly when the player advances the dialogue.
+  onPage: ((page: number) => void) | null
   // Show the "Adopt" button art on the final page (only the Caretaker intro,
   // whose CTA is adopting). Everything else uses the neutral "Next" art.
   adoptCta: boolean
@@ -34,8 +37,6 @@ export const clientState: {
   // when the current toast started so the render can drive its slide/fade.
   toasts: { message: string; kind: string }[]
   currentToast: { message: string; kind: string; shownAt: number; until: number } | null
-  // Gamified "+XP +coins" reward popup after a care action. Auto-expires.
-  reward: { xp: number; coins: number; until: number } | null
   // Full-screen black overlay alpha (0 = invisible, 1 = fully black). Used to
   // mask an unavoidable camera hand-off pop (see fruitGame.ts's fadeAndRelease)
   // instead of trying to predict exactly where a given client's native camera
@@ -85,6 +86,9 @@ export const clientState: {
   // player cancels it with BACK. `petId` is the pet Feed was pressed for, so the
   // errand can drop itself if the player switches pets mid-walk.
   feedTask: { active: boolean; petId: string }
+  // After a poisonous Feed round, this owns the guide arrow while the player
+  // walks to the Caretaker for the cure scene.
+  sicknessErrand: { active: boolean; petId: string }
   // Hatch gesture: rubbing/tapping the egg fills this progress, then it hatches.
   // Reuses the petting gesture input.
   hatch: { active: boolean; progress: number }
@@ -129,6 +133,9 @@ export const clientState: {
   // ramps `charge` 0→1 (`charging` true meanwhile) — that charge scales the
   // throw's distance/arc/flight-time on release (play.ts's beginThrow).
   fetch: { active: boolean; busy: boolean; charging: boolean; charge: number }
+  // Pepito's post-theft loop. This is local/transient only: the server keeps
+  // the pet sick until the later successful-cure step is built.
+  pepitoChase: { active: boolean; rockBusy: boolean; charging: boolean; charge: number; targetLocked: boolean }
   // Optimistic adoption: render the new pet instantly while the server catches
   // up, so adoption never feels like "nothing happened" if a message is slow.
   pendingPet: PetData | null
@@ -158,10 +165,9 @@ export const clientState: {
   followEnabled: true,
   toasts: [],
   currentToast: null,
-  reward: null,
   screenFade: { alpha: 0 },
   lastSpin: null,
-  dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, adoptCta: false },
+  dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
   introShown: false,
   petPanelOpen: false,
   viewingPetAddress: null,
@@ -173,10 +179,12 @@ export const clientState: {
   carryPet: { active: false, atStation: false },
   breed: { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false },
   feedTask: { active: false, petId: '' },
+  sicknessErrand: { active: false, petId: '' },
   hatch: { active: false, progress: 0 },
   feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
+  pepitoChase: { active: false, rockBusy: false, charging: false, charge: 0, targetLocked: false },
   pendingPet: null,
   pendingUntil: 0,
   pendingHatchlingDecision: null,
@@ -212,8 +220,15 @@ export function serverConnected(): boolean {
 }
 
 /** Open a multi-page NPC dialog. Advancing past the last page closes it. */
-export function openDialog(npcName: string, pages: string[], finalLabel = 'Got it!', onDone?: () => void, adoptCta = false): void {
-  clientState.dialog = { open: true, npcName, pages, page: 0, finalLabel, onDone: onDone ?? null, adoptCta }
+export function openDialog(
+  npcName: string,
+  pages: string[],
+  finalLabel = 'Got it!',
+  onDone?: () => void,
+  adoptCta = false,
+  onPage?: (page: number) => void
+): void {
+  clientState.dialog = { open: true, npcName, pages, page: 0, finalLabel, onDone: onDone ?? null, onPage: onPage ?? null, adoptCta }
 }
 
 export function advanceDialog(): void {
@@ -221,17 +236,20 @@ export function advanceDialog(): void {
   if (!d.open) return
   if (d.page < d.pages.length - 1) {
     d.page += 1
+    if (d.onPage) d.onPage(d.page)
     return
   }
   d.open = false
   const cb = d.onDone
   d.onDone = null
+  d.onPage = null
   if (cb) cb()
 }
 
 export function closeDialog(): void {
   clientState.dialog.open = false
   clientState.dialog.onDone = null
+  clientState.dialog.onPage = null
 }
 
 export function applySnapshot(snap: PlayerSnapshot): void {
@@ -286,6 +304,7 @@ function makeLocalPet(species: string, name: string): PetData {
     sleeping: false,
     sleepOnBed: false,
     sleepLockUntil: 0,
+    sick: false,
     bornAt: t,
     lastUpdated: t
   }
@@ -314,7 +333,9 @@ export function switchActivePet(petId: string): void {
     s.fetch.active ||
     s.feedGame.active ||
     s.bathGame.active ||
-    s.feedTask.active
+    s.feedTask.active ||
+    s.sicknessErrand.active ||
+    s.pepitoChase.active
   ) {
     pushToast('Finish what your pet is doing first!')
     return
@@ -389,11 +410,6 @@ export function showHint(id: string, message: string, kind: string = 'info'): vo
   pushToast(message, kind)
 }
 
-/** Flash a gamified "+XP +coins" reward popup (after a care action). */
-export function showReward(xp: number, coins: number): void {
-  clientState.reward = { xp, coins, until: Date.now() + 1800 }
-}
-
 export function resolveMyAddress(): string {
   if (clientState.myAddress) return clientState.myAddress
   const p = getPlayer()
@@ -418,8 +434,17 @@ export const actions = {
   care(action: CareAction, onBed = false): void {
     room.send('careAction', { action, onBed })
   },
-  feedResult(caught: number): void {
-    room.send('feedResult', { caught })
+  beginFeedMinigame(): void {
+    room.send('beginFeedMinigame', {})
+  },
+  feedResult(caught: number, poisoned: boolean): void {
+    room.send('feedResult', { caught, poisoned })
+  },
+  beginSicknessCure(): void {
+    room.send('beginSicknessCure', {})
+  },
+  cureSickness(): void {
+    room.send('cureSickness', {})
   },
   keepPet(): void {
     room.send('keepPet', {})
