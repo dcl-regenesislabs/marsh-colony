@@ -967,6 +967,10 @@ const BH_POTION_EMPTY = { uvs: breedHudUv(18, 762, 702, 895), aspect: (702 - 18)
 const BH_CLOSE = { uvs: breedHudUv(590, 614, 718, 742), aspect: 1 }
 const BH_BREED = { uvs: breedHudUv(18, 896, 500, 1014), aspect: (500 - 18) / (1014 - 896) }
 
+// Inline notice for the breed modal — toasts are hidden while a modal is open
+// (bigUiOpen), so buy-potion feedback shows here instead. Auto-expires.
+let breedNotice = { text: '', until: 0 }
+
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
   const potions = clientState.player?.inventory.rarityPotions ?? 0
@@ -1015,12 +1019,14 @@ function BreedNamePanel() {
                   // No potions: buy one on the spot with coins. buyPotionLocal is the
                   // optimistic mirror (deducts coins + adds the potion, false if broke);
                   // the server call confirms. Auto-apply it — you bought it for THIS roll.
+                  // Feedback goes to an INLINE notice, not pushToast: toasts are
+                  // suppressed while a modal (bigUiOpen) is on screen, so they'd be invisible.
                   if (buyPotionLocal()) {
                     uiState.breedUsePotion = true
-                    pushToast('Bought a Rarity Potion!')
                     actions.buyPotion()
+                    breedNotice = { text: 'Bought a Rarity Potion!', until: Date.now() + 2500 }
                   } else {
-                    pushToast('Not enough coins for a Rarity Potion!')
+                    breedNotice = { text: `Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`, until: Date.now() + 2500 }
                   }
                 }
           }
@@ -1035,6 +1041,16 @@ function BreedNamePanel() {
             uiTransform={{ positionType: 'absolute', position: { left: pillPadL, top: 0 }, width: pillW - pillPadL - S(18), height: '100%' }}
           />
         </UiEntity>
+
+        {/* Inline notice (buy feedback) — toasts are suppressed under a modal. */}
+        {Date.now() < breedNotice.until && (
+          <UiEntity
+            uiTransform={{ margin: { top: S(8) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
+            uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
+          >
+            <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
+          </UiEntity>
+        )}
 
         {/* Breed! */}
         <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(18) } }}>
@@ -3069,7 +3085,9 @@ const BREED_BTN_ASPECT = BREED_BTN_W / (BREED_BTN_H / 2)
 
 function BreedButtons() {
   const b = clientState.breed
-  if (!b.active || b.phase === 'pickB' || b.phase === 'animating') return <UiEntity />
+  // Also hidden while the name/potion modal is up — otherwise the world "Breed"
+  // button (phase 'ready') shows through behind it.
+  if (!b.active || b.phase === 'pickB' || b.phase === 'animating' || uiState.panel === 'breedName') return <UiEntity />
   const showPlace = b.phase === 'toNest' && b.atNest
   const showBreed = b.phase === 'ready'
   const bh = S(92) // match the bath/hatch button height

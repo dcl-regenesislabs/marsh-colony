@@ -1274,9 +1274,9 @@ export function finishBath(won: boolean): void {
 // ---------------------------------------------------------------------------
 const BREED_NEST = EntityNames.DualNest01_glb_2
 const BREED_REACH = 6 // metres from the nest that counts as "arrived" (big model)
-const BREED_BOWL_A_OFF = Vector3.create(-0.17, 2.05, -1.36) // left bowl (dialled in-world)
-const BREED_BOWL_B_OFF = Vector3.create(-0.17, 2.02, 1.28) // right bowl (dialled in-world)
-const BREED_EGG_OFF = Vector3.create(0.16, 1.4, -0.01) // centre egg spot (dialled in-world)
+const BREED_BOWL_A_OFF = Vector3.create(-0.17, 1.85, -1.36) // left bowl (dialled in-world; lowered 20cm)
+const BREED_BOWL_B_OFF = Vector3.create(-0.17, 1.82, 1.28) // right bowl (dialled in-world; lowered 20cm)
+const BREED_EGG_OFF = Vector3.create(0.16, 1.2, -0.01) // centre egg spot (dialled in-world; lowered 20cm)
 const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
 // Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
 // on the nest the whole time: the machine trembles, a violet magic orb (UI sprite)
