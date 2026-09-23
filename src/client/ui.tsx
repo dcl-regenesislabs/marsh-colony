@@ -33,8 +33,6 @@ import {
   BREED_ORB_FRAMES,
   BREED_BURST_FRAMES
 } from './pet'
-import { startCharge, releaseCharge } from './play'
-import { releasePepitoRockCharge, startPepitoRockCharge } from './pepitoChase'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
@@ -684,10 +682,10 @@ const BATH_BUTTON_ASPECT = 812 / 323
 function BottomNav() {
   const p = clientState.player
   // Hidden while any big panel/dialog is open (bigUiOpen) — it sits where these
-  // buttons are, or on top of them. Also hidden in Fetch mode, while carrying an
-  // egg or the pet, and during the hatch animation (so Keep/Discard only appears
-  // once the newborn has emerged).
-  if (!p || bigUiOpen() || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.hatch.active) return <UiEntity />
+  // buttons are, or on top of them. Also hidden in the active throw sequences,
+  // while carrying an egg or the pet, and during the hatch animation (so
+  // Keep/Discard only appears once the newborn has emerged).
+  if (!p || bigUiOpen() || clientState.fetch.active || clientState.pepitoChase.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.hatch.active) return <UiEntity />
   const bh = Sbtn(72)
 
   // Just hatched: a new pet is waiting on a Keep/Discard decision. It takes over
@@ -2127,15 +2125,44 @@ const barBottomRaw = 320
 const barRightRaw = 240
 
 // ---------------------------------------------------------------------------
-// Fetch (Play) mode — hold the Throw control to charge (a bar fills above it);
-// releasing throws with that much power, which sets the distance/arc/flight
-// time (see play.ts's beginThrow). Desktop shows its own labeled button;
-// mobile instead gets a native on-screen gamepad button with a custom icon
-// (play.ts's fetchTouchInputSystem + touchControls.ts — same icon throughout,
-// reads its press/release to drive the same charge). Disables (busy) once
-// thrown, until the pet drops the ball back at the player. BACK exits (only
-// when not mid-charge/throw).
+// Fetch (Play) mode — holding E charges the throw on desktop; the mouse camera
+// sets its direction. Mobile uses a native on-screen button with the same
+// charge/release behavior. BACK exits only when no throw is in progress.
 // ---------------------------------------------------------------------------
+// Desktop intentionally stays quiet while aiming: one instruction and its
+// charge meter, with no large scene button or progression readout.
+function DesktopThrowGuidance(props: { instruction: string; charge: number; visible: boolean }) {
+  if (!props.visible) return <UiEntity />
+  const width = S(450)
+  const meterWidth = S(14)
+  const meterHeight = S(58)
+  const textWidth = width - meterWidth - S(12)
+  const pct = Math.round(Math.max(0, Math.min(1, props.charge)) * 100)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { bottom: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height: meterHeight, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}
+    >
+      <Label
+        value={props.instruction}
+        fontSize={S(16)}
+        color={{ ...C.dim, a: 0.92 }}
+        textAlign="middle-center"
+        textWrap="wrap"
+        uiTransform={{ width: textWidth, height: meterHeight }}
+      />
+      <UiEntity
+        uiTransform={{ width: meterWidth, height: meterHeight, borderRadius: meterWidth / 2, margin: { left: S(12) } }}
+        uiBackground={{ color: { r: 0.5, g: 0.5, b: 0.5, a: 0.35 } }}
+      >
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: `${pct}%`, borderRadius: meterWidth / 2 }}
+          uiBackground={{ color: { r: 0.75, g: 0.9, b: 0.35, a: 0.65 } }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FetchOverlay() {
   if (!clientState.fetch.active) return <UiEntity />
   const st = clientState.fetch
@@ -2143,62 +2170,24 @@ function FetchOverlay() {
   const charging = st.charging
   const pct = Math.round(st.charge * 100)
   const isM = mobile()
-  const pet = clientState.activePet
-  // Every fetch costs PLAY_ENERGY_COST and pays XP + coins; under
-  // PLAY_MIN_ENERGY the pet stops playing entirely. The meter below is the
-  // whole loop made visible — the player can see the throws they have left.
-  const energy = pet?.energy ?? 0
   const tired = !canPlayNow()
-  const throwsLeft = Math.max(0, Math.floor((energy - Cfg.PLAY_MIN_ENERGY) / Cfg.PLAY_ENERGY_COST) + (tired ? 0 : 1))
-  const bw = S(300)
-  const bh = S(92)
-  const meterW = S(360)
-  const meterBottom = S(184)
-  const meterH = S(74)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {/* BACK — disabled while charging/mid-throw so you don't strand a charge or a ball in the air */}
       <BackButton disabled={busy || charging} onClick={() => (clientState.fetch.active = false)} />
-      {/* Energy meter + reward line (bottom-center, above the Fetch button) —
-          desktop only; mobile has no room for it next to the native button. */}
-      {!isM && (
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: meterBottom, left: '50%' }, margin: { left: -meterW / 2 }, width: meterW, height: meterH, flexDirection: 'column', alignItems: 'center' }}>
-          <Label
-            value={tired ? 'Out of energy — time for bed' : `+${Cfg.PLAY_XP_REWARD} XP  ·  +${Cfg.PLAY_COINS_REWARD} coins per fetch`}
-            fontSize={S(17)}
-            color={tired ? C.hunger : C.text}
-            textAlign="middle-center"
-            uiTransform={{ width: '100%', height: S(22) }}
-          />
-          <UiEntity uiTransform={{ width: meterW, height: S(18), borderRadius: S(9) }} uiBackground={{ color: C.trackBg }}>
-            <UiEntity uiTransform={{ width: `${Math.max(0, Math.min(100, energy))}%`, height: '100%', borderRadius: S(9) }} uiBackground={{ color: tired ? C.hunger : C.energy }} />
-          </UiEntity>
-          <Label
-            value={tired ? 'Energy too low to play' : `Energy ${Math.round(energy)}  ·  ~${throwsLeft} throw${throwsLeft === 1 ? '' : 's'} left`}
-            fontSize={S(15)}
-            color={C.dim}
-            textAlign="middle-center"
-            uiTransform={{ width: '100%', height: S(20), margin: { top: S(4) } }}
-          />
-        </UiEntity>
-      )}
-      {/* Charge bar — fills 0→100% while held, above the energy meter. Desktop
-          only — mobile has neither the meter nor this bar, just the vertical
-          one below plus the one-time hint. */}
-      {charging && !isM && (
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { bottom: meterBottom + meterH + S(18), left: '50%' }, margin: { left: -S(150) }, width: S(300), height: S(22), borderRadius: S(11) }}
-          uiBackground={{ color: C.trackBg }}
-        >
-          <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(11) }} uiBackground={{ color: C.gold }} />
-        </UiEntity>
-      )}
       {/* Mobile charge bar — subtle, thin, vertical (fills upward), calibrated
           on-device. Note for future positioning near this corner: the
           bottom-right is where the client draws its own native gamepad
           buttons OVER scene UI (docs: "Bottom-right action buttons — drawn
           deliberately over the [safe] area"), so anything placed too close to
           that corner's bottom edge gets hidden underneath them. */}
+      {!isM && (
+        <DesktopThrowGuidance
+          instruction={busy ? 'Your pet is fetching the ball.' : tired ? 'Your pet needs rest before playing.' : 'Use your mouse to aim. Hold E to charge, then release to throw.'}
+          charge={charging ? st.charge : 0}
+          visible
+        />
+      )}
       {charging && isM && (
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { bottom: S(barBottomRaw), right: S(barRightRaw) }, width: S(14), height: S(90), borderRadius: S(7), pointerFilter: 'none' }}
@@ -2232,27 +2221,6 @@ function FetchOverlay() {
           </UiEntity>
         </UiEntity>
       )}
-      {/* Desktop Throw button (bottom-center) — mobile's equivalent is the
-          native gamepad button, not drawn here. */}
-      {!isM && (
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center' }}>
-          <UiEntity
-            uiTransform={{ width: bw, height: bh, alignItems: 'center', justifyContent: 'center', borderRadius: S(26), pointerFilter: busy || tired ? 'none' : 'block' }}
-            uiBackground={{ color: busy || tired ? C.cardAlt : charging ? C.gold : C.green }}
-            onMouseDown={() => !tired && startCharge()}
-            onMouseUp={() => releaseCharge()}
-            onMouseLeave={() => releaseCharge()}
-          >
-            <Label
-              value={busy ? 'Searching…' : tired ? 'Too tired' : charging ? 'Release!' : 'Hold to Throw'}
-              fontSize={S(28)}
-              color={busy || tired ? C.dim : C.outline}
-              textAlign="middle-center"
-              uiTransform={{ width: bw, height: bh }}
-            />
-          </UiEntity>
-        </UiEntity>
-      )}
     </UiEntity>
   )
 }
@@ -2263,8 +2231,8 @@ function FetchOverlay() {
 // uiInputBinding holds the action down for as long as the button is pressed,
 // same as a native on-screen button.
 // Pepito's rock uses the same hold/release language as Fetch. Mobile keeps the
-// native custom button and puts a vertical charge meter just above it; desktop
-// gets the matching center button and horizontal meter.
+// native custom button and its vertical meter; desktop has compact keyboard and
+// mouse guidance instead of a center-screen button.
 function PepitoRockChargeOverlay() {
   const st = clientState.pepitoChase
   if (!st.active || clientState.dialog.open) return <UiEntity />
@@ -2272,8 +2240,6 @@ function PepitoRockChargeOverlay() {
   const charging = st.charging
   const locked = st.targetLocked
   const pct = Math.round(st.charge * 100)
-  const bw = S(300)
-  const bh = S(92)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {charging && isM && (
@@ -2287,32 +2253,12 @@ function PepitoRockChargeOverlay() {
           />
         </UiEntity>
       )}
-      {charging && !isM && (
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { bottom: S(188), left: '50%' }, margin: { left: -S(150) }, width: S(300), height: S(22), borderRadius: S(11), pointerFilter: 'none' }}
-          uiBackground={{ color: C.trackBg }}
-        >
-          <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(11) }} uiBackground={{ color: C.gold }} />
-        </UiEntity>
-      )}
       {!isM && (
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center' }}>
-          <UiEntity
-            uiTransform={{ width: bw, height: bh, alignItems: 'center', justifyContent: 'center', borderRadius: S(26), pointerFilter: st.rockBusy ? 'none' : 'block' }}
-            uiBackground={{ color: st.rockBusy ? C.cardAlt : charging ? C.gold : C.green }}
-            onMouseDown={() => startPepitoRockCharge()}
-            onMouseUp={() => releasePepitoRockCharge()}
-            onMouseLeave={() => releasePepitoRockCharge()}
-          >
-            <Label
-              value={st.rockBusy ? 'Throwing...' : charging ? locked ? 'Locked - release!' : 'Aim at Pepito' : 'Hold to throw rock'}
-              fontSize={S(24)}
-              color={st.rockBusy ? C.dim : C.outline}
-              textAlign="middle-center"
-              uiTransform={{ width: bw, height: bh }}
-            />
-          </UiEntity>
-        </UiEntity>
+        <DesktopThrowGuidance
+          instruction={st.rockBusy ? 'The rock is in the air.' : charging && locked ? 'Pepito locked. Release F to throw.' : 'Use your mouse to aim. Hold F to charge, then release to throw.'}
+          charge={charging ? st.charge : 0}
+          visible
+        />
       )}
     </UiEntity>
   )

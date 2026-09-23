@@ -329,7 +329,7 @@ function syncHandRock(): void {
 }
 
 function showThrowButton(): void {
-  if (recoveryStarted || awaitingCaretakerInstruction) {
+  if (!mobile() || recoveryStarted || awaitingCaretakerInstruction) {
     hideThrowButton()
     return
   }
