@@ -61,8 +61,6 @@ export enum EntityNames {
   Plants = "Plants",
   WaterPool01_glb = "WaterPool01.glb",
   WaterPool01_glb_2 = "WaterPool01.glb_2",
-  ark01_glb = "ark01.glb",
-  arkRamp01_glb = "arkRamp01.glb",
   cinematic_play_spawnpoint = "cinematic_play_spawnpoint",
   cinematic_point = "cinematic_point",
   column_glb = "column.glb",

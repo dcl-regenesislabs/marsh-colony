@@ -1465,27 +1465,6 @@
             "parent": 0
           }
         },
-        "582": {
-          "json": {
-            "position": {
-              "x": 143.25,
-              "y": 0.3256833553314209,
-              "z": 196.75
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "scale": {
-              "x": 6,
-              "y": 6,
-              "z": 6
-            },
-            "parent": 0
-          }
-        },
         "583": {
           "json": {
             "position": {
@@ -1671,27 +1650,6 @@
               "y": 0,
               "z": 0,
               "w": 1
-            },
-            "parent": 0
-          }
-        },
-        "593": {
-          "json": {
-            "position": {
-              "x": 143.2563934326172,
-              "y": 0.04040878266096115,
-              "z": 197.47640991210938
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "scale": {
-              "x": 6,
-              "y": 6,
-              "z": 6
             },
             "parent": 0
           }
@@ -1961,20 +1919,6 @@
                 "clip": "Hatch",
                 "playing": false,
                 "weight": -1,
-                "speed": 1,
-                "loop": false,
-                "shouldReset": false
-              }
-            ]
-          }
-        },
-        "582": {
-          "json": {
-            "states": [
-              {
-                "clip": "OpenDoor",
-                "playing": false,
-                "weight": 1,
                 "speed": 1,
                 "loop": false,
                 "shouldReset": false
@@ -2462,13 +2406,6 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "582": {
-          "json": {
-            "src": "assets/Models/ark01/ark01.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
         "583": {
           "json": {
             "src": "assets/Models/DualNest01/DualNest01.glb",
@@ -2528,13 +2465,6 @@
         "592": {
           "json": {
             "src": "assets/Models/floormash01/floormash01.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
-        "593": {
-          "json": {
-            "src": "assets/Models/arkRamp01/arkRamp01.glb",
             "visibleMeshesCollisionMask": 0,
             "invisibleMeshesCollisionMask": 3
           }
@@ -2903,11 +2833,6 @@
             "value": "HumanBed.glb"
           }
         },
-        "582": {
-          "json": {
-            "value": "ark01.glb"
-          }
-        },
         "583": {
           "json": {
             "value": "DualNest01.glb_2"
@@ -2951,11 +2876,6 @@
         "592": {
           "json": {
             "value": "floormash01.glb"
-          }
-        },
-        "593": {
-          "json": {
-            "value": "arkRamp01.glb"
           }
         },
         "66050": {
@@ -3133,9 +3053,7 @@
                   592,
                   512,
                   581,
-                  583,
-                  582,
-                  593
+                  583
                 ]
               },
               {
@@ -3498,14 +3416,6 @@
               {
                 "entity": 583,
                 "children": []
-              },
-              {
-                "entity": 582,
-                "children": []
-              },
-              {
-                "entity": 593,
-                "children": []
               }
             ]
           }
@@ -3730,9 +3640,6 @@
         "581": {
           "json": {}
         },
-        "582": {
-          "json": {}
-        },
         "583": {
           "json": {}
         },
@@ -3761,9 +3668,6 @@
           "json": {}
         },
         "592": {
-          "json": {}
-        },
-        "593": {
           "json": {}
         },
         "66050": {

@@ -23,7 +23,6 @@ import { setupInput } from './input'
 import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
-import { setupArk } from './ark'
 import { setupSkybox } from './skybox'
 import { setupMusic } from './music'
 import { setupEggShake } from './eggShake'
@@ -211,7 +210,6 @@ export function setupClient(): void {
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupMeteor() // meteor reward drop (falls, settles, clickable)
-  setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
   preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
