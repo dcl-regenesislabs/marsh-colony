@@ -20,6 +20,12 @@ let closing = false
 let camera: Entity | null = null
 let avatarHideArea: Entity | null = null
 
+/** Lets the persistent-sickness resume system avoid drawing its errand arrow
+ * under the post-feed camera hand-off and Caretaker dialog. */
+export function sicknessCinematicOwnsFlow(): boolean {
+  return queued || running || closing
+}
+
 /** Queue the Caretaker scene. Feed consumes this under its exit blackout when
  * possible; the system below remains as the safe fallback for standalone use. */
 export function queueSicknessCinematic(): void {

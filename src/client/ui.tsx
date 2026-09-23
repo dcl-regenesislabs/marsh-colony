@@ -1976,11 +1976,6 @@ function Toasts() {
   )
 }
 
-// Gamified reward popup — a quick "+XP  +coins" burst after a care action.
-// Two illustrated chips (star XP + coin), center-screen, auto-expiring. Each chip
-// is a 4-frame horizontal sprite strip with the badge + pill baked in; we cycle
-// the frames for a constant shimmer and drop the value into the flat area to the
-// right of the badge.
 // Arrow icon (source art is 500x500; exported at 256x256 — plenty of headroom
 // over this button's ~90-unit logical size on the highest-density mobile
 // screens, at well under half the file size) for the shared BACK button below.
@@ -2579,7 +2574,7 @@ function bubbleArtUvs(): number[] {
 // ~1.7x). A larger scale here double-counts that growth and oversizes the splash.
 const POP_SCALE = 1.0
 // Crop frame `i` of `total` from a horizontal sprite strip (one row, full height).
-// Shared by the bath pop-splash and the animated XP/coin reward chips.
+// Shared by the bath pop-splash sprite strips.
 function stripFrameUvs(i: number, total: number): number[] {
   const uL = i / total
   const uR = (i + 1) / total

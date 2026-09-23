@@ -15,6 +15,14 @@ const STAT_KEYS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
 const players = new Map<string, PlayerData>()
 // Per-action cooldown tracking (address -> action -> last ts).
 const actionCooldowns = new Map<string, Record<string, number>>()
+// A cure reward is earned only after the player has physically reached the
+// Care Center. This is session-scoped on purpose: after a reconnect, the
+// persistent `pet.sick` state resumes the errand and the player re-arms it at
+// the Care Center instead of retaining a stale client-issued permission.
+type SicknessCureAuthorization = { petId: string; readyAt: number; expiresAt: number }
+const sicknessCureAuthorizations = new Map<string, SicknessCureAuthorization>()
+type FeedRoundAuthorization = { petId: string; readyAt: number; expiresAt: number }
+const feedRoundAuthorizations = new Map<string, FeedRoundAuthorization>()
 // Treat farming guard: giver -> "targetAddr|day" -> count.
 const treatCounts = new Map<string, Record<string, number>>()
 // Addresses whose data was created fresh this server lifetime (no prior save).
@@ -34,6 +42,50 @@ export function setFollowState(address: string, following: boolean): void {
 /** Record whether a player is carrying their pet to the bath. */
 export function setCarriedState(address: string, carried: boolean): void {
   carriedState.set(address.toLowerCase(), carried)
+}
+
+/** Arm a cure only after server-side position validation at the Care Center. */
+export function beginSicknessCure(p: PlayerData, atCareCenter: boolean): Notify[] {
+  const pet = activePet(p)
+  if (!pet) return [{ kind: 'error', message: 'No active pet' }]
+  tickPlayer(p)
+  if (!pet.sick) return [{ kind: 'error', message: `${pet.name} is not sick.` }]
+  if (!atCareCenter) return [{ kind: 'error', message: 'Go to the Caretaker to begin the cure.' }]
+
+  const key = p.address.toLowerCase()
+  const existing = sicknessCureAuthorizations.get(key)
+  // Reaching the Care Center again must not let a client continually reset its
+  // window or skip the quest wait. A retry for the same sick pet keeps the
+  // first server-issued authorization intact until it expires.
+  if (existing && existing.petId === pet.id && existing.expiresAt > now()) return []
+
+  const startedAt = now()
+  sicknessCureAuthorizations.set(key, {
+    petId: pet.id,
+    readyAt: startedAt + C.SICKNESS_CURE_QUEST_MIN_MS,
+    expiresAt: startedAt + C.SICKNESS_CURE_QUEST_WINDOW_MS
+  })
+  return []
+}
+
+/** Record a position-validated Feed round before its client-side result arrives. */
+export function beginFeedMinigame(p: PlayerData, atFeedTree: boolean): Notify[] {
+  const pet = activePet(p)
+  if (!pet) return [{ kind: 'error', message: 'No active pet' }]
+  tickPlayer(p)
+  if (!atFeedTree) return [{ kind: 'error', message: 'Go to the tree to start feeding.' }]
+
+  const key = p.address.toLowerCase()
+  const existing = feedRoundAuthorizations.get(key)
+  if (existing && existing.petId === pet.id && existing.expiresAt > now()) return []
+
+  const startedAt = now()
+  feedRoundAuthorizations.set(key, {
+    petId: pet.id,
+    readyAt: startedAt + C.FEED_MINIGAME_MIN_MS,
+    expiresAt: startedAt + C.FEED_MINIGAME_WINDOW_MS
+  })
+  return []
 }
 
 // Player display names (from getPlayer().name, reported on requestState). Client-
@@ -611,6 +663,21 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
+  const key = p.address.toLowerCase()
+  const round = feedRoundAuthorizations.get(key)
+  if (!round || round.petId !== pet.id) {
+    return [{ kind: 'error', message: 'Start a Feed round at the tree first.' }]
+  }
+  if (round.expiresAt <= now()) {
+    feedRoundAuthorizations.delete(key)
+    return [{ kind: 'error', message: 'That Feed round expired. Please start again at the tree.' }]
+  }
+  if (round.readyAt > now()) {
+    return [{ kind: 'error', message: 'Finish the Feed round before collecting its result.' }]
+  }
+  // A Feed round has one result. Consume the lease before applying rewards so
+  // replayed result packets cannot create additional sickness/cure cycles.
+  feedRoundAuthorizations.delete(key)
   // Same sleep lock as careAction — applyCompletedCare wakes the pet, so a
   // minigame result must not be a back door out of the nap either.
   const lockLeft = C.sleepLockRemaining(pet, now())
@@ -625,6 +692,7 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   // caught before the cure flow has been completed.
   if (poisoned && !pet.sick) {
     pet.sick = true
+    sicknessCureAuthorizations.delete(p.address.toLowerCase())
     notes.push({ kind: 'sickness', message: `${pet.name} ate something bad and feels sick! Go see the Caretaker for medicine.` })
   }
   return notes
@@ -642,9 +710,21 @@ export function cureSickness(p: PlayerData): Notify[] {
     return [{ kind: 'sleep', message: `${pet.name} is fast asleep — ${C.formatLockCountdown(lockLeft)} left.` }]
   }
   if (!pet.sick) return [{ kind: 'error', message: `${pet.name} is not sick.` }]
+  const authorization = sicknessCureAuthorizations.get(p.address.toLowerCase())
+  if (!authorization || authorization.petId !== pet.id) {
+    return [{ kind: 'error', message: 'Visit the Caretaker before curing your pet.' }]
+  }
+  if (authorization.expiresAt <= now()) {
+    sicknessCureAuthorizations.delete(p.address.toLowerCase())
+    return [{ kind: 'error', message: 'The cure setup expired. Please see the Caretaker again.' }]
+  }
+  if (authorization.readyAt > now()) {
+    return [{ kind: 'error', message: 'The cure is not ready yet.' }]
+  }
   if (!cooldownOk(p.address, 'cure', C.SICKNESS_CURE_COOLDOWN_MS)) {
     return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
   }
+  sicknessCureAuthorizations.delete(p.address.toLowerCase())
   pet.sick = false
   applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS)
   notes.push({ kind: 'success', message: `${pet.name} is cured!` })

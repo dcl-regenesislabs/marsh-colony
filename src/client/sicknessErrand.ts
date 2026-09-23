@@ -5,13 +5,13 @@
 import { Animator, engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
-import { applyCureLocal } from './sim'
 import { actions, clientState, pushToast } from './state'
 import { hideArrow, showArrowTo } from './pet'
 import { openCureDialog } from './ui/dialog'
-import { resetStolenPotion, startPepitoSteal } from './pepitoSteal'
+import { pepitoStealHidesHud, resetStolenPotion, startPepitoSteal } from './pepitoSteal'
 import { startPepitoChase } from './pepitoChase'
 import { getPotionTableEntity } from './sicknessProps'
+import { sicknessCinematicOwnsFlow } from './sicknessCinematic'
 
 const CARETAKER_RADIUS = 5
 const ENTER_TRANSITION_S = 0.35
@@ -119,6 +119,9 @@ function beginCure(table: Entity, caretaker: Entity): void {
   cureTheftRunning = false
   cureDialogPending = true
   clientState.screenFade.alpha = 0
+  // The server will only honor the final cure after this Care Center hand-off.
+  // It independently checks the player's authoritative world position.
+  actions.beginSicknessCure()
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   resetStolenPotion()
   closePotionCage()
@@ -150,11 +153,19 @@ function beginCure(table: Entity, caretaker: Entity): void {
         // Finish the table camera hand-off first. Starting the chase after the
         // blackout has lifted means the Caretaker's rock instruction is never
         // hidden behind it or racing the native camera return.
-        finishCure(false, false, () => {
-          if (!startPepitoChase()) pushToast('Pepito stole the cure! We need to get it back.', 'error')
+        finishCure(false, () => {
+          if (!startPepitoChase()) {
+            pushToast('Pepito got away. Speak to the Caretaker and try again.', 'error')
+            startSicknessErrand()
+          }
         })
       })
-      if (!cureTheftRunning) finishCure()
+      if (!cureTheftRunning) {
+        finishCure(false, () => {
+          pushToast('The cure setup was interrupted. Please try again.', 'error')
+          startSicknessErrand()
+        })
+      }
     }, (page) => {
       if (page === 1) openPotionCage()
     })
@@ -165,7 +176,7 @@ function beginCure(table: Entity, caretaker: Entity): void {
 
 /** Return from the medicine beat while fully black. Pepito's theft deliberately
  * leaves the pet sick; the later chase will be the only successful cure. */
-function finishCure(cured = true, showTheftToast = true, afterRelease?: () => void): void {
+function finishCure(showTheftToast = true, afterRelease?: () => void): void {
   if (!cureRunning || cureClosing) return
   cureClosing = true
   cureDialogPending = false
@@ -178,10 +189,6 @@ function finishCure(cured = true, showTheftToast = true, afterRelease?: () => vo
       if (elapsedMs < EXIT_FADE_OUT_MS) return
       clientState.screenFade.alpha = 1
       if (MainCamera.has(engine.CameraEntity)) MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
-      if (cured) {
-        applyCureLocal()
-        actions.cureSickness()
-      }
       // Return to Blender's authored closed base pose under the fade.
       closePotionCage()
       stage = 'hold'
@@ -201,7 +208,7 @@ function finishCure(cured = true, showTheftToast = true, afterRelease?: () => vo
     cureRunning = false
     cureClosing = false
     cureTheftRunning = false
-    if (!cured && showTheftToast) pushToast('Pepito stole the cure! We need to get it back.', 'error')
+    if (showTheftToast) pushToast('Pepito stole the cure! We need to get it back.', 'error')
     afterRelease?.()
     engine.removeSystem(tick)
   }
@@ -220,9 +227,32 @@ export function setupSicknessErrand(): void {
 
     // Safety net: if some future UI path drops the dialog, the camera/freeze
     // still return through the same masked release.
-    if (cureRunning && !cureClosing && !cureDialogPending && !cureTheftRunning && !clientState.dialog.open) finishCure()
+    if (cureRunning && !cureClosing && !cureDialogPending && !cureTheftRunning && !clientState.dialog.open) {
+      finishCure(false, () => startSicknessErrand())
+    }
 
     const task = clientState.sicknessErrand
+    const pet = clientState.activePet
+    const anotherFlowOwnsPlayer =
+      clientState.feedGame.active ||
+      clientState.bathGame.active ||
+      clientState.petting.active ||
+      clientState.hatch.active ||
+      clientState.fetch.active ||
+      clientState.carryEgg.active ||
+      clientState.carryPet.active ||
+      clientState.breed.active ||
+      clientState.feedTask.active ||
+      clientState.dialog.open ||
+      clientState.screenFade.alpha > 0 ||
+      clientState.pepitoChase.active ||
+      pepitoStealHidesHud() ||
+      sicknessCinematicOwnsFlow()
+    // Sickness persists on the server, so its route must resume after reloads,
+    // cancelled BACK presses, transient entity-load misses, and interrupted
+    // Pepito stages. `startSicknessErrand` safely retries until the Caretaker
+    // entity itself is ready.
+    if (!task.active && !cureRunning && pet?.sick && !anotherFlowOwnsPlayer) startSicknessErrand()
     if (!task.active || cureRunning) return
     if (clientState.carryEgg.active || clientState.carryPet.active || !clientState.activePet?.sick || clientState.activePet.id !== task.petId) {
       cancelSicknessErrand()

@@ -33,7 +33,7 @@ import { setupDebugGrow } from './debugGrow'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
-import { setupSicknessCinematic } from './sicknessCinematic'
+import { queueSicknessCinematic, setupSicknessCinematic } from './sicknessCinematic'
 import { setupSicknessErrand } from './sicknessErrand'
 import { setupSicknessProps } from './sicknessProps'
 import { setupPepitoSteal } from './pepitoSteal'
@@ -96,7 +96,13 @@ function registerHandlers(): void {
     clientState.serverReady = true // lifts the loading gate in ui.tsx (Root)
     try {
       const snap = JSON.parse(data.json) as PlayerSnapshot
+      const hadSnapshot = firstSnapshotSeen
+      const activePetWasSick = clientState.activePet?.sick ?? false
       applySnapshot(snap)
+      // Sickness is persisted and server-authoritative. Only a newly confirmed
+      // sickness during this session gets the post-Feed cinematic; a returning
+      // player simply resumes the Caretaker errand below.
+      if (hadSnapshot && !activePetWasSick && clientState.activePet?.sick) queueSicknessCinematic()
       // Decide whether to show the intro on the FIRST snapshot ONLY, and only
       // here — this used to also be guessed from a timer (elapsed >= 2.5s) in case
       // the server was slow, but that guess could fire showIntro() BEFORE this

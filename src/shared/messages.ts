@@ -14,9 +14,13 @@ export const Messages = {
   careAction: Schemas.Map({ action: Schemas.String, onBed: Schemas.Boolean }),
   // Feed tree minigame result: how many fruit were caught and whether the
   // round caught poisonous fruit (sent once, at game end).
+  beginFeedMinigame: Schemas.Map({}),
   feedResult: Schemas.Map({ caught: Schemas.Int, poisoned: Schemas.Boolean }),
+  // Marks that a sick pet reached the Care Center. The server verifies the
+  // player's actual position and issues the short-lived cure authorization.
+  beginSicknessCure: Schemas.Map({}),
   // Caretaker cure cinematic completed. The server re-validates that the pet
-  // is actually sick before applying its reward.
+  // is sick and holds a live Care Center authorization before applying reward.
   cureSickness: Schemas.Map({}),
   // Pet your own active pet (instant happiness).
   petSelf: Schemas.Map({}),

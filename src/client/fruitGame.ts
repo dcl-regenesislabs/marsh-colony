@@ -37,7 +37,7 @@ import { actions, clientState, pushToast } from './state'
 import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchControls'
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
-import { queueSicknessCinematic, startSicknessCinematicFromFeedBlackout } from './sicknessCinematic'
+import { startSicknessCinematicFromFeedBlackout } from './sicknessCinematic'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import {
   getLocalPet,
@@ -1244,6 +1244,10 @@ export function startCatchingCountdown(): void {
     if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = true
     drawerRevealed = true
   }
+  // The server records a short-lived, position-validated round before any
+  // fruit result can be accepted. This keeps Feed (and its sickness outcome)
+  // tied to the actual tree minigame rather than a naked result RPC.
+  actions.beginFeedMinigame()
   phase = 'countdown'
   phaseAt = clock
   clientState.feedGame.phase = 'countdown'
@@ -1309,7 +1313,6 @@ function applyResults(): void {
   // to a jarring angle the instant the camera released at the end.
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   const caught = clientState.feedGame.caught
-  if (caughtPoisonThisRound) queueSicknessCinematic()
   if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
   for (const f of fruits) {
     Tween.deleteFrom(f.entity)
@@ -1324,7 +1327,7 @@ function applyResults(): void {
 
   const hungerStart = clientState.activePet?.hunger ?? 0
   const hungerTarget = Math.min(100, hungerStart + caught * Cfg.FEED_HUNGER_PER_FRUIT)
-  applyFeedMinigameLocal(caught, caughtPoisonThisRound) // optimistic local effect
+  applyFeedMinigameLocal(caught) // optimistic stats; sickness waits for the server snapshot
   actions.feedResult(caught, caughtPoisonThisRound) // tell the server (it corrects via snapshot)
 
   const player = Transform.getOrNull(engine.PlayerEntity)

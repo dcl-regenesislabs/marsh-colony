@@ -5,7 +5,7 @@
 
 import * as Cfg from '../shared/config'
 import type { CareAction, PetData, PlayerData, StatKey } from '../shared/types'
-import { clientState, showReward } from './state'
+import { clientState } from './state'
 
 const STAT_KEYS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
 
@@ -139,16 +139,15 @@ export function claimStreak(): { currency: number; spins: number; day: number } 
   return { currency: r.currency, spins: r.spins, day }
 }
 
-/** Grant care XP locally; returns the pet XP gained (rounded) for the reward UI. */
-function grantXp(p: PlayerData, base = Cfg.PET_XP_PER_ACTION): number {
+/** Grant care XP locally, mirroring the server's happiness multiplier. */
+function grantXp(p: PlayerData, base = Cfg.PET_XP_PER_ACTION): void {
   const pet = clientState.activePet
-  if (!pet) return 0
+  if (!pet) return
   const gain = base * (0.5 + 0.5 * (pet.happiness / 100))
   pet.petXp += gain
   pet.petLevel = Cfg.levelForXp(pet.petXp)
   p.caretakerXp += Cfg.CARETAKER_XP_PER_ACTION
   p.caretakerLevel = Cfg.levelForXp(p.caretakerXp)
-  return Math.round(gain)
 }
 
 function bumpCounter(p: PlayerData, key: string): void {
@@ -202,9 +201,8 @@ export function useItemLocal(tier: number): boolean {
   // Mirror the server: feeding is a care action — grow, gain XP + coins, cheer it.
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
-  const xpGain = grantXp(p)
+  grantXp(p)
   p.currency += Cfg.COINS_PER_ACTION
-  showReward(xpGain, Cfg.COINS_PER_ACTION)
   return true
 }
 
@@ -322,19 +320,16 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
   const coins = action === 'play' ? Cfg.PLAY_COINS_REWARD : Cfg.COINS_PER_ACTION
-  const xpGain = grantXp(p, action === 'play' ? Cfg.PLAY_XP_REWARD : Cfg.PET_XP_PER_ACTION)
+  grantXp(p, action === 'play' ? Cfg.PLAY_XP_REWARD : Cfg.PET_XP_PER_ACTION)
   p.currency += coins // instant coin reward (matches the server)
   bumpCounter(p, `${action}Count`)
   bumpCounter(p, 'careCount')
-  showReward(xpGain, coins) // gamified "+XP +coins" popup
   return true
 }
 
-/** Apply the Feed tree minigame's result locally (optimistic; server snapshot
- *  corrects). Mirrors applyCareLocal's tail, but the hunger delta scales with
- *  fruit caught instead of a flat ACTION_EFFECT. Poison only turns sickness on;
- *  clearing it remains an authoritative Caretaker action. */
-export function applyFeedMinigameLocal(caught: number, poisoned: boolean): void {
+/** Apply only the Feed result's non-sickness stats locally. The server owns
+ * sickness, so its snapshot is the sole trigger for the Caretaker flow. */
+export function applyFeedMinigameLocal(caught: number): void {
   const p = clientState.player
   const pet = clientState.activePet
   if (!p || !pet || caught <= 0) return
@@ -343,26 +338,8 @@ export function applyFeedMinigameLocal(caught: number, poisoned: boolean): void 
   pet.hunger = clamp(pet.hunger + caught * Cfg.FEED_HUNGER_PER_FRUIT)
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
-  const xpGain = grantXp(p)
+  grantXp(p)
   p.currency += Cfg.COINS_PER_ACTION
   bumpCounter(p, 'feedCount')
   bumpCounter(p, 'careCount')
-  showReward(xpGain, Cfg.COINS_PER_ACTION)
-  if (poisoned && !pet.sick) pet.sick = true
-}
-
-/** Optimistic mirror of the Caretaker cure. The server immediately follows with
- * the authoritative snapshot and can reject a stale/repeated request. */
-export function applyCureLocal(showRewardPopup = true): void {
-  const p = clientState.player
-  const pet = clientState.activePet
-  if (!p || !pet || !pet.sick || sleepLocked()) return
-  pet.sick = false
-  pet.careCount += 1
-  pet.size = Cfg.growSize(pet.size)
-  const xpGain = grantXp(p, Cfg.SICKNESS_CURE_XP)
-  p.currency += Cfg.SICKNESS_CURE_COINS
-  bumpCounter(p, 'cureCount')
-  bumpCounter(p, 'careCount')
-  if (showRewardPopup) showReward(xpGain, Cfg.SICKNESS_CURE_COINS)
 }

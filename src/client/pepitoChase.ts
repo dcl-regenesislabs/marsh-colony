@@ -92,9 +92,10 @@ const PEPITO_FLEE_RISE = 3
 const PEPITO_HIT_REACTION_S = 0.28
 const PEPITO_HIT_RECOIL_HEIGHT = 0.38
 const PEPITO_HIT_SCALE = 1.22
-// Calibrated in-scene: the Care Center's visual floor is Y=0 while the table
-// origin is Y=0.4, so the bottle needs this correction to land on the floor.
-const POTION_GROUND_ADJUSTMENT = -0.4
+// Calibrated in-scene: the Care Center's visual floor is 0.4m below the table
+// origin. This correction is applied from that origin only, never from both the
+// player and table heights.
+const POTION_GROUND_FROM_TABLE_Y = -0.4
 
 type RockFlight = { entity: Entity; position: Vector3; velocity: Vector3; elapsed: number; spin: number }
 type PotionDrop = { position: Vector3; velocity: Vector3 }
@@ -186,7 +187,7 @@ function potionEntity(): Entity | null {
 }
 
 function potionLandingY(): number {
-  return floorY + POTION_GROUND_CLEARANCE + POTION_GROUND_ADJUSTMENT
+  return floorY + POTION_GROUND_CLEARANCE + POTION_GROUND_FROM_TABLE_Y
 }
 
 function playPepitoHitFeedback(): void {
@@ -562,13 +563,25 @@ function finishPotionDrop(): void {
  * leaving frame. Starting the cure camera earlier would cut the escape off. */
 function startRecoveryWhenReady(): void {
   if (!recoveryStarted || celebrationStarted || potionDrop || pepitoFlee || potionPickupReady) return
-  celebrationStarted = true
   const potion = potionEntity()
-  if (potion) VisibilityComponent.createOrReplace(potion, { visible: false })
+  // A missing bottle is an interrupted encounter, not an excuse to complete
+  // the cure. Stop the chase and let the persistent-sickness errand re-arm.
+  if (!potion) {
+    pushToast('The medicine was lost. Speak to the Caretaker and try again.', 'error')
+    stopPepitoChase()
+    return
+  }
+  celebrationStarted = true
+  VisibilityComponent.createOrReplace(potion, { visible: false })
   const started = startCureCelebration(stopPepitoChase)
-  // A missing local pet should never soft-lock the chase. Normal gameplay has
-  // one; this fallback is only for a mid-load interruption.
-  if (!started) stopPepitoChase()
+  // A missing local pet should never soft-lock the chase or grant a cure.
+  // Normal gameplay has one; this path retries the errand after a mid-load
+  // interruption rather than completing the reward fallback.
+  if (!started) {
+    celebrationStarted = false
+    pushToast('The cure scene was interrupted. Speak to the Caretaker and try again.', 'error')
+    stopPepitoChase()
+  }
 }
 
 function potionDropTick(dt: number): void {
@@ -628,12 +641,16 @@ function beginPepitoChase(): boolean {
 
   const table = getPotionTableEntity()
   const caretaker = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
-  const tablePos = table && Transform.has(table) ? Transform.get(table).position : player.position
-  const caretakerPos = caretaker && Transform.has(caretaker) ? Transform.get(caretaker).position : tablePos
+  if (!table || !caretaker || !Transform.has(table) || !Transform.has(caretaker)) return false
+  const tablePos = Transform.get(table).position
+  const caretakerPos = Transform.get(caretaker).position
   const base = Vector3.create((tablePos.x + caretakerPos.x) / 2, tablePos.y, (tablePos.z + caretakerPos.z) / 2)
   orbitCenter = Vector3.create(base.x + ORBIT_CENTER_OFFSET_X, base.y, base.z + ORBIT_CENTER_OFFSET_Z)
   orbitStartAngle = Math.atan2(tablePos.z - orbitCenter.z, tablePos.x - orbitCenter.x)
-  floorY = Math.min(player.position.y, tablePos.y)
+  // The table is the authored Care Center floor reference. Using the lower of
+  // it and the player's transform applied the -0.4 calibration twice on this
+  // raised floor and buried the bottle under the ground.
+  floorY = tablePos.y
   orbitClock = 0
   recoveryStarted = false
   celebrationStarted = false

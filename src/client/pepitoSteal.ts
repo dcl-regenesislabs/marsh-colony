@@ -183,13 +183,6 @@ function focusStealCamera(): void {
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
 }
 
-function clearStealCamera(): void {
-  const mainCamera = MainCamera.getOrNull(engine.CameraEntity)
-  if (camera && mainCamera?.virtualCameraEntity === camera) {
-    MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
-  }
-}
-
 export function getPepitoStealTuning(): PepitoStealTuning {
   return STEAL_TUNING
 }

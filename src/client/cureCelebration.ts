@@ -5,7 +5,6 @@
 import { engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
 import { startCureCinematic, endCureCinematic } from './pet'
-import { applyCureLocal } from './sim'
 import { actions, clientState, pushToast } from './state'
 
 const HAPPY_HOLD_MS = 2600
@@ -36,10 +35,6 @@ export function startCureCelebration(onDone: () => void): boolean {
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
 
-  // The happy cinematic is the feedback for this win. Do not cover it with
-  // the usual purple XP / orange coin chips right after the stone hits.
-  clientState.reward = null
-  applyCureLocal(false)
   actions.cureSickness()
   pushToast(`${clientState.activePet?.name ?? 'Your pet'} is healthy again!`, 'success')
 

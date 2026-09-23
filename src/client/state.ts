@@ -37,8 +37,6 @@ export const clientState: {
   // when the current toast started so the render can drive its slide/fade.
   toasts: { message: string; kind: string }[]
   currentToast: { message: string; kind: string; shownAt: number; until: number } | null
-  // Gamified "+XP +coins" reward popup after a care action. Auto-expires.
-  reward: { xp: number; coins: number; until: number } | null
   // Full-screen black overlay alpha (0 = invisible, 1 = fully black). Used to
   // mask an unavoidable camera hand-off pop (see fruitGame.ts's fadeAndRelease)
   // instead of trying to predict exactly where a given client's native camera
@@ -167,7 +165,6 @@ export const clientState: {
   followEnabled: true,
   toasts: [],
   currentToast: null,
-  reward: null,
   screenFade: { alpha: 0 },
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
@@ -413,11 +410,6 @@ export function showHint(id: string, message: string, kind: string = 'info'): vo
   pushToast(message, kind)
 }
 
-/** Flash a gamified "+XP +coins" reward popup (after a care action). */
-export function showReward(xp: number, coins: number): void {
-  clientState.reward = { xp, coins, until: Date.now() + 1800 }
-}
-
 export function resolveMyAddress(): string {
   if (clientState.myAddress) return clientState.myAddress
   const p = getPlayer()
@@ -442,8 +434,14 @@ export const actions = {
   care(action: CareAction, onBed = false): void {
     room.send('careAction', { action, onBed })
   },
+  beginFeedMinigame(): void {
+    room.send('beginFeedMinigame', {})
+  },
   feedResult(caught: number, poisoned: boolean): void {
     room.send('feedResult', { caught, poisoned })
+  },
+  beginSicknessCure(): void {
+    room.send('beginSicknessCure', {})
   },
   cureSickness(): void {
     room.send('cureSickness', {})

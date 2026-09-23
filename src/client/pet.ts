@@ -1774,10 +1774,14 @@ function endBreedCamera(): void {
 const ARROW_MODEL = 'models/arrow_indicator.glb'
 const ARROW_LEAD = 1 // metres ahead of the player, toward the target
 const ARROW_GROUND_CLEARANCE = 0.05 // desired world height above the floor (~player's feet at rest)
-const ARROW_INDOOR_LIFT = 0.9 // extra world height indoors so the arrow clears raised floors / trim
+const ARROW_INDOOR_LIFT = 0.6 // extra world height indoors so the arrow clears raised floors / trim
 const ARROW_YAW_OFFSET = 180 // model points backwards; flip it to point at the target
 const ARROW_SCALE = 1 // tune the arrow size
-const CARE_CENTER_ARROW_RADIUS = 7 // arrow-only footprint around the Care Center interior
+const CARE_CENTER_ARROW_RADIUS = 4.5 // arrow-only footprint around the Care Center interior
+// The sickness pickup is on the Care Center's raised floor. Keep its former
+// visibility tuning local to that errand instead of changing every world arrow.
+const SICKNESS_CARE_CENTER_ARROW_RADIUS = 7
+const SICKNESS_CARE_CENTER_ARROW_LIFT = 0.9
 let arrow: Entity | null = null
 let arrowTarget: Vector3 | null = null
 
@@ -1813,11 +1817,14 @@ function arrowOwnerActive(): boolean {
   return false
 }
 
-function playerNeedsIndoorArrowLift(pos: Vector3): boolean {
-  if (zoneOf(pos) !== null) return true
+function indoorArrowLift(pos: Vector3): number {
+  if (zoneOf(pos) !== null) return ARROW_INDOOR_LIFT
   const caretaker = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
-  if (!caretaker || !Transform.has(caretaker)) return false
-  return distFlat(pos, Transform.get(caretaker).position) <= CARE_CENTER_ARROW_RADIUS
+  if (!caretaker || !Transform.has(caretaker)) return 0
+  const isSicknessErrand = arrowOwner === 'sickness'
+  const radius = isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_RADIUS : CARE_CENTER_ARROW_RADIUS
+  if (distFlat(pos, Transform.get(caretaker).position) > radius) return 0
+  return isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_LIFT : ARROW_INDOOR_LIFT
 }
 // Parented to the player (body-fixed, same trick as AvatarAttach) instead of
 // positioned each frame from a world-space read of the player's Transform — that
@@ -1868,7 +1875,7 @@ function updateArrow(): void {
   // the player's current height so the arrow stays near the actual ground instead.
   // Indoors, add a small fixed lift so the same floor arrow stays visible over the
   // house / Care Center floors without turning into a floating waypoint.
-  const localY = ARROW_GROUND_CLEARANCE + (playerNeedsIndoorArrowLift(pt.position) ? ARROW_INDOOR_LIFT : 0) - pt.position.y
+  const localY = ARROW_GROUND_CLEARANCE + indoorArrowLift(pt.position) - pt.position.y
   const t = Transform.getMutable(arrow)
   t.position = Vector3.create(Math.sin(rad) * ARROW_LEAD, localY, Math.cos(rad) * ARROW_LEAD)
   t.rotation = Quaternion.fromEulerDegrees(0, localYaw + ARROW_YAW_OFFSET, 0)
