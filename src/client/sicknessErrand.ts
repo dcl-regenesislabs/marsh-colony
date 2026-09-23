@@ -11,6 +11,7 @@ import { hideArrow, showArrowTo } from './pet'
 import { openCureDialog } from './ui/dialog'
 import { resetStolenPotion, startPepitoSteal } from './pepitoSteal'
 import { startPepitoChase } from './pepitoChase'
+import { getPotionTableEntity } from './sicknessProps'
 
 const CARETAKER_RADIUS = 5
 const ENTER_TRANSITION_S = 0.35
@@ -33,8 +34,7 @@ function caretakerEntity(): Entity | null {
 }
 
 function tableEntity(): Entity | null {
-  const entity = engine.getEntityOrNullByName(EntityNames.PotionTable_glb)
-  return entity && Transform.has(entity) ? entity : null
+  return getPotionTableEntity()
 }
 
 function playerPosition(): Vector3 | null {

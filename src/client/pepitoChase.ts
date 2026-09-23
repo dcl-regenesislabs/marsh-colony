@@ -29,6 +29,7 @@ import { clientState, pushToast } from './state'
 import { ROCK_TOUCH_ACTION, hideRockTouchButton, showRockTouchButton } from './touchControls'
 import { openPepitoStoleDialog } from './ui/dialog'
 import { mobile } from './ui/theme'
+import { getPotionEntity, getPotionTableEntity } from './sicknessProps'
 
 const PEPITO_SPECIES = 'pepito-original'
 const PEPITO_SCALE = stageScaleFor(SIZE_BASE) * scaleForSpecies(PEPITO_SPECIES)
@@ -146,8 +147,8 @@ function placePepito(position: Vector3): void {
   transform.position = pepitoPosition
   transform.rotation = Quaternion.fromEulerDegrees(0, pepitoYaw + yawOffsetForSpecies(PEPITO_SPECIES), 0)
 
-  const potion = engine.getEntityOrNullByName(EntityNames.Potion01_glb)
-  if (!potion || !Transform.has(potion)) return
+  const potion = getPotionEntity()
+  if (!potion) return
   const tuning = getPepitoStealTuning()
   const radians = (pepitoYaw * Math.PI) / 180
   const forward = Vector3.create(Math.sin(radians), 0, Math.cos(radians))
@@ -161,8 +162,7 @@ function placePepito(position: Vector3): void {
 }
 
 function potionEntity(): Entity | null {
-  const potion = engine.getEntityOrNullByName(EntityNames.Potion01_glb)
-  return potion && Transform.has(potion) ? potion : null
+  return getPotionEntity()
 }
 
 function hidePepito(): void {
@@ -511,7 +511,7 @@ function beginPepitoChase(): boolean {
   const player = Transform.getOrNull(engine.PlayerEntity)
   if (!player) return false
 
-  const table = engine.getEntityOrNullByName(EntityNames.PotionTable_glb)
+  const table = getPotionTableEntity()
   const caretaker = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
   const tablePos = table && Transform.has(table) ? Transform.get(table).position : player.position
   const caretakerPos = caretaker && Transform.has(caretaker) ? Transform.get(caretaker).position : tablePos

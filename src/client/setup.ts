@@ -35,6 +35,7 @@ import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
 import { setupSicknessCinematic } from './sicknessCinematic'
 import { setupSicknessErrand } from './sicknessErrand'
+import { setupSicknessProps } from './sicknessProps'
 import { setupPepitoSteal } from './pepitoSteal'
 import { setupPepitoChase } from './pepitoChase'
 import { preloadCreatureTextures } from './creatureSkins'
@@ -228,6 +229,7 @@ export function setupClient(): void {
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
   setupSicknessCinematic() // poisoned Feed round: sad pet + Caretaker introduction
+  setupSicknessProps() // runtime-only medicine table + potion; intentionally absent from the composite
   setupSicknessErrand() // walk to the Caretaker, then play the medicine-table cure scene
   setupPepitoSteal() // preload Pepito so the medicine theft arrives without a model-streaming pop
   setupPepitoChase() // post-theft orbit plus the first rock-throw interaction

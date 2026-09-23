@@ -7,6 +7,7 @@ import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { SIZE_BASE, clipForSpecies, modelForSpecies, scaleForSpecies, stageScaleFor, yawOffsetForSpecies } from '../shared/config'
 import { applyCreatureSkin } from './creatureSkins'
+import { getPotionEntity, getPotionTableEntity } from './sicknessProps'
 
 const PEPITO_SPECIES = 'pepito-original'
 const PEPITO_SCALE = stageScaleFor(SIZE_BASE) * scaleForSpecies(PEPITO_SPECIES)
@@ -77,13 +78,11 @@ function curvedFlight(from: Vector3, to: Vector3, t: number, side: number, lift:
 }
 
 function tableEntity(): Entity | null {
-  const entity = engine.getEntityOrNullByName(EntityNames.PotionTable_glb)
-  return entity && Transform.has(entity) ? entity : null
+  return getPotionTableEntity()
 }
 
 function potionEntity(): Entity | null {
-  const entity = engine.getEntityOrNullByName(EntityNames.Potion01_glb)
-  return entity && Transform.has(entity) ? entity : null
+  return getPotionEntity()
 }
 
 function rememberPotionHome(): PotionHome | null {
