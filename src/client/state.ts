@@ -127,6 +127,9 @@ export const clientState: {
   // ramps `charge` 0→1 (`charging` true meanwhile) — that charge scales the
   // throw's distance/arc/flight-time on release (play.ts's beginThrow).
   fetch: { active: boolean; busy: boolean; charging: boolean; charge: number }
+  // Pepito's post-theft loop. This is local/transient only: the server keeps
+  // the pet sick until the later successful-cure step is built.
+  pepitoChase: { active: boolean; rockBusy: boolean; charging: boolean; charge: number }
   // Optimistic adoption: render the new pet instantly while the server catches
   // up, so adoption never feels like "nothing happened" if a message is slow.
   pendingPet: PetData | null
@@ -175,6 +178,7 @@ export const clientState: {
   feedGame: { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 },
   bathGame: { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 },
   fetch: { active: false, busy: false, charging: false, charge: 0 },
+  pepitoChase: { active: false, rockBusy: false, charging: false, charge: 0 },
   pendingPet: null,
   pendingUntil: 0,
   pendingHatchlingDecision: null,
@@ -323,7 +327,8 @@ export function switchActivePet(petId: string): void {
     s.feedGame.active ||
     s.bathGame.active ||
     s.feedTask.active ||
-    s.sicknessErrand.active
+    s.sicknessErrand.active ||
+    s.pepitoChase.active
   ) {
     pushToast('Finish what your pet is doing first!')
     return

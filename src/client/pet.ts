@@ -90,6 +90,10 @@ let interactClip: PetClip = 'idle'
 let eatCinematicActive = false
 let eatPlaybackSpeed = 1
 let sadCinematicActive = false
+// The successful medicine beat owns the pet's pose separately from the
+// post-Feed sad hold. Keep this latch so the regular interaction timer cannot
+// immediately replace the happy reaction with follow/idle.
+let cureCinematicActive = false
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
@@ -546,7 +550,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.feedGame.active || clientState.bathGame.active
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active
 }
 
 /**
@@ -914,6 +918,10 @@ export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
   interactClip = 'gesture-negative'
   interactTimer = 0
   sadCinematicActive = true
+  // The dialog is the only valid tap during this mobile close-up. Leaving the
+  // regular pet handler registered still renders its native "Open" affordance,
+  // even though the dialog's full-screen catcher correctly eats the tap.
+  pointerEventsSystem.removeOnPointerDown(localPet)
   return { camPos, look }
 }
 
@@ -924,11 +932,66 @@ export function endSadCinematic(): void {
     interactTimer = 0
     mode = clientState.followEnabled ? 'follow' : 'wander'
   }
+  if (localPet) registerPetOpenClick(localPet)
 }
 
 /** True only while the post-Feed sickness scene owns the pet pose/head. */
 export function sadCinematicIsActive(): boolean {
   return sadCinematicActive
+}
+
+/** Frame the pet's recovery in its current safe world position. Unlike the
+ * sickness reveal this has no dialog to compose around, so it stays closer and
+ * centers the pet's happy gesture. The caller owns the virtual camera and the
+ * eventual release; this function owns only the pet pose. */
+export function startCureCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const distance = 2.75 + stageScaleFor(pet.size) + (mobile() ? 0.75 : 0)
+  const camPos = Vector3.create(petPos.x + direction.x * distance, petPos.y + 1.35, petPos.z + direction.z * distance)
+  const look = Vector3.create(petPos.x, petPos.y + 0.5, petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-positive'
+  interactTimer = 0
+  cureCinematicActive = true
+
+  // This may be a second recovery in the same session, so force the positive
+  // gesture back to its first frame instead of resuming it midway through.
+  const happyClip = clipForSpecies(pet.species, 'gesture-positive')
+  curClip.set(localPet, happyClip)
+  lastLogicalClip.set(localPet, 'gesture-positive')
+  Animator.playSingleAnimation(localPet, happyClip, true)
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === happyClip)
+  if (state) {
+    state.playing = true
+    state.loop = true
+    state.speed = 1
+  }
+  return { camPos, look }
+}
+
+/** Return the pet to its normal follow/wander behavior after its recovery. */
+export function endCureCinematic(): void {
+  if (!cureCinematicActive) return
+  cureCinematicActive = false
+  if (mode === 'interact' && interactClip === 'gesture-positive') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+}
+
+/** Lets the overhead emote hold a happy face for the full recovery shot. */
+export function cureCinematicIsActive(): boolean {
+  return cureCinematicActive
 }
 
 // ---------------------------------------------------------------------------
@@ -1869,7 +1932,12 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
-      if ((interactClip === 'eat' && eatCinematicActive) || (interactClip === 'gesture-negative' && sadCinematicActive)) break
+      if (
+        (interactClip === 'eat' && eatCinematicActive) ||
+        (interactClip === 'gesture-negative' && sadCinematicActive) ||
+        (interactClip === 'gesture-positive' && cureCinematicActive)
+      )
+        break
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {
@@ -1941,6 +2009,9 @@ function updateLocalPet(dt: number): void {
   } else if (mode === 'interact') setClip(localPet, interactClip)
   else if (moved > 0.003) setClip(localPet, moveClip)
   else if (clientState.activePet?.sleeping) setClip(localPet, 'sleep')
+  // A sick pet can still walk after the player, but it must never snap to the
+  // cheerful neutral idle while waiting for the medicine.
+  else if (clientState.activePet?.sick) setClip(localPet, 'gesture-negative')
   else setClip(localPet, 'idle')
 
   // Floating name tag follows the pet.

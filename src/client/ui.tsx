@@ -24,6 +24,7 @@ import {
   canStartPetInteraction
 } from './pet'
 import { startCharge, releaseCharge } from './play'
+import { releasePepitoRockCharge, startPepitoRockCharge } from './pepitoChase'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
@@ -45,6 +46,7 @@ import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolv
 import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './ui/dialog'
 import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
+import { pepitoStealHidesHud } from './pepitoSteal'
 
 export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard'
 export type ShopTabId = 'food' | 'slots'
@@ -1902,38 +1904,6 @@ function Toasts() {
 // is a 4-frame horizontal sprite strip with the badge + pill baked in; we cycle
 // the frames for a constant shimmer and drop the value into the flat area to the
 // right of the badge.
-const CHIP_XP_SHEET = 'assets/images/revamp/chip_xp_4frames.png'
-const CHIP_COIN_SHEET = 'assets/images/revamp/chip_coins_4frames.png'
-const CHIP_FRAMES = 4
-const CHIP_ASPECT = 512 / 192 // one frame's cell aspect (~2.667)
-const CHIP_FRAME_MS = 150 // shimmer speed (ms per frame)
-const CHIP_TEXT_OUTLINE = { r: 0.25, g: 0.15, b: 0.1, a: 1 } as Color // dark brown, matches the baked border
-function RewardPopup() {
-  const r = clientState.reward
-  if (!r || r.until <= Date.now()) {
-    if (r) clientState.reward = null // expired: clear it
-    return <UiEntity />
-  }
-  const uvs = stripFrameUvs(Math.floor(Date.now() / CHIP_FRAME_MS) % CHIP_FRAMES, CHIP_FRAMES)
-  const chipW = S(210)
-  const chipH = Math.round(chipW / CHIP_ASPECT)
-  const textLeft = Math.round(chipW * 0.34) // clear the baked badge on the left
-  const textW = Math.round(chipW * 0.58) // the flat pill area to its right
-  const chip = (sheet: string, text: string) => (
-    <UiEntity uiTransform={{ width: chipW, height: chipH, margin: { left: S(6), right: S(6) } }} uiBackground={{ texture: { src: sheet }, textureMode: 'stretch', uvs }}>
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: textLeft }, width: textW, height: chipH, alignItems: 'center', justifyContent: 'center' }}>
-        <OutlineLabel value={`<b>${text}</b>`} fontSize={S(24)} color={LOC.white} outlineColor={CHIP_TEXT_OUTLINE} width={textW} height={chipH} textAlign="middle-center" />
-      </UiEntity>
-    </UiEntity>
-  )
-  return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '28%', left: '50%' }, margin: { left: -(chipW + S(12)) }, width: chipW * 2 + S(24), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      {chip(CHIP_XP_SHEET, `+${r.xp} xp`)}
-      {chip(CHIP_COIN_SHEET, `+${r.coins} coin`)}
-    </UiEntity>
-  )
-}
-
 // Arrow icon (source art is 500x500; exported at 256x256 — plenty of headroom
 // over this button's ~90-unit logical size on the highest-density mobile
 // screens, at well under half the file size) for the shared BACK button below.
@@ -2213,6 +2183,61 @@ function FetchOverlay() {
 // single-axis left/right button, since the lane only allows that anyway.
 // uiInputBinding holds the action down for as long as the button is pressed,
 // same as a native on-screen button.
+// Pepito's rock uses the same hold/release language as Fetch. Mobile keeps the
+// native custom button and puts a vertical charge meter just above it; desktop
+// gets the matching center button and horizontal meter.
+function PepitoRockChargeOverlay() {
+  const st = clientState.pepitoChase
+  if (!st.active || clientState.dialog.open) return <UiEntity />
+  const isM = mobile()
+  const charging = st.charging
+  const pct = Math.round(st.charge * 100)
+  const bw = S(300)
+  const bh = S(92)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      {charging && isM && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: S(barBottomRaw), right: S(barRightRaw) }, width: S(14), height: S(90), borderRadius: S(7), pointerFilter: 'none' }}
+          uiBackground={{ color: { r: 0.5, g: 0.5, b: 0.5, a: 0.35 } }}
+        >
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: `${pct}%`, borderRadius: S(7) }}
+            uiBackground={{ color: { r: 0.75, g: 0.9, b: 0.35, a: 0.65 } }}
+          />
+        </UiEntity>
+      )}
+      {charging && !isM && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: S(188), left: '50%' }, margin: { left: -S(150) }, width: S(300), height: S(22), borderRadius: S(11), pointerFilter: 'none' }}
+          uiBackground={{ color: C.trackBg }}
+        >
+          <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(11) }} uiBackground={{ color: C.gold }} />
+        </UiEntity>
+      )}
+      {!isM && (
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center' }}>
+          <UiEntity
+            uiTransform={{ width: bw, height: bh, alignItems: 'center', justifyContent: 'center', borderRadius: S(26), pointerFilter: st.rockBusy ? 'none' : 'block' }}
+            uiBackground={{ color: st.rockBusy ? C.cardAlt : charging ? C.gold : C.green }}
+            onMouseDown={() => startPepitoRockCharge()}
+            onMouseUp={() => releasePepitoRockCharge()}
+            onMouseLeave={() => releasePepitoRockCharge()}
+          >
+            <Label
+              value={st.rockBusy ? 'Throwing...' : charging ? 'Release!' : 'Hold to throw rock'}
+              fontSize={S(24)}
+              color={st.rockBusy ? C.dim : C.outline}
+              textAlign="middle-center"
+              uiTransform={{ width: bw, height: bh }}
+            />
+          </UiEntity>
+        </UiEntity>
+      )}
+    </UiEntity>
+  )
+}
+
 const ARROW_ICON = {
   left: 'assets/images/left_arrow.png',
   left_pressed: 'assets/images/left_arrow_pressed.png',
@@ -3003,12 +3028,6 @@ function FeedErrandOverlay() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <BackButton onClick={() => cancelFeedTask()} />
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-        uiBackground={{ color: C.panelBg }}
-      >
-        <Label value="Follow the arrow to the tree!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-      </UiEntity>
     </UiEntity>
   )
 }
@@ -3020,12 +3039,6 @@ function SicknessErrandOverlay() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <BackButton onClick={() => cancelSicknessErrand()} />
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-        uiBackground={{ color: C.panelBg }}
-      >
-        <Label value="Follow the arrow to the Caretaker!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-      </UiEntity>
     </UiEntity>
   )
 }
@@ -3071,6 +3084,7 @@ const Root = () => {
   // Feed tree minigame also owns the whole screen (cinematic camera under the tree).
   // Computed as a value (not early-returned) so UI_DEBUG_MODE's browser bar
   // below can render on top of ANY of these branches, not just the default one.
+  const hideHudForPepitoTheft = pepitoStealHidesHud()
   const content =
     !clientState.serverReady ? (
       <LoadingGate />
@@ -3092,36 +3106,40 @@ const Root = () => {
       </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <TopBars />
-        <SideButtons />
-        <BottomNav />
-        <FetchOverlay />
-        <CarryHatchButton />
-        <BathButton />
-        <FeedErrandOverlay />
-        <SicknessErrandOverlay />
-        {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
-            on top of it instead of the nav icons poking through over them. Moot
-            now that bigUiOpen() hides the nav while these are open, but keeps
-            the same defensive ordering PetPanel already relies on. */}
-        <RemotePetPanel />
-        <SwapOfferPanel />
-        <PetPanel />
-        {uiState.panel === 'adopt' && <AdoptPanel />}
-        {uiState.panel === 'breedName' && <BreedNamePanel />}
-        {uiState.panel === 'shop' && <ShopPanel />}
-        {uiState.panel === 'roster' && <RosterPanel />}
-        {uiState.panel === 'inventory' && <InventoryPanel />}
-        {uiState.panel === 'spin' && <SpinPanel />}
-        {uiState.panel === 'meteor' && <MeteorRewardPanel />}
-        {uiState.panel === 'goals' && <GoalsPanel />}
-        {uiState.panel === 'daily' && <DailyRewardPanel />}
-        {uiState.panel === 'jukebox' && <JukeboxPanel />}
-        {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
+        {!hideHudForPepitoTheft && (
+          <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+            <TopBars />
+            <SideButtons />
+            <BottomNav />
+            <FetchOverlay />
+            <PepitoRockChargeOverlay />
+            <CarryHatchButton />
+            <BathButton />
+            <FeedErrandOverlay />
+            <SicknessErrandOverlay />
+            {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
+                on top of it instead of the nav icons poking through over them. Moot
+                now that bigUiOpen() hides the nav while these are open, but keeps
+                the same defensive ordering PetPanel already relies on. */}
+            <RemotePetPanel />
+            <SwapOfferPanel />
+            <PetPanel />
+            {uiState.panel === 'adopt' && <AdoptPanel />}
+            {uiState.panel === 'breedName' && <BreedNamePanel />}
+            {uiState.panel === 'shop' && <ShopPanel />}
+            {uiState.panel === 'roster' && <RosterPanel />}
+            {uiState.panel === 'inventory' && <InventoryPanel />}
+            {uiState.panel === 'spin' && <SpinPanel />}
+            {uiState.panel === 'meteor' && <MeteorRewardPanel />}
+            {uiState.panel === 'goals' && <GoalsPanel />}
+            {uiState.panel === 'daily' && <DailyRewardPanel />}
+            {uiState.panel === 'jukebox' && <JukeboxPanel />}
+            {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
+          </UiEntity>
+        )}
         <DialogBox />
-        {/* Reward + toasts render LAST so they sit on top of any panel/modal. */}
-        <RewardPopup />
-        <Toasts />
+        {/* The single global notification surface is the white top-left toast. */}
+        {!hideHudForPepitoTheft && <Toasts />}
       </UiEntity>
     )
   return (

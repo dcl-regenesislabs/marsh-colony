@@ -353,7 +353,7 @@ export function applyFeedMinigameLocal(caught: number, poisoned: boolean): void 
 
 /** Optimistic mirror of the Caretaker cure. The server immediately follows with
  * the authoritative snapshot and can reject a stale/repeated request. */
-export function applyCureLocal(): void {
+export function applyCureLocal(showRewardPopup = true): void {
   const p = clientState.player
   const pet = clientState.activePet
   if (!p || !pet || !pet.sick || sleepLocked()) return
@@ -364,5 +364,5 @@ export function applyCureLocal(): void {
   p.currency += Cfg.SICKNESS_CURE_COINS
   bumpCounter(p, 'cureCount')
   bumpCounter(p, 'careCount')
-  showReward(xpGain, Cfg.SICKNESS_CURE_COINS)
+  if (showRewardPopup) showReward(xpGain, Cfg.SICKNESS_CURE_COINS)
 }

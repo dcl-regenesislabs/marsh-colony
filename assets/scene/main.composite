@@ -1952,9 +1952,9 @@
             "states": [
               {
                 "clip": "idle",
-                "playing": false,
+                "playing": true,
                 "weight": 1,
-                "speed": 1,
+                "speed": 0,
                 "loop": false,
                 "shouldReset": true
               },

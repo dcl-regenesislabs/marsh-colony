@@ -12,11 +12,33 @@ const PEPITO_SPECIES = 'pepito-original'
 const PEPITO_SCALE = stageScaleFor(SIZE_BASE) * scaleForSpecies(PEPITO_SPECIES)
 const NO_COLLISION = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE }
 
-const APPROACH_S = 1.1
-const GRAB_HOLD_S = 0.35
-const ESCAPE_S = 1.45
-const CARRY_DROP = 0.42
-const CARRY_FORWARD = 0.16
+// Do not rush the one shot that establishes the medicine: even if the player
+// advances the Caretaker dialog immediately, the open cage and bottle get a
+// readable beat before Pepito arrives.
+const TABLE_REVEAL_HOLD_S = 2.2
+const APPROACH_S = 1.4
+const GRAB_HOLD_S = 0.42
+const ESCAPE_S = 1.55
+
+type PepitoStealTuning = {
+  cameraDistance: number
+  cameraHeight: number
+  cameraLateral: number
+  cameraLookHeight: number
+  potionForward: number
+  potionSide: number
+  potionDrop: number
+}
+
+const STEAL_TUNING: PepitoStealTuning = {
+  cameraDistance: 4.6,
+  cameraHeight: 2.45,
+  cameraLateral: -1.5,
+  cameraLookHeight: 1.15,
+  potionForward: -0.09,
+  potionSide: 0,
+  potionDrop: 0.22
+}
 
 type PotionHome = { position: Vector3; rotation: Quaternion; scale: Vector3 }
 
@@ -34,6 +56,9 @@ let lastPos = Vector3.Zero()
 let yaw = 0
 let completion: (() => void) | null = null
 let stealSystem: ((dt: number) => void) | null = null
+let shotTablePos: Vector3 | null = null
+let shotPotionPos: Vector3 | null = null
+let shotCameraSide: Vector3 | null = null
 
 const smooth = (t: number): number => t * t * (3 - 2 * t)
 
@@ -118,11 +143,42 @@ function placePepito(position: Vector3): void {
   const potion = potionEntity()
   if (!potion) return
   const radians = (yaw * Math.PI) / 180
+  const forward = Vector3.create(Math.sin(radians), 0, Math.cos(radians))
+  const right = Vector3.create(Math.cos(radians), 0, -Math.sin(radians))
   Transform.getMutable(potion).position = Vector3.create(
-    lastPos.x + Math.sin(radians) * CARRY_FORWARD,
-    lastPos.y - CARRY_DROP,
-    lastPos.z + Math.cos(radians) * CARRY_FORWARD
+    lastPos.x + forward.x * STEAL_TUNING.potionForward + right.x * STEAL_TUNING.potionSide,
+    lastPos.y - STEAL_TUNING.potionDrop,
+    lastPos.z + forward.z * STEAL_TUNING.potionForward + right.z * STEAL_TUNING.potionSide
   )
+}
+
+export function pepitoStealHidesHud(): boolean {
+  return active
+}
+
+function focusStealCamera(): void {
+  if (!camera || !shotTablePos || !shotPotionPos || !shotCameraSide) return
+  const lateral = Vector3.create(-shotCameraSide.z, 0, shotCameraSide.x)
+  const cameraPos = Vector3.create(
+    shotTablePos.x + shotCameraSide.x * STEAL_TUNING.cameraDistance + lateral.x * STEAL_TUNING.cameraLateral,
+    shotTablePos.y + STEAL_TUNING.cameraHeight,
+    shotTablePos.z + shotCameraSide.z * STEAL_TUNING.cameraDistance + lateral.z * STEAL_TUNING.cameraLateral
+  )
+  const look = Vector3.create(shotTablePos.x, shotPotionPos.y + STEAL_TUNING.cameraLookHeight, shotTablePos.z)
+  Transform.createOrReplace(camera, { position: cameraPos, rotation: Quaternion.fromLookAt(cameraPos, look) })
+  VirtualCamera.createOrReplace(camera, { defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0.2) } })
+  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
+}
+
+function clearStealCamera(): void {
+  const mainCamera = MainCamera.getOrNull(engine.CameraEntity)
+  if (camera && mainCamera?.virtualCameraEntity === camera) {
+    MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+  }
+}
+
+export function getPepitoStealTuning(): PepitoStealTuning {
+  return STEAL_TUNING
 }
 
 function endSteal(): void {
@@ -140,16 +196,18 @@ function endSteal(): void {
 
 function tickSteal(dt: number): void {
   elapsed += dt
-  if (elapsed < APPROACH_S) {
-    placePepito(Vector3.lerp(entry, grab, smooth(elapsed / APPROACH_S)))
+  if (elapsed < TABLE_REVEAL_HOLD_S) return
+  const flightElapsed = elapsed - TABLE_REVEAL_HOLD_S
+  if (flightElapsed < APPROACH_S) {
+    placePepito(Vector3.lerp(entry, grab, smooth(flightElapsed / APPROACH_S)))
     return
   }
-  if (elapsed < APPROACH_S + GRAB_HOLD_S) {
+  if (flightElapsed < APPROACH_S + GRAB_HOLD_S) {
     carried = true
     placePepito(grab)
     return
   }
-  const u = Math.min(1, (elapsed - APPROACH_S - GRAB_HOLD_S) / ESCAPE_S)
+  const u = Math.min(1, (flightElapsed - APPROACH_S - GRAB_HOLD_S) / ESCAPE_S)
   const position = Vector3.lerp(grab, escape, smooth(u))
   position.y += Math.sin(u * Math.PI) * 0.8
   placePepito(position)
@@ -169,23 +227,23 @@ export function startPepitoSteal(onDone: () => void): boolean {
   const flat = Vector3.create(caretakerPos.x - tablePos.x, 0, caretakerPos.z - tablePos.z)
   const cameraSide = Vector3.length(flat) > 0.01 ? Vector3.normalize(flat) : Vector3.create(1, 0, 0)
   const lateral = Vector3.create(-cameraSide.z, 0, cameraSide.x)
-  const potionPos = Transform.get(potion).position
 
   resetStolenPotion()
-  entry = Vector3.create(tablePos.x + lateral.x * 4.2, potionPos.y + 3.1, tablePos.z + lateral.z * 4.2)
+  const potionPos = Transform.get(potion).position
+  // Enter from the left edge of the camera frame and leave through the right.
+  entry = Vector3.create(tablePos.x - lateral.x * 4.2, potionPos.y + 3.1, tablePos.z - lateral.z * 4.2)
   grab = Vector3.create(potionPos.x, potionPos.y + 0.48, potionPos.z)
-  escape = Vector3.create(tablePos.x - lateral.x * 5.5, potionPos.y + 5.3, tablePos.z - lateral.z * 5.5)
+  escape = Vector3.create(tablePos.x + lateral.x * 5.5, potionPos.y + 5.3, tablePos.z + lateral.z * 5.5)
   lastPos = entry
   yaw = (Math.atan2(grab.x - entry.x, grab.z - entry.z) * 180) / Math.PI
   pepito = spawnPepito(entry)
   Transform.getMutable(pepito).rotation = Quaternion.fromEulerDegrees(0, yaw + yawOffsetForSpecies(PEPITO_SPECIES), 0)
 
   if (!camera) camera = engine.addEntity()
-  const cameraPos = Vector3.create(tablePos.x + cameraSide.x * 4.6, tablePos.y + 2.45, tablePos.z + cameraSide.z * 4.6)
-  const look = Vector3.create(tablePos.x, potionPos.y + 1.15, tablePos.z)
-  Transform.createOrReplace(camera, { position: cameraPos, rotation: Quaternion.fromLookAt(cameraPos, look) })
-  VirtualCamera.createOrReplace(camera, { defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0.2) } })
-  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
+  shotTablePos = Vector3.create(tablePos.x, tablePos.y, tablePos.z)
+  shotPotionPos = Vector3.create(potionPos.x, potionPos.y, potionPos.z)
+  shotCameraSide = Vector3.create(cameraSide.x, cameraSide.y, cameraSide.z)
+  focusStealCamera()
 
   active = true
   carried = false
