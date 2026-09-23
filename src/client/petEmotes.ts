@@ -83,7 +83,9 @@ function makeMaterial(src: string): Parameters<typeof Material.setBasicMaterial>
   return {
     texture: Material.Texture.Common({ src }),
     alphaTexture: Material.Texture.Common({ src }),
-    alphaTest: 0.5
+    // Unity blends pixels that pass a partial alpha mask. Keep only fully
+    // opaque icon pixels so the mood bubble matches the solid mobile render.
+    alphaTest: 1
   }
 }
 
