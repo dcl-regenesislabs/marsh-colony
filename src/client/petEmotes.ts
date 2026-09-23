@@ -14,7 +14,7 @@
 // interactions (petting, treats, the Feed minigame) that only ever happen to
 // whichever pet is out and active.
 
-import { engine, Entity, Transform, Billboard, MeshRenderer, Material, VisibilityComponent } from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, Billboard, MeshRenderer, Material, MaterialTransparencyMode, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
@@ -75,15 +75,16 @@ type EmoteState = {
 
 const emotes = new Map<string, EmoteState>()
 
-// Unlit (Basic), same as speech.ts's bubble — a PBR material with a full-white
-// emissive layer (the previous approach) self-illuminates the icon, which reads
-// as a glow/shine on top of the art, worse on mobile's bloom. Unlit sidesteps
-// lighting entirely instead of fighting it with emissive.
-function makeMaterial(src: string): Parameters<typeof Material.setBasicMaterial>[1] {
+// Basic materials ignore alphaTest when alphaTexture is present, so use PBR's
+// explicit alpha-test mode to produce a real binary cutout. Avoid an emissive
+// layer here: it makes the icon look like it glows under mobile bloom.
+function makeMaterial(src: string): Parameters<typeof Material.setPbrMaterial>[1] {
   return {
     texture: Material.Texture.Common({ src }),
     alphaTexture: Material.Texture.Common({ src }),
-    alphaTest: 0.5
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_TEST,
+    // The 1px antialias ring must survive texture filtering and mipmaps.
+    alphaTest: 0.9
   }
 }
 
@@ -94,7 +95,7 @@ function ensureEmoteState(petId: string): EmoteState {
   Transform.create(entity, { position: Vector3.create(0, -100, 0), scale: Vector3.create(EMOTE_SIZE, EMOTE_SIZE, 1) })
   Billboard.create(entity, {}) // full billboard, same as the name tag (makeTag) it sits above
   MeshRenderer.setPlane(entity)
-  Material.setBasicMaterial(entity, makeMaterial(EMOTE_SRC.happy))
+  Material.setPbrMaterial(entity, makeMaterial(EMOTE_SRC.happy))
   // Starts hidden (visible: false, matching the created VisibilityComponent
   // below) — the first real update() call decides the true state.
   VisibilityComponent.create(entity, { visible: false })
@@ -106,7 +107,7 @@ function ensureEmoteState(petId: string): EmoteState {
 function setTexture(st: EmoteState, src: string): void {
   if (src === st.currentSrc) return
   st.currentSrc = src
-  Material.setBasicMaterial(st.entity, makeMaterial(src))
+  Material.setPbrMaterial(st.entity, makeMaterial(src))
 }
 
 // ---------------------------------------------------------------------------
