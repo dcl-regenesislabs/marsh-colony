@@ -14,12 +14,12 @@
 // interactions (petting, treats, the Feed minigame) that only ever happen to
 // whichever pet is out and active.
 
-import { engine, Entity, Transform, Billboard, MeshRenderer, Material, VisibilityComponent } from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, Billboard, MeshRenderer, Material, MaterialTransparencyMode, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
-import { getLocalPet, getInactivePetEntity, petIsPresent, TAG_MIN, TAG_SIZE_MULT } from './pet'
+import { cureCinematicIsActive, getLocalPet, getInactivePetEntity, petIsPresent, sadCinematicIsActive, TAG_MIN, TAG_SIZE_MULT } from './pet'
 import { petOverheadTuning } from './petOverheadCalibration'
 
 type EmoteId = 'food' | 'clean' | 'play' | 'sick' | 'happy' | 'sad' | 'angry' | 'heart' | 'music' | 'sleep1' | 'sleep2'
@@ -75,15 +75,16 @@ type EmoteState = {
 
 const emotes = new Map<string, EmoteState>()
 
-// Unlit (Basic), same as speech.ts's bubble — a PBR material with a full-white
-// emissive layer (the previous approach) self-illuminates the icon, which reads
-// as a glow/shine on top of the art, worse on mobile's bloom. Unlit sidesteps
-// lighting entirely instead of fighting it with emissive.
-function makeMaterial(src: string): Parameters<typeof Material.setBasicMaterial>[1] {
+// Basic materials ignore alphaTest when alphaTexture is present, so use PBR's
+// explicit alpha-test mode to produce a real binary cutout. Avoid an emissive
+// layer here: it makes the icon look like it glows under mobile bloom.
+function makeMaterial(src: string): Parameters<typeof Material.setPbrMaterial>[1] {
   return {
     texture: Material.Texture.Common({ src }),
     alphaTexture: Material.Texture.Common({ src }),
-    alphaTest: 0.5
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_TEST,
+    // The 1px antialias ring must survive texture filtering and mipmaps.
+    alphaTest: 0.9
   }
 }
 
@@ -94,7 +95,7 @@ function ensureEmoteState(petId: string): EmoteState {
   Transform.create(entity, { position: Vector3.create(0, -100, 0), scale: Vector3.create(EMOTE_SIZE, EMOTE_SIZE, 1) })
   Billboard.create(entity, {}) // full billboard, same as the name tag (makeTag) it sits above
   MeshRenderer.setPlane(entity)
-  Material.setBasicMaterial(entity, makeMaterial(EMOTE_SRC.happy))
+  Material.setPbrMaterial(entity, makeMaterial(EMOTE_SRC.happy))
   // Starts hidden (visible: false, matching the created VisibilityComponent
   // below) — the first real update() call decides the true state.
   VisibilityComponent.create(entity, { visible: false })
@@ -106,7 +107,7 @@ function ensureEmoteState(petId: string): EmoteState {
 function setTexture(st: EmoteState, src: string): void {
   if (src === st.currentSrc) return
   st.currentSrc = src
-  Material.setBasicMaterial(st.entity, makeMaterial(src))
+  Material.setPbrMaterial(st.entity, makeMaterial(src))
 }
 
 // ---------------------------------------------------------------------------
@@ -192,21 +193,27 @@ function cycledMoodEmote(st: EmoteState, face: EmoteId, lowNeeds: StatKey[], dt:
 
 /**
  * What a pet shows right now, highest priority first:
- *  1. sleeping — animated between the two sleep frames (checked first: energy
+ *  1. sick — fixed sick bubble until the Caretaker cure flow clears the
+ *            persisted status, whatever other needs are active
+ *  2. sleeping — animated between the two sleep frames (checked first: energy
  *               is expected to be near-bottom right when sleep starts, which
  *               would otherwise read as a needs-based icon every time)
- *  2. (active pet only) playing the fruit-catch minigame — music note, with a
+ *  3. (active pet only) playing the fruit-catch minigame — music note, with a
  *     brief happy flash on each catch (see updateCatchTrigger above)
- *  3. (active pet only) just got love (see updateHeartTriggers above) — heart
- *  4. needs-based face/icon: 0 low = happy, 1 low = that need's icon alone,
+ *  4. (active pet only) just got love (see updateHeartTriggers above) — heart
+ *  5. needs-based face/icon: 0 low = happy, 1 low = that need's icon alone,
  *     2+ low = the mood face (sad at 2, angry at 3+) cycling with each low
  *     need's icon in turn (see cycledMoodEmote above)
  *
- * "sick" has no priority step here — there's no sickness mechanic in the game
- * yet (see #148), so nothing should ever show it. EMOTE_SRC.sick is kept for
- * when that feature lands and this gets a real branch.
  */
 function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, isActive: boolean): EmoteId {
+  // The cinematic needs the bubble before Feed's state is released; after that
+  // the persisted `pet.sick` status owns it until the cure.
+  if (isActive && sadCinematicIsActive()) return 'sick'
+  if (isActive && cureCinematicIsActive()) return 'happy'
+  // Do not spoil the post-Feed reveal if the server snapshot arrives before
+  // the player has pressed Exit on the results screen.
+  if (pet.sick && !(isActive && clientState.feedGame.active)) return 'sick'
   if (pet.sleeping) return sleepingEmote(st, dt)
   if (isActive) {
     if (clientState.feedGame.active) return now < catchHappyUntil ? 'happy' : 'music'
@@ -227,7 +234,15 @@ function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, is
  *  pet's emote needs to stay visible for (to show the sleep-frame cycle),
  *  not hide during. */
 function activePetMomentIsTaken(): boolean {
-  return clientState.hatch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.petting.active || clientState.fetch.active || clientState.dialog.open
+  return (
+    clientState.hatch.active ||
+    clientState.carryEgg.active ||
+    clientState.carryPet.active ||
+    clientState.breed.active ||
+    clientState.petting.active ||
+    clientState.fetch.active ||
+    (clientState.dialog.open && !sadCinematicIsActive())
+  )
 }
 
 function update(dt: number): void {

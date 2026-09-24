@@ -1,9 +1,10 @@
 // Headless authoritative server. Owns all game state, validates actions,
 // runs decay, persists to Storage, and broadcasts presence for social render.
 
-import { engine, PlayerIdentityData } from '@dcl/sdk/ecs'
+import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
+import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
 import * as S from './state'
 import { trackEvent } from '../shared/analytics'
 
@@ -12,6 +13,11 @@ const SNAPSHOT_INTERVAL = 3 // seconds between owner snapshot pushes
 // Session-duration guards (see the departure sweep below).
 const MAX_SESSION_SECONDS = 14400 // 4h ceiling on a reported session (matches cozy-farm) — caps a stuck clock
 const DEPART_GRACE_MS = 10000 // don't call a departure until the session is this old (~2 ticks): the identity entity can lag the first requestState, and departing early would emit a premature `session ended` + a duplicate `session started`
+
+// Matches the composite's tree.glb transform. The server keeps its own anchor
+// so it can validate the start of a Feed round without trusting the client.
+const FEED_TREE_POSITION = { x: 193, z: 274.75 }
+const FEED_TREE_RADIUS = 12
 
 // Track which addresses are currently connected (seen via PlayerIdentityData).
 const connected = new Set<string>()
@@ -27,6 +33,32 @@ function forwardNotes(address: string, notes: S.Notify[]): void {
 
 function pushSnapshot(p: PlayerData): void {
   room.send('stateSnapshot', { json: JSON.stringify(S.snapshotFor(p)) }, { to: [p.address] })
+}
+
+/** Read the authoritative player transform instead of accepting a client claim
+ * that it reached the Care Center. The runtime Potion Table is the stable
+ * shared anchor for this encounter. */
+function isAtSicknessCareCenter(address: string): boolean {
+  const wanted = address.toLowerCase()
+  for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+    if (identity.address.toLowerCase() !== wanted) continue
+    const transform = Transform.getOrNull(entity)
+    if (!transform) return false
+    return Math.hypot(transform.position.x - SICKNESS_TABLE_POSITION.x, transform.position.z - SICKNESS_TABLE_POSITION.z) <= SICKNESS_CARE_CENTER_RADIUS
+  }
+  return false
+}
+
+/** A Feed result is accepted only after a player has actually reached the tree. */
+function isAtFeedTree(address: string): boolean {
+  const wanted = address.toLowerCase()
+  for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+    if (identity.address.toLowerCase() !== wanted) continue
+    const transform = Transform.getOrNull(entity)
+    if (!transform) return false
+    return Math.hypot(transform.position.x - FEED_TREE_POSITION.x, transform.position.z - FEED_TREE_POSITION.z) <= FEED_TREE_RADIUS
+  }
+  return false
 }
 
 /** The shared colony population: every pet raised across the colony. */
@@ -120,10 +152,37 @@ export function server(): void {
     pushSnapshot(p)
   })
 
+  room.onMessage('beginFeedMinigame', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    const notes = S.beginFeedMinigame(p, isAtFeedTree(ctx.from))
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+  })
+
   room.onMessage('feedResult', async (data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
-    const notes = S.feedFromMinigame(p, data.caught)
+    const notes = S.feedFromMinigame(p, data.caught, data.poisoned)
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+  })
+
+  room.onMessage('beginSicknessCure', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    const notes = S.beginSicknessCure(p, isAtSicknessCareCenter(ctx.from))
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+  })
+
+  room.onMessage('cureSickness', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    const notes = S.cureSickness(p)
     await S.savePlayer(ctx.from)
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)

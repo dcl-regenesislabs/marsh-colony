@@ -91,6 +91,11 @@ let interactClip: PetClip = 'idle'
 // back to idle underneath that card.
 let eatCinematicActive = false
 let eatPlaybackSpeed = 1
+let sadCinematicActive = false
+// The successful medicine beat owns the pet's pose separately from the
+// post-Feed sad hold. Keep this latch so the regular interaction timer cannot
+// immediately replace the happy reaction with follow/idle.
+let cureCinematicActive = false
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
@@ -114,6 +119,14 @@ const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-o
 // The petting camera tracks this raised focus point instead of the pet's feet,
 // keeping the happy reaction centered rather than looking down at the ground.
 const PETTING_CAMERA_LOOK_LIFT = 0.55
+// The Caretaker dialog covers the lower part of the screen. These offset the
+// post-Feed sick shot enough to keep the pet and its bubble above that panel.
+const SAD_CINEMATIC_CAMERA_BACKOFF = 0.55
+const SAD_CINEMATIC_LOOK_DOWN = 0.35
+// Mobile's large bottom dialog occupies more vertical screen space. Widen the
+// illness shot and aim lower so the pet and sick bubble compose above it.
+const SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF = 1.55
+const SAD_MOBILE_CINEMATIC_LOOK_DOWN = 0.8
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -563,7 +576,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
 }
 
 /**
@@ -908,6 +921,117 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
   eatCinematicActive = true
   eatPlaybackSpeed = Math.max(0.1, Math.min(3, playbackSpeed))
   restartEatAnimation()
+}
+
+/** Park the active pet in a sad pose and return a close camera shot. This is
+ * used only by the post-Feed sickness introduction; the Caretaker cure scene
+ * releases this hold before the player begins walking. */
+export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  // A 90 degree side shot keeps both the player and the tree out of the line
+  // of sight. A front/back composition puts one of them directly behind the
+  // pet on this Feed staging area.
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const stage = stageScaleFor(pet.size)
+  const mobileShot = mobile()
+  const distance = 3 + stage + (mobileShot ? SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF : SAD_CINEMATIC_CAMERA_BACKOFF)
+  // Frame both the pet and the sick emote that petEmotes.ts raises above its
+  // tag during this cinematic. The dialog lives at the bottom of the screen,
+  // so centering the whole vertical pair keeps the bubble readable.
+  const tune = petOverheadTuning(pet.species, pet.size)
+  const sickBubbleY = petPos.y + TAG_MIN + TAG_SIZE_MULT * stage + tune.nameLift + 0.65
+  const lookHeight = (petPos.y + 0.35 + sickBubbleY) / 2
+  const camPos = Vector3.create(petPos.x + direction.x * distance, lookHeight + 0.3, petPos.z + direction.z * distance)
+  // Aim below the pair: it raises the pet/bubble in the frame, clear of the
+  // bottom-aligned Caretaker dialog, while retaining some ground context.
+  const look = Vector3.create(petPos.x, lookHeight - (mobileShot ? SAD_MOBILE_CINEMATIC_LOOK_DOWN : SAD_CINEMATIC_LOOK_DOWN), petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-negative'
+  interactTimer = 0
+  sadCinematicActive = true
+  // The dialog is the only valid tap during this mobile close-up. Leaving the
+  // regular pet handler registered still renders its native "Open" affordance,
+  // even though the dialog's full-screen catcher correctly eats the tap.
+  pointerEventsSystem.removeOnPointerDown(localPet)
+  return { camPos, look }
+}
+
+export function endSadCinematic(): void {
+  if (!sadCinematicActive) return
+  sadCinematicActive = false
+  if (mode === 'interact' && interactClip === 'gesture-negative') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+  if (localPet) registerPetOpenClick(localPet)
+}
+
+/** True only while the post-Feed sickness scene owns the pet pose/head. */
+export function sadCinematicIsActive(): boolean {
+  return sadCinematicActive
+}
+
+/** Frame the pet's recovery in its current safe world position. Unlike the
+ * sickness reveal this has no dialog to compose around, so it stays closer and
+ * centers the pet's happy gesture. The caller owns the virtual camera and the
+ * eventual release; this function owns only the pet pose. */
+export function startCureCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const distance = 2.75 + stageScaleFor(pet.size) + (mobile() ? 0.75 : 0)
+  const camPos = Vector3.create(petPos.x + direction.x * distance, petPos.y + 1.35, petPos.z + direction.z * distance)
+  const look = Vector3.create(petPos.x, petPos.y + 0.5, petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-positive'
+  interactTimer = 0
+  cureCinematicActive = true
+
+  // This may be a second recovery in the same session, so force the positive
+  // gesture back to its first frame instead of resuming it midway through.
+  const happyClip = clipForSpecies(pet.species, 'gesture-positive')
+  curClip.set(localPet, happyClip)
+  lastLogicalClip.set(localPet, 'gesture-positive')
+  Animator.playSingleAnimation(localPet, happyClip, true)
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === happyClip)
+  if (state) {
+    state.playing = true
+    state.loop = true
+    state.speed = 1
+  }
+  return { camPos, look }
+}
+
+/** Return the pet to its normal follow/wander behavior after its recovery. */
+export function endCureCinematic(): void {
+  if (!cureCinematicActive) return
+  cureCinematicActive = false
+  if (mode === 'interact' && interactClip === 'gesture-positive') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+}
+
+/** Lets the overhead emote hold a happy face for the full recovery shot. */
+export function cureCinematicIsActive(): boolean {
+  return cureCinematicActive
 }
 
 // ---------------------------------------------------------------------------
@@ -1694,6 +1818,10 @@ const ARROW_INDOOR_LIFT = 0.6 // extra world height indoors so the arrow clears 
 const ARROW_YAW_OFFSET = 180 // model points backwards; flip it to point at the target
 const ARROW_SCALE = 1 // tune the arrow size
 const CARE_CENTER_ARROW_RADIUS = 4.5 // arrow-only footprint around the Care Center interior
+// The sickness pickup is on the Care Center's raised floor. Keep its former
+// visibility tuning local to that errand instead of changing every world arrow.
+const SICKNESS_CARE_CENTER_ARROW_RADIUS = 7
+const SICKNESS_CARE_CENTER_ARROW_LIFT = 0.9
 let arrow: Entity | null = null
 let arrowTarget: Vector3 | null = null
 
@@ -1701,7 +1829,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -1721,6 +1849,7 @@ export function hideArrow(owner: ArrowOwner): void {
  *  trusting every exit path of every flow to call hideArrow(). */
 function arrowOwnerActive(): boolean {
   if (arrowOwner === 'feed') return clientState.feedTask.active
+  if (arrowOwner === 'sickness') return clientState.sicknessErrand.active
   if (arrowOwner === 'carryEgg') return clientState.carryEgg.active
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
   if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
@@ -1728,11 +1857,14 @@ function arrowOwnerActive(): boolean {
   return false
 }
 
-function playerNeedsIndoorArrowLift(pos: Vector3): boolean {
-  if (zoneOf(pos) !== null) return true
+function indoorArrowLift(pos: Vector3): number {
+  if (zoneOf(pos) !== null) return ARROW_INDOOR_LIFT
   const caretaker = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
-  if (!caretaker || !Transform.has(caretaker)) return false
-  return distFlat(pos, Transform.get(caretaker).position) <= CARE_CENTER_ARROW_RADIUS
+  if (!caretaker || !Transform.has(caretaker)) return 0
+  const isSicknessErrand = arrowOwner === 'sickness'
+  const radius = isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_RADIUS : CARE_CENTER_ARROW_RADIUS
+  if (distFlat(pos, Transform.get(caretaker).position) > radius) return 0
+  return isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_LIFT : ARROW_INDOOR_LIFT
 }
 // Parented to the player (body-fixed, same trick as AvatarAttach) instead of
 // positioned each frame from a world-space read of the player's Transform — that
@@ -1783,7 +1915,7 @@ function updateArrow(): void {
   // the player's current height so the arrow stays near the actual ground instead.
   // Indoors, add a small fixed lift so the same floor arrow stays visible over the
   // house / Care Center floors without turning into a floating waypoint.
-  const localY = ARROW_GROUND_CLEARANCE + (playerNeedsIndoorArrowLift(pt.position) ? ARROW_INDOOR_LIFT : 0) - pt.position.y
+  const localY = ARROW_GROUND_CLEARANCE + indoorArrowLift(pt.position) - pt.position.y
   const t = Transform.getMutable(arrow)
   t.position = Vector3.create(Math.sin(rad) * ARROW_LEAD, localY, Math.cos(rad) * ARROW_LEAD)
   t.rotation = Quaternion.fromEulerDegrees(0, localYaw + ARROW_YAW_OFFSET, 0)
@@ -2344,7 +2476,12 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
-      if (interactClip === 'eat' && eatCinematicActive) break
+      if (
+        (interactClip === 'eat' && eatCinematicActive) ||
+        (interactClip === 'gesture-negative' && sadCinematicActive) ||
+        (interactClip === 'gesture-positive' && cureCinematicActive)
+      )
+        break
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {
@@ -2416,6 +2553,9 @@ function updateLocalPet(dt: number): void {
   } else if (mode === 'interact') setClip(localPet, interactClip)
   else if (moved > 0.003) setClip(localPet, moveClip)
   else if (clientState.activePet?.sleeping) setClip(localPet, 'sleep')
+  // A sick pet can still walk after the player, but it must never snap to the
+  // cheerful neutral idle while waiting for the medicine.
+  else if (clientState.activePet?.sick) setClip(localPet, 'gesture-negative')
   else setClip(localPet, 'idle')
 
   // Floating name tag follows the pet.

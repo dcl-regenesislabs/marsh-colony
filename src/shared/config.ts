@@ -428,8 +428,28 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
+/** Poison fruit per Feed round. They are spaced by the minigame so the player
+ * has to keep dodging them instead of surviving one isolated bad catch. */
+export const FEED_POISON_FRUITS_MIN = 3
+export const FEED_POISON_FRUITS_MAX = 4
+// Server-side Feed round lease. A result must come from a live round rather
+// than a standalone client RPC, while still allowing players to leave a round
+// early with the fruit they already caught.
+export const FEED_MINIGAME_MIN_MS = 5000
+export const FEED_MINIGAME_WINDOW_MS = 90000
+
 /** Three deliberately unhurried bites; the pet and fruit path slow together. */
 export const FEED_EAT_CINEMATIC_S = 6.6
+
+/** Caretaker's medicine is a completed care beat, not a repeatable HUD tap. */
+export const SICKNESS_CURE_XP = 14
+export const SICKNESS_CURE_COINS = 9
+export const SICKNESS_CURE_COOLDOWN_MS = 8000
+// The server issues a short-lived cure authorization only after the player
+// reaches the Care Center. This leaves time for the theft/chase and prevents a
+// naked cure RPC from becoming an extra care-reward loop.
+export const SICKNESS_CURE_QUEST_MIN_MS = 8000
+export const SICKNESS_CURE_QUEST_WINDOW_MS = 180000
 
 /** Server-side per-action cooldown (ms) to stop spam. */
 export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {

@@ -3884,13 +3884,6 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "582": {
-          "json": {
-            "src": "assets/Models/ark01/ark01.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
         "583": {
           "json": {
             "src": "assets/Models/DualNest01/DualNest01.glb",
@@ -4771,11 +4764,6 @@
         "581": {
           "json": {
             "value": "HumanBed.glb"
-          }
-        },
-        "582": {
-          "json": {
-            "value": "ark01.glb"
           }
         },
         "583": {
@@ -6283,9 +6271,6 @@
           "json": {}
         },
         "581": {
-          "json": {}
-        },
-        "582": {
           "json": {}
         },
         "583": {
