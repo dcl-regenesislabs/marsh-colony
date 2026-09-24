@@ -33,10 +33,10 @@ import {
   BREED_BURST_FRAMES
 } from './pet'
 import { hidePetTouchControls, showPetTouchControls } from './touchControls'
-import { startCharge, releaseCharge } from './play'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
+import { cancelSicknessErrand } from './sicknessErrand'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -54,6 +54,7 @@ import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolv
 import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './ui/dialog'
 import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
+import { pepitoStealHidesHud } from './pepitoSteal'
 
 export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard'
 export type ShopTabId = 'food' | 'slots'
@@ -420,13 +421,15 @@ function PetPanel() {
   // Energy gate: below PLAY_MIN_ENERGY the pet refuses to play until it sleeps.
   const tired = !canPlayNow()
   // Why the panel is locked, phrased as something the player can act on. The
-  // Feed errand is the only lock with its own on-screen exit (the BACK button
-  // over the world), so it gets named instead of the generic "busy".
+  // World errands have their own on-screen BACK button, so name the active one
+  // instead of leaving the player with a generic "busy" message.
   const busyMessage = () =>
     lockLeft > 0
       ? `${pet.name} is fast asleep — ${Cfg.formatLockCountdown(lockLeft)} left.`
       : clientState.feedTask.active
         ? 'Finish the tree errand or tap BACK first!'
+        : clientState.sicknessErrand.active
+          ? 'Go see the Caretaker or tap BACK first!'
         : 'Your pet is busy right now!'
   const guard = (fn: () => void) => () => {
     if (locked) {
@@ -676,13 +679,25 @@ const BATH_BUTTON_ASPECT = 812 / 323
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
+// Mobile: the 3 nav squares (Pets / Inventory / Goals) collapse behind a single
+// hamburger button (btn_manu.png) placed bottom-right, above the native Jump
+// control, for the right thumb. Tapping it stacks the 3 buttons above it.
+const BTN_MENU_ICON = 'assets/images/revamp/btn_manu.png'
+const MENU_BTN_SIZE = 90 // pre-S; the menu button diameter
+const MENU_BTN_TOP = 40 // pre-S; distance from the top (top-right) — TUNE
+const MENU_BTN_RIGHT = 50 // pre-S; inset from the right edge (aligned above the Jump control's column) — TUNE
+let mobileNavOpen = false
+// DEV ONLY — force the nav/menu visible without adopting a pet, to dial in the
+// menu button's position. Keep false in shipping builds.
+const DEV_ALWAYS_SHOW_NAV = false
+
 function BottomNav() {
   const p = clientState.player
   // Hidden while any big panel/dialog is open (bigUiOpen) — it sits where these
-  // buttons are, or on top of them. Also hidden in Fetch mode, while carrying an
-  // egg or the pet, and during the hatch animation (so Keep/Discard only appears
-  // once the newborn has emerged).
-  if (!p || bigUiOpen() || clientState.fetch.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.hatch.active) return <UiEntity />
+  // buttons are, or on top of them. Also hidden in the active throw sequences,
+  // while carrying an egg or the pet, and during the hatch animation (so
+  // Keep/Discard only appears once the newborn has emerged).
+  if (!p || bigUiOpen() || clientState.fetch.active || clientState.pepitoChase.active || clientState.carryEgg.active || clientState.carryPet.active || clientState.breed.active || clientState.hatch.active) return <UiEntity />
   const bh = Sbtn(72)
 
   // Just hatched: a new pet is waiting on a Keep/Discard decision. It takes over
@@ -700,7 +715,7 @@ function BottomNav() {
   }
 
   // The nav buttons only appear once you actually own a pet (kept at least one).
-  if (p.pets.length === 0) return <UiEntity />
+  if (p.pets.length === 0 && !DEV_ALWAYS_SHOW_NAV) return <UiEntity />
 
   // Icon-only squares (paw / backpack / star) from hud.png. A colored plate
   // shows behind the icon when its panel is open — the icon art itself has no
@@ -718,8 +733,36 @@ function BottomNav() {
       </UiEntity>
     )
   }
+  // MOBILE: a hamburger (btn_manu) on the middle-right edge. Tap it to reveal the
+  // 3 nav buttons; tapping one opens its panel + collapses. (DEV flag also forces
+  // this branch on desktop so the button can be positioned without a mobile device.)
+  if (mobile() || DEV_ALWAYS_SHOW_NAV) {
+    const menuSz = S(MENU_BTN_SIZE)
+    const pick = (open: () => void) => () => {
+      mobileNavOpen = false
+      open()
+    }
+    return (
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(MENU_BTN_TOP), right: S(MENU_BTN_RIGHT) }, width: plateSize, flexDirection: 'column', alignItems: 'center', pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ width: menuSz, height: menuSz, pointerFilter: 'block' }}
+          uiBackground={{ texture: { src: BTN_MENU_ICON }, textureMode: 'stretch' }}
+          onMouseDown={() => (mobileNavOpen = !mobileNavOpen)}
+        />
+        {mobileNavOpen && (
+          <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', margin: { top: S(10) } }}>
+            {nav('nav_pets', NAV_PAW_UVS, 'roster', pick(() => ui.openRoster()))}
+            {nav('nav_inv', NAV_INV_UVS, 'inventory', pick(() => ui.openInventory()))}
+            {nav('nav_goals', NAV_GOALS_UVS, 'goals', pick(() => ui.openGoals()))}
+          </UiEntity>
+        )}
+      </UiEntity>
+    )
+  }
+
+  // DESKTOP: the classic centered bottom bar.
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: mobile() ? S(70) : S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
       {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster())}
       {nav('nav_inv', NAV_INV_UVS, 'inventory', () => ui.openInventory())}
       {nav('nav_goals', NAV_GOALS_UVS, 'goals', () => ui.openGoals())}
@@ -740,6 +783,8 @@ function SideButtons() {
     bigUiOpen() ||
     hasPendingHatchling() ||
     clientState.fetch.active ||
+    clientState.sicknessErrand.active ||
+    clientState.pepitoChase.active ||
     clientState.carryEgg.active ||
     clientState.carryPet.active ||
     clientState.breed.active ||
@@ -1910,19 +1955,20 @@ function Toasts() {
 
   // Toasts only ever mount in Root's default branch (petting/hatch/feedGame/
   // bathGame each own the whole screen instead), where a BackButton shows up
-  // in exactly these three spots — FetchOverlay, BathButton (carry-to-bath),
-  // FeedErrandOverlay. When one's actually up, rest BELOW it so the two never
-  // overlap; otherwise sit AT the same height the button would be.
-  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || getEggPending()
+  // in exactly these four spots — FetchOverlay, BathButton (carry-to-bath),
+  // FeedErrandOverlay, SicknessErrandOverlay. When one's actually up, rest BELOW it so the two never
+  // overlap; otherwise sit AT the same height the button would be, instead of
+  // leaving that vertical space empty.
+  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active || getEggPending()
 
-  // Slide in from the RIGHT edge + fade. Enter: from off-screen right -> rest.
-  // Exit: retract back off the right + fade.
+  // Slide in from the LEFT edge + fade. Enter: from off-screen left -> rest.
+  // Exit: retract back off the left + fade. (The nav lives on the right now.)
   const elapsed = now - t.shownAt
   const remaining = t.until - now
   const w = S(500)
   const h = S(92)
-  const rightInset = mobile() ? S(24) : S(16)
-  const offMax = rightInset + w + S(20) // far enough right to sit fully off-screen while hidden
+  const leftInset = mobile() ? S(24) : S(16)
+  const offMax = leftInset + w + S(20) // far enough left to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
@@ -1941,15 +1987,14 @@ function Toasts() {
   // original left-side notification.
   const border = S(TOAST_BORDER)
   return (
-    // Right side, slide-in from the right. Same vertical layout as the former
-    // left-side notification. The pill is drawn in code: a brown border (outer)
-    // wrapping a cream fill (inner), both fully rounded.
+    // Left side, slide-in from the left. The pill is drawn in code: a brown
+    // border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: '25%', right: rightInset },
-          margin: { top: backButtonVisible ? S(96) : 0, right: -slide },
+          position: { top: '25%', left: leftInset },
+          margin: { top: backButtonVisible ? S(96) : 0, left: -slide },
           width: w,
           height: h,
           padding: border, // this padding IS the visible brown border
@@ -1975,43 +2020,6 @@ function Toasts() {
           <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
         </UiEntity>
       </UiEntity>
-    </UiEntity>
-  )
-}
-
-// Gamified reward popup — a quick "+XP  +coins" burst after a care action.
-// Two illustrated chips (star XP + coin), center-screen, auto-expiring. Each chip
-// is a 4-frame horizontal sprite strip with the badge + pill baked in; we cycle
-// the frames for a constant shimmer and drop the value into the flat area to the
-// right of the badge.
-const CHIP_XP_SHEET = 'assets/images/revamp/chip_xp_4frames.png'
-const CHIP_COIN_SHEET = 'assets/images/revamp/chip_coins_4frames.png'
-const CHIP_FRAMES = 4
-const CHIP_ASPECT = 512 / 192 // one frame's cell aspect (~2.667)
-const CHIP_FRAME_MS = 150 // shimmer speed (ms per frame)
-const CHIP_TEXT_OUTLINE = { r: 0.25, g: 0.15, b: 0.1, a: 1 } as Color // dark brown, matches the baked border
-function RewardPopup() {
-  const r = clientState.reward
-  if (!r || r.until <= Date.now()) {
-    if (r) clientState.reward = null // expired: clear it
-    return <UiEntity />
-  }
-  const uvs = stripFrameUvs(Math.floor(Date.now() / CHIP_FRAME_MS) % CHIP_FRAMES, CHIP_FRAMES)
-  const chipW = S(210)
-  const chipH = Math.round(chipW / CHIP_ASPECT)
-  const textLeft = Math.round(chipW * 0.34) // clear the baked badge on the left
-  const textW = Math.round(chipW * 0.58) // the flat pill area to its right
-  const chip = (sheet: string, text: string) => (
-    <UiEntity uiTransform={{ width: chipW, height: chipH, margin: { left: S(6), right: S(6) } }} uiBackground={{ texture: { src: sheet }, textureMode: 'stretch', uvs }}>
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: textLeft }, width: textW, height: chipH, alignItems: 'center', justifyContent: 'center' }}>
-        <OutlineLabel value={`<b>${text}</b>`} fontSize={S(24)} color={LOC.white} outlineColor={CHIP_TEXT_OUTLINE} width={textW} height={chipH} textAlign="middle-center" />
-      </UiEntity>
-    </UiEntity>
-  )
-  return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '28%', left: '50%' }, margin: { left: -(chipW + S(12)) }, width: chipW * 2 + S(24), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      {chip(CHIP_XP_SHEET, `+${r.xp} xp`)}
-      {chip(CHIP_COIN_SHEET, `+${r.coins} coin`)}
     </UiEntity>
   )
 }
@@ -2160,15 +2168,44 @@ const barBottomRaw = 320
 const barRightRaw = 240
 
 // ---------------------------------------------------------------------------
-// Fetch (Play) mode — hold the Throw control to charge (a bar fills above it);
-// releasing throws with that much power, which sets the distance/arc/flight
-// time (see play.ts's beginThrow). Desktop shows its own labeled button;
-// mobile instead gets a native on-screen gamepad button with a custom icon
-// (play.ts's fetchTouchInputSystem + touchControls.ts — same icon throughout,
-// reads its press/release to drive the same charge). Disables (busy) once
-// thrown, until the pet drops the ball back at the player. BACK exits (only
-// when not mid-charge/throw).
+// Fetch (Play) mode — holding E charges the throw on desktop; the mouse camera
+// sets its direction. Mobile uses a native on-screen button with the same
+// charge/release behavior. BACK exits only when no throw is in progress.
 // ---------------------------------------------------------------------------
+// Desktop intentionally stays quiet while aiming: one instruction and its
+// charge meter, with no large scene button or progression readout.
+function DesktopThrowGuidance(props: { instruction: string; charge: number; visible: boolean }) {
+  if (!props.visible) return <UiEntity />
+  const width = S(450)
+  const meterWidth = S(14)
+  const meterHeight = S(58)
+  const textWidth = width - meterWidth - S(12)
+  const pct = Math.round(Math.max(0, Math.min(1, props.charge)) * 100)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { bottom: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height: meterHeight, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}
+    >
+      <Label
+        value={props.instruction}
+        fontSize={S(16)}
+        color={{ ...C.dim, a: 0.92 }}
+        textAlign="middle-center"
+        textWrap="wrap"
+        uiTransform={{ width: textWidth, height: meterHeight }}
+      />
+      <UiEntity
+        uiTransform={{ width: meterWidth, height: meterHeight, borderRadius: meterWidth / 2, margin: { left: S(12) } }}
+        uiBackground={{ color: { r: 0.5, g: 0.5, b: 0.5, a: 0.35 } }}
+      >
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: `${pct}%`, borderRadius: meterWidth / 2 }}
+          uiBackground={{ color: { r: 0.75, g: 0.9, b: 0.35, a: 0.65 } }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FetchOverlay() {
   if (!clientState.fetch.active) return <UiEntity />
   const st = clientState.fetch
@@ -2176,62 +2213,24 @@ function FetchOverlay() {
   const charging = st.charging
   const pct = Math.round(st.charge * 100)
   const isM = mobile()
-  const pet = clientState.activePet
-  // Every fetch costs PLAY_ENERGY_COST and pays XP + coins; under
-  // PLAY_MIN_ENERGY the pet stops playing entirely. The meter below is the
-  // whole loop made visible — the player can see the throws they have left.
-  const energy = pet?.energy ?? 0
   const tired = !canPlayNow()
-  const throwsLeft = Math.max(0, Math.floor((energy - Cfg.PLAY_MIN_ENERGY) / Cfg.PLAY_ENERGY_COST) + (tired ? 0 : 1))
-  const bw = S(300)
-  const bh = S(92)
-  const meterW = S(360)
-  const meterBottom = S(184)
-  const meterH = S(74)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {/* BACK — disabled while charging/mid-throw so you don't strand a charge or a ball in the air */}
       <BackButton disabled={busy || charging} onClick={() => (clientState.fetch.active = false)} />
-      {/* Energy meter + reward line (bottom-center, above the Fetch button) —
-          desktop only; mobile has no room for it next to the native button. */}
-      {!isM && (
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: meterBottom, left: '50%' }, margin: { left: -meterW / 2 }, width: meterW, height: meterH, flexDirection: 'column', alignItems: 'center' }}>
-          <Label
-            value={tired ? 'Out of energy — time for bed' : `+${Cfg.PLAY_XP_REWARD} XP  ·  +${Cfg.PLAY_COINS_REWARD} coins per fetch`}
-            fontSize={S(17)}
-            color={tired ? C.hunger : C.text}
-            textAlign="middle-center"
-            uiTransform={{ width: '100%', height: S(22) }}
-          />
-          <UiEntity uiTransform={{ width: meterW, height: S(18), borderRadius: S(9) }} uiBackground={{ color: C.trackBg }}>
-            <UiEntity uiTransform={{ width: `${Math.max(0, Math.min(100, energy))}%`, height: '100%', borderRadius: S(9) }} uiBackground={{ color: tired ? C.hunger : C.energy }} />
-          </UiEntity>
-          <Label
-            value={tired ? 'Energy too low to play' : `Energy ${Math.round(energy)}  ·  ~${throwsLeft} throw${throwsLeft === 1 ? '' : 's'} left`}
-            fontSize={S(15)}
-            color={C.dim}
-            textAlign="middle-center"
-            uiTransform={{ width: '100%', height: S(20), margin: { top: S(4) } }}
-          />
-        </UiEntity>
-      )}
-      {/* Charge bar — fills 0→100% while held, above the energy meter. Desktop
-          only — mobile has neither the meter nor this bar, just the vertical
-          one below plus the one-time hint. */}
-      {charging && !isM && (
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { bottom: meterBottom + meterH + S(18), left: '50%' }, margin: { left: -S(150) }, width: S(300), height: S(22), borderRadius: S(11) }}
-          uiBackground={{ color: C.trackBg }}
-        >
-          <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(11) }} uiBackground={{ color: C.gold }} />
-        </UiEntity>
-      )}
       {/* Mobile charge bar — subtle, thin, vertical (fills upward), calibrated
           on-device. Note for future positioning near this corner: the
           bottom-right is where the client draws its own native gamepad
           buttons OVER scene UI (docs: "Bottom-right action buttons — drawn
           deliberately over the [safe] area"), so anything placed too close to
           that corner's bottom edge gets hidden underneath them. */}
+      {!isM && (
+        <DesktopThrowGuidance
+          instruction={busy ? 'Your pet is fetching the ball.' : tired ? 'Your pet needs rest before playing.' : 'Use your mouse to aim. Hold E to charge, then release to throw.'}
+          charge={charging ? st.charge : 0}
+          visible
+        />
+      )}
       {charging && isM && (
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { bottom: S(barBottomRaw), right: S(barRightRaw) }, width: S(14), height: S(90), borderRadius: S(7), pointerFilter: 'none' }}
@@ -2265,27 +2264,6 @@ function FetchOverlay() {
           </UiEntity>
         </UiEntity>
       )}
-      {/* Desktop Throw button (bottom-center) — mobile's equivalent is the
-          native gamepad button, not drawn here. */}
-      {!isM && (
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center' }}>
-          <UiEntity
-            uiTransform={{ width: bw, height: bh, alignItems: 'center', justifyContent: 'center', borderRadius: S(26), pointerFilter: busy || tired ? 'none' : 'block' }}
-            uiBackground={{ color: busy || tired ? C.cardAlt : charging ? C.gold : C.green }}
-            onMouseDown={() => !tired && startCharge()}
-            onMouseUp={() => releaseCharge()}
-            onMouseLeave={() => releaseCharge()}
-          >
-            <Label
-              value={busy ? 'Searching…' : tired ? 'Too tired' : charging ? 'Release!' : 'Hold to Throw'}
-              fontSize={S(28)}
-              color={busy || tired ? C.dim : C.outline}
-              textAlign="middle-center"
-              uiTransform={{ width: bw, height: bh }}
-            />
-          </UiEntity>
-        </UiEntity>
-      )}
     </UiEntity>
   )
 }
@@ -2295,6 +2273,40 @@ function FetchOverlay() {
 // single-axis left/right button, since the lane only allows that anyway.
 // uiInputBinding holds the action down for as long as the button is pressed,
 // same as a native on-screen button.
+// Pepito's rock uses the same hold/release language as Fetch. Mobile keeps the
+// native custom button and its vertical meter; desktop has compact keyboard and
+// mouse guidance instead of a center-screen button.
+function PepitoRockChargeOverlay() {
+  const st = clientState.pepitoChase
+  if (!st.active || clientState.dialog.open) return <UiEntity />
+  const isM = mobile()
+  const charging = st.charging
+  const locked = st.targetLocked
+  const pct = Math.round(st.charge * 100)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      {charging && isM && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { bottom: S(barBottomRaw), right: S(barRightRaw) }, width: S(14), height: S(90), borderRadius: S(7), pointerFilter: 'none' }}
+          uiBackground={{ color: { r: 0.5, g: 0.5, b: 0.5, a: 0.35 } }}
+        >
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: `${pct}%`, borderRadius: S(7) }}
+            uiBackground={{ color: { r: 0.75, g: 0.9, b: 0.35, a: 0.65 } }}
+          />
+        </UiEntity>
+      )}
+      {!isM && (
+        <DesktopThrowGuidance
+          instruction={st.rockBusy ? 'The rock is in the air.' : charging && locked ? 'Pepito locked. Release F to throw.' : 'Use your mouse to aim. Hold F to charge, then release to throw.'}
+          charge={charging ? st.charge : 0}
+          visible
+        />
+      )}
+    </UiEntity>
+  )
+}
+
 const ARROW_ICON = {
   left: 'assets/images/left_arrow.png',
   left_pressed: 'assets/images/left_arrow_pressed.png',
@@ -2610,7 +2622,7 @@ function bubbleArtUvs(): number[] {
 // ~1.7x). A larger scale here double-counts that growth and oversizes the splash.
 const POP_SCALE = 1.0
 // Crop frame `i` of `total` from a horizontal sprite strip (one row, full height).
-// Shared by the bath pop-splash and the animated XP/coin reward chips.
+// Shared by the bath pop-splash sprite strips.
 function stripFrameUvs(i: number, total: number): number[] {
   const uL = i / total
   const uR = (i + 1) / total
@@ -3225,12 +3237,17 @@ function FeedErrandOverlay() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <BackButton onClick={() => cancelFeedTask()} />
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
-        uiBackground={{ color: C.panelBg }}
-      >
-        <Label value="Follow the arrow to the tree!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
-      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// Sickness errand — exactly the same escape hatch as the Feed walk, but the
+// destination is the Caretaker who starts the medicine scene on arrival.
+function SicknessErrandOverlay() {
+  if (!clientState.sicknessErrand.active) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelSicknessErrand()} />
     </UiEntity>
   )
 }
@@ -3276,6 +3293,7 @@ const Root = () => {
   // Feed tree minigame also owns the whole screen (cinematic camera under the tree).
   // Computed as a value (not early-returned) so UI_DEBUG_MODE's browser bar
   // below can render on top of ANY of these branches, not just the default one.
+  const hideHudForPepitoTheft = pepitoStealHidesHud()
   const content =
     !clientState.serverReady ? (
       <LoadingGate />
@@ -3297,41 +3315,46 @@ const Root = () => {
       </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <TopBars />
-        <SideButtons />
-        <BottomNav />
-        <FetchOverlay />
-        <CarryHatchButton />
-        <BathButton />
-        <BreedButtons />
-        <FeedErrandOverlay />
-        <GetEggOverlay />
-        {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
-            on top of it instead of the nav icons poking through over them. Moot
-            now that bigUiOpen() hides the nav while these are open, but keeps
-            the same defensive ordering PetPanel already relies on. */}
-        <RemotePetPanel />
-        <SwapOfferPanel />
-        <PetPanel />
-        {uiState.panel === 'adopt' && <AdoptPanel />}
-        {clientState.breed.active && clientState.breed.phase === 'pickB' && <BreedPickerPanel />}
-        {uiState.panel === 'breedName' && <BreedNamePanel />}
-        {uiState.panel === 'shop' && <ShopPanel />}
-        {uiState.panel === 'roster' && <RosterPanel />}
-        {uiState.panel === 'inventory' && <InventoryPanel />}
-        {uiState.panel === 'spin' && <SpinPanel />}
-        {uiState.panel === 'meteor' && <MeteorRewardPanel />}
-        {uiState.panel === 'goals' && <GoalsPanel />}
-        {uiState.panel === 'daily' && <DailyRewardPanel />}
-        {uiState.panel === 'jukebox' && <JukeboxPanel />}
-        {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
+        {!hideHudForPepitoTheft && (
+          <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+            <TopBars />
+            <SideButtons />
+            <BottomNav />
+            <FetchOverlay />
+            <PepitoRockChargeOverlay />
+            <CarryHatchButton />
+            <BathButton />
+            <BreedButtons />
+            <FeedErrandOverlay />
+            <GetEggOverlay />
+            <SicknessErrandOverlay />
+            {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
+                on top of it instead of the nav icons poking through over them. Moot
+                now that bigUiOpen() hides the nav while these are open, but keeps
+                the same defensive ordering PetPanel already relies on. */}
+            <RemotePetPanel />
+            <SwapOfferPanel />
+            <PetPanel />
+            {uiState.panel === 'adopt' && <AdoptPanel />}
+            {clientState.breed.active && clientState.breed.phase === 'pickB' && <BreedPickerPanel />}
+            {uiState.panel === 'breedName' && <BreedNamePanel />}
+            {uiState.panel === 'shop' && <ShopPanel />}
+            {uiState.panel === 'roster' && <RosterPanel />}
+            {uiState.panel === 'inventory' && <InventoryPanel />}
+            {uiState.panel === 'spin' && <SpinPanel />}
+            {uiState.panel === 'meteor' && <MeteorRewardPanel />}
+            {uiState.panel === 'goals' && <GoalsPanel />}
+            {uiState.panel === 'daily' && <DailyRewardPanel />}
+            {uiState.panel === 'jukebox' && <JukeboxPanel />}
+            {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
+          </UiEntity>
+        )}
         <DialogBox />
-        {/* Reward + toasts render LAST so they sit on top of any panel/modal. */}
-        <RewardPopup />
-        <Toasts />
+        {/* Toasts are the only global notification surface. */}
+        {!hideHudForPepitoTheft && <Toasts />}
         {/* Breeding cinematic FX sit on top of everything (the flashes should
             wash over the whole HUD during the "creation" moment). */}
-        <BreedFxOverlay />
+        {!hideHudForPepitoTheft && <BreedFxOverlay />}
       </UiEntity>
     )
   return (

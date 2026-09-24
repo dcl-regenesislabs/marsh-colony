@@ -500,16 +500,18 @@ let touchButtonShown = false
 
 function fetchTouchInputSystem(): void {
   const st = clientState.fetch
-  if (st.active) {
+  if (st.active && mobile()) {
     if (!touchButtonShown) {
       showFetchTouchButton(THROW_READY_ICON)
       touchButtonShown = true
     }
-    if (inputSystem.isTriggered(FETCH_TOUCH_ACTION, PointerEventType.PET_DOWN)) startCharge()
-    if (inputSystem.isTriggered(FETCH_TOUCH_ACTION, PointerEventType.PET_UP)) releaseCharge()
   } else if (touchButtonShown) {
     hideFetchTouchButton()
     touchButtonShown = false
+  }
+  if (st.active) {
+    if (inputSystem.isTriggered(FETCH_TOUCH_ACTION, PointerEventType.PET_DOWN)) startCharge()
+    if (inputSystem.isTriggered(FETCH_TOUCH_ACTION, PointerEventType.PET_UP)) releaseCharge()
   }
 }
 

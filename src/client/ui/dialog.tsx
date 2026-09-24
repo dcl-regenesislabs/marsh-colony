@@ -92,6 +92,35 @@ export function openLegendaryCreatureDialog(): void {
   openDialog('Caretaker', LEGENDARY_CREATURE_DIALOG, 'Got it!')
 }
 
+export const SICKNESS_DIALOG: string[] = [
+  'Oh no — your pet ate a poisonous fruit and feels really bad.',
+  "Don't worry. Come find me at the Care Center — I have the cure ready."
+]
+
+export function openSicknessDialog(onDone?: () => void): void {
+  openDialog('Caretaker', SICKNESS_DIALOG, 'Got it!', onDone)
+}
+
+export const CURE_DIALOG: string[] = [
+  'You made it. Stay close — I will unlock the medicine for your little one.',
+  'There, the cage is open. This cure will make them feel much better now.'
+]
+
+export function openCureDialog(onDone?: () => void, onPage?: (page: number) => void): void {
+  openDialog('Caretaker', CURE_DIALOG, 'Thank you!', onDone, false, onPage)
+}
+
+/** Shown after Pepito has stolen the medicine and before the throw control is
+ * enabled, so the player receives the objective from the Caretaker in-world. */
+export const PEPITO_STOLE_DIALOG: string[] = [
+  'That Pepito stole your cure! Look — it is circling above the Care Center with it.',
+  'Use a rock to knock it down. Hit Pepito and it will drop the medicine!'
+]
+
+export function openPepitoStoleDialog(onDone?: () => void): void {
+  openDialog('Caretaker', PEPITO_STOLE_DIALOG, "Let's go!", onDone)
+}
+
 export function DialogBox() {
   const d = clientState.dialog
   if (!d.open) return <UiEntity />

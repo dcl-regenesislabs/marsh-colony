@@ -39,6 +39,9 @@ export interface PetData {
   // wake). Set when it is sent to bed, cleared whenever it stops sleeping. This
   // is what makes the play energy gate stick — see SLEEP_LOCK_MS.
   sleepLockUntil: number
+  // Set by the authoritative Feed result after a poisonous catch. It persists
+  // until the authoritative Caretaker cure flow clears it.
+  sick: boolean
   // Bookkeeping
   bornAt: number // ms timestamp
   lastUpdated: number // ms timestamp of last decay calculation

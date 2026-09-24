@@ -93,6 +93,11 @@ let interactClip: PetClip = 'idle'
 // back to idle underneath that card.
 let eatCinematicActive = false
 let eatPlaybackSpeed = 1
+let sadCinematicActive = false
+// The successful medicine beat owns the pet's pose separately from the
+// post-Feed sad hold. Keep this latch so the regular interaction timer cannot
+// immediately replace the happy reaction with follow/idle.
+let cureCinematicActive = false
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
@@ -116,6 +121,14 @@ const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-o
 // The petting camera tracks this raised focus point instead of the pet's feet,
 // keeping the happy reaction centered rather than looking down at the ground.
 const PETTING_CAMERA_LOOK_LIFT = 0.55
+// The Caretaker dialog covers the lower part of the screen. These offset the
+// post-Feed sick shot enough to keep the pet and its bubble above that panel.
+const SAD_CINEMATIC_CAMERA_BACKOFF = 0.55
+const SAD_CINEMATIC_LOOK_DOWN = 0.35
+// Mobile's large bottom dialog occupies more vertical screen space. Widen the
+// illness shot and aim lower so the pet and sick bubble compose above it.
+const SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF = 1.55
+const SAD_MOBILE_CINEMATIC_LOOK_DOWN = 0.8
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -223,20 +236,44 @@ const inactivePets = new Map<string, Roamer>()
 // second entity, no re-skin) rather than leaking one and building another.
 const retiredPets = new Map<string, Entity>()
 
-// Each owned pet gets its OWN home slot so up-to-4 pets never pile up on the same
-// spot. Slots are spread across the care area (objects sit ~x195-214, z235-249);
-// a stored pet roams a little around its slot, and the active pet parks on its
-// slot while you carry/hatch a new egg so the newborn won't overlap it.
-const PET_SLOT_HOMES: Vector3[] = [
-  Vector3.create(200, C.PET_BASE_Y, 239),
-  Vector3.create(206, C.PET_BASE_Y, 239),
-  Vector3.create(200, C.PET_BASE_Y, 245),
-  Vector3.create(206, C.PET_BASE_Y, 245)
+// Non-selected pets live in the CORRAL (a separate fenced area you walk to in
+// order to select another pet). Everything is anchored to the `penArea` scene
+// entity at RUNTIME (its children — floor + fence — are all local to it), so
+// moving the corral in the editor moves the pets with it. CORRAL_LOCAL_OFF is the
+// fence-bbox centre relative to penArea; the half-extents are the inner roaming
+// area, kept off the fence. TUNE with the debug cube.
+const CORRAL_LOCAL_OFF = Vector3.create(4.85, 0, 2.64)
+const CORRAL_HALF_X = 6
+const CORRAL_HALF_Z = 7
+const CORRAL_SLOT_OFF: [number, number][] = [
+  [-4, -4],
+  [4, -4],
+  [-4, 4],
+  [4, 4]
 ]
+
+/** World centre of the corral (penArea anchor + local offset). */
+function corralCenter(): Vector3 {
+  const a = objectPosition(EntityNames.penArea)
+  return Vector3.create(a.x + CORRAL_LOCAL_OFF.x, C.PET_BASE_Y, a.z + CORRAL_LOCAL_OFF.z)
+}
+
+/** Clamp a point to the corral's inner rectangle (so a roamer never crosses the fence). */
+function clampToCorral(p: Vector3): Vector3 {
+  const c = corralCenter()
+  return Vector3.create(
+    Math.max(c.x - CORRAL_HALF_X, Math.min(c.x + CORRAL_HALF_X, p.x)),
+    C.PET_BASE_Y,
+    Math.max(c.z - CORRAL_HALF_Z, Math.min(c.z + CORRAL_HALF_Z, p.z))
+  )
+}
+
+// Each owned pet gets its OWN slot inside the corral so up-to-4 never pile up on
+// the same spot; a stored pet roams a little around its slot.
 function slotHome(index: number): Vector3 {
-  const s = PET_SLOT_HOMES[((index % PET_SLOT_HOMES.length) + PET_SLOT_HOMES.length) % PET_SLOT_HOMES.length]
-  // Keep resting slots out of the buildings — the pet lives in the open.
-  return nudgeOutsideBuildings(Vector3.create(s.x, s.y, s.z))
+  const c = corralCenter()
+  const off = CORRAL_SLOT_OFF[((index % CORRAL_SLOT_OFF.length) + CORRAL_SLOT_OFF.length) % CORRAL_SLOT_OFF.length]
+  return Vector3.create(c.x + off[0], C.PET_BASE_Y, c.z + off[1])
 }
 /** Index of the currently-shown active pet within the roster (-1 if none). */
 function activePetSlotIndex(): number {
@@ -541,7 +578,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
 }
 
 /**
@@ -647,13 +684,17 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
     // and updateInactivePets' updateTag never un-hides it — the pet would roam
     // permanently nameless otherwise.
     setTagVisible(outTag, true)
+    const outHome = slotHome(outIndex)
+    // Teleport it straight to its corral slot — the corral is far from where you
+    // deselect, so letting it WALK there would be a long trek across the map.
+    Transform.getMutable(outEntity).position = outHome
     inactivePets.set(outId, {
       entity: outEntity,
       species: localSpecies,
       tag: outTag,
-      home: slotHome(outIndex),
+      home: outHome,
       target: null,
-      pause: 0.4 // brief beat before it starts wandering back to its slot
+      pause: 0.4 // brief beat before it starts wandering around its slot
     })
   } else {
     // The outgoing pet already left the roster (e.g. a discarded hatchling):
@@ -884,6 +925,117 @@ export function playEatCinematic(position: Vector3, lookAt: Vector3, duration: n
   restartEatAnimation()
 }
 
+/** Park the active pet in a sad pose and return a close camera shot. This is
+ * used only by the post-Feed sickness introduction; the Caretaker cure scene
+ * releases this hold before the player begins walking. */
+export function startSadCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  // A 90 degree side shot keeps both the player and the tree out of the line
+  // of sight. A front/back composition puts one of them directly behind the
+  // pet on this Feed staging area.
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const stage = stageScaleFor(pet.size)
+  const mobileShot = mobile()
+  const distance = 3 + stage + (mobileShot ? SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF : SAD_CINEMATIC_CAMERA_BACKOFF)
+  // Frame both the pet and the sick emote that petEmotes.ts raises above its
+  // tag during this cinematic. The dialog lives at the bottom of the screen,
+  // so centering the whole vertical pair keeps the bubble readable.
+  const tune = petOverheadTuning(pet.species, pet.size)
+  const sickBubbleY = petPos.y + TAG_MIN + TAG_SIZE_MULT * stage + tune.nameLift + 0.65
+  const lookHeight = (petPos.y + 0.35 + sickBubbleY) / 2
+  const camPos = Vector3.create(petPos.x + direction.x * distance, lookHeight + 0.3, petPos.z + direction.z * distance)
+  // Aim below the pair: it raises the pet/bubble in the frame, clear of the
+  // bottom-aligned Caretaker dialog, while retaining some ground context.
+  const look = Vector3.create(petPos.x, lookHeight - (mobileShot ? SAD_MOBILE_CINEMATIC_LOOK_DOWN : SAD_CINEMATIC_LOOK_DOWN), petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-negative'
+  interactTimer = 0
+  sadCinematicActive = true
+  // The dialog is the only valid tap during this mobile close-up. Leaving the
+  // regular pet handler registered still renders its native "Open" affordance,
+  // even though the dialog's full-screen catcher correctly eats the tap.
+  pointerEventsSystem.removeOnPointerDown(localPet)
+  return { camPos, look }
+}
+
+export function endSadCinematic(): void {
+  if (!sadCinematicActive) return
+  sadCinematicActive = false
+  if (mode === 'interact' && interactClip === 'gesture-negative') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+  if (localPet) registerPetOpenClick(localPet)
+}
+
+/** True only while the post-Feed sickness scene owns the pet pose/head. */
+export function sadCinematicIsActive(): boolean {
+  return sadCinematicActive
+}
+
+/** Frame the pet's recovery in its current safe world position. Unlike the
+ * sickness reveal this has no dialog to compose around, so it stays closer and
+ * centers the pet's happy gesture. The caller owns the virtual camera and the
+ * eventual release; this function owns only the pet pose. */
+export function startCureCinematic(): { camPos: Vector3; look: Vector3 } | null {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return null
+
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const distance = 2.75 + stageScaleFor(pet.size) + (mobile() ? 0.75 : 0)
+  const camPos = Vector3.create(petPos.x + direction.x * distance, petPos.y + 1.35, petPos.z + direction.z * distance)
+  const look = Vector3.create(petPos.x, petPos.y + 0.5, petPos.z)
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  onArrive = null
+  justBathed = false
+  mode = 'interact'
+  interactClip = 'gesture-positive'
+  interactTimer = 0
+  cureCinematicActive = true
+
+  // This may be a second recovery in the same session, so force the positive
+  // gesture back to its first frame instead of resuming it midway through.
+  const happyClip = clipForSpecies(pet.species, 'gesture-positive')
+  curClip.set(localPet, happyClip)
+  lastLogicalClip.set(localPet, 'gesture-positive')
+  Animator.playSingleAnimation(localPet, happyClip, true)
+  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === happyClip)
+  if (state) {
+    state.playing = true
+    state.loop = true
+    state.speed = 1
+  }
+  return { camPos, look }
+}
+
+/** Return the pet to its normal follow/wander behavior after its recovery. */
+export function endCureCinematic(): void {
+  if (!cureCinematicActive) return
+  cureCinematicActive = false
+  if (mode === 'interact' && interactClip === 'gesture-positive') {
+    interactTimer = 0
+    mode = clientState.followEnabled ? 'follow' : 'wander'
+  }
+}
+
+/** Lets the overhead emote hold a happy face for the full recovery shot. */
+export function cureCinematicIsActive(): boolean {
+  return cureCinematicActive
+}
+
 // ---------------------------------------------------------------------------
 // Pet gesture (Adopt-Me style): lock the camera on the pet, then swipe left/right
 // across the screen (the pet is centered, so it reads as petting it) for a few
@@ -1004,9 +1156,12 @@ const EGG_MODEL = 'models/stylized_dino_egg.glb'
 // The Nest: a fixture inside the house. Eggs hatch ON it — startHatch() drops the
 // egg here (not in front of the player), so hatching always happens on the nest.
 const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
-const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
-const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
-const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
+// Position/rotation/scale match the "SpawNest.glb" placeholder placed in Creator Hub
+// (assets/scene/main.composite) to mark where this code-spawned nest should sit.
+const NEST_POS = Vector3.create(199.85373, C.PET_BASE_Y, 247.44547) // inside the house, just past HOME_BASE (204,240)
+const NEST_SCALE = 2.2903 // matches the SpawNest.glb placeholder's scale
+const NEST_EGG_LIFT = 0.5 * NEST_SCALE // how high the egg sits on the nest (tune to the model's bowl)
+const NEST_YAW = -90 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
 // Hatch reveal camera, relative to the egg on the nest. HATCH_CAM_YAW is the bearing
 // FROM the egg TO the camera (0 = +Z). Aligned with the nest's facing so the shot is
 // head-on with the nest+egg instead of viewing it from the side. Tune freely.
@@ -1017,7 +1172,11 @@ const HATCH_CAM_HEIGHT = 1.2 // metres above the egg
 /** Place the (static, non-blocking) hatching nest inside the house. Called once. */
 function placeNest(): void {
   const e = engine.addEntity()
-  Transform.create(e, { position: NEST_POS, rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0) })
+  Transform.create(e, {
+    position: NEST_POS,
+    rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0),
+    scale: Vector3.create(NEST_SCALE, NEST_SCALE, NEST_SCALE)
+  })
   // No collision — decorative hatch surface; must not block the player walking in.
   GltfContainer.create(e, { src: NEST_MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
 }
@@ -1026,8 +1185,11 @@ function placeNest(): void {
 const HATCH_ANIM_SECONDS = 2.0 // total Hatch clip length -> when the egg is removed
 const PET_EMERGE_AT = 1.4 // when the pet pops out (egg is open)
 const HATCH_POP_SECONDS = HATCH_ANIM_SECONDS - PET_EMERGE_AT // pop lasts until the egg is gone
-const HATCH_ADMIRE_SECONDS = 1.2 // camera lingers on the newborn before handing back control
-const HATCH_PET_LIFT = 0.35 // raise the newborn ~35 cm during the reveal (sits on the nest, not the floor)
+const HATCH_ADMIRE_SECONDS = 3.2 // camera lingers on the newborn before handing back control
+const HATCH_PET_LIFT = 1.1 // raise the newborn during the reveal (sits on the nest bowl, not the floor)
+// Nudge the newborn's reveal spot toward the camera/player bearing (HATCH_CAM_YAW),
+// so it doesn't sit deep inside the (now bigger) nest bowl.
+const HATCH_PET_FORWARD_OFFSET = 0.4
 let egg: Entity | null = null
 let hatchSpecies = ''
 let hatchName = ''
@@ -1276,9 +1438,21 @@ export function finishBath(won: boolean): void {
 // ---------------------------------------------------------------------------
 const BREED_NEST = EntityNames.DualNest01_glb_2
 const BREED_REACH = 6 // metres from the nest that counts as "arrived" (big model)
-const BREED_BOWL_A_OFF = Vector3.create(-0.17, 1.85, -1.36) // left bowl (dialled in-world; lowered 20cm)
-const BREED_BOWL_B_OFF = Vector3.create(-0.17, 1.82, 1.28) // right bowl (dialled in-world; lowered 20cm)
-const BREED_EGG_OFF = Vector3.create(0.16, 1.2, -0.01) // centre egg spot (dialled in-world; lowered 20cm)
+const BREED_BOWL_A_OFF = Vector3.create(-0.47, 2.35, -1.96) // left bowl (dialled in-world with the breed tuner)
+const BREED_BOWL_B_OFF = Vector3.create(-0.47, 2.34, 2.02) // right bowl (dialled in-world with the breed tuner)
+
+// DEBUG: live-tune parent A's bowl offset with the keyboard while a breed is in
+// progress, then read the final Vector3 off the console/toast and paste it into
+// BREED_BOWL_A_OFF above. Set false to ship. Keys (desktop):
+//   E / F = +X / -X (toward / away from camera)
+//   1 / 2 = +Z / -Z (sideways spread)
+//   3 / 4 = +Y / -Y (up / down)
+//   Space = log the current offset
+const DEV_BREED_TUNE = false
+const BREED_TUNE_SPEED = 0.3 // metres/second while a nudge key is held
+let breedTuneOff: { x: number; y: number; z: number } | null = null // live copy of BREED_BOWL_A_OFF while tuning
+let breedTuneLegendShown = false
+const BREED_EGG_OFF = Vector3.create(0.16, 1.4, -0.01) // centre egg spot (dialled in-world)
 const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
 // Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
 // on the nest the whole time: the machine trembles, a violet magic orb (UI sprite)
@@ -1298,6 +1472,8 @@ const BREED_RESULT_GRACE_S = 4.0 // after the cinematic, how long to wait for br
 // the camera sits at its eyes looking straight at the egg spot.
 const BREED_CAM_AVATAR_OFF = Vector3.create(4.0, -0.48, 0.15) // where the avatar stands (offset from nest)
 const BREED_CAM_EYE = 1.6 // camera height above the avatar's feet (eye level)
+const BREED_AVATAR_Y = 0.9 // avatar feet height — the nest terrain sits above PET_BASE_Y (0), so parking at 0 buries it. TUNE
+const BREED_AVATAR_BACK = 2 // park the avatar this far BEHIND the camera (away from the nest) so it's out of the shot
 
 export const BREED_ORB_FRAMES = 8 // p1.png: 8-frame loop
 export const BREED_BURST_FRAMES = 6 // p2.png: 6-frame one-shot
@@ -1440,7 +1616,9 @@ export function placeParentA(): void {
     const t = Transform.getMutable(localPet)
     t.parent = engine.RootEntity
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    // Face the viewer (the breed camera sits at the avatar stand) and sit.
+    t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    setClip(localPet, 'sit')
   }
   clientState.breed.phase = 'pickB' // ui.tsx shows the partner picker off this phase
 }
@@ -1462,8 +1640,9 @@ export function chooseBreedPartner(id: string): void {
     const spot = breedSpot(BREED_BOWL_B_OFF)
     const t = Transform.getMutable(roamer.entity)
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(partner.species))
-    setClip(roamer.entity, 'idle')
+    // Face the viewer (the breed camera sits at the avatar stand) and sit.
+    t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(partner.species))
+    setClip(roamer.entity, 'sit')
   }
 }
 
@@ -1635,7 +1814,7 @@ function startBreedCamera(): void {
   // is the FPV eye level; parking the avatar itself at the raised camera Y would
   // leave it floating ~1 m up when the camera cuts back). It's behind the lens
   // and out of frame during the cinematic either way.
-  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x, C.PET_BASE_Y, stand.z), cameraTarget: focus })
+  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x + BREED_AVATAR_BACK, BREED_AVATAR_Y, stand.z), cameraTarget: focus })
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
 }
 
@@ -1656,6 +1835,10 @@ const ARROW_INDOOR_LIFT = 0.6 // extra world height indoors so the arrow clears 
 const ARROW_YAW_OFFSET = 180 // model points backwards; flip it to point at the target
 const ARROW_SCALE = 1 // tune the arrow size
 const CARE_CENTER_ARROW_RADIUS = 4.5 // arrow-only footprint around the Care Center interior
+// The sickness pickup is on the Care Center's raised floor. Keep its former
+// visibility tuning local to that errand instead of changing every world arrow.
+const SICKNESS_CARE_CENTER_ARROW_RADIUS = 7
+const SICKNESS_CARE_CENTER_ARROW_LIFT = 0.9
 let arrow: Entity | null = null
 let arrowTarget: Vector3 | null = null
 
@@ -1663,7 +1846,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -1683,6 +1866,7 @@ export function hideArrow(owner: ArrowOwner): void {
  *  trusting every exit path of every flow to call hideArrow(). */
 function arrowOwnerActive(): boolean {
   if (arrowOwner === 'feed') return clientState.feedTask.active
+  if (arrowOwner === 'sickness') return clientState.sicknessErrand.active
   if (arrowOwner === 'carryEgg') return clientState.carryEgg.active
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
   if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
@@ -1690,11 +1874,14 @@ function arrowOwnerActive(): boolean {
   return false
 }
 
-function playerNeedsIndoorArrowLift(pos: Vector3): boolean {
-  if (zoneOf(pos) !== null) return true
+function indoorArrowLift(pos: Vector3): number {
+  if (zoneOf(pos) !== null) return ARROW_INDOOR_LIFT
   const caretaker = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
-  if (!caretaker || !Transform.has(caretaker)) return false
-  return distFlat(pos, Transform.get(caretaker).position) <= CARE_CENTER_ARROW_RADIUS
+  if (!caretaker || !Transform.has(caretaker)) return 0
+  const isSicknessErrand = arrowOwner === 'sickness'
+  const radius = isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_RADIUS : CARE_CENTER_ARROW_RADIUS
+  if (distFlat(pos, Transform.get(caretaker).position) > radius) return 0
+  return isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_LIFT : ARROW_INDOOR_LIFT
 }
 // Parented to the player (body-fixed, same trick as AvatarAttach) instead of
 // positioned each frame from a world-space read of the player's Transform — that
@@ -1745,7 +1932,7 @@ function updateArrow(): void {
   // the player's current height so the arrow stays near the actual ground instead.
   // Indoors, add a small fixed lift so the same floor arrow stays visible over the
   // house / Care Center floors without turning into a floating waypoint.
-  const localY = ARROW_GROUND_CLEARANCE + (playerNeedsIndoorArrowLift(pt.position) ? ARROW_INDOOR_LIFT : 0) - pt.position.y
+  const localY = ARROW_GROUND_CLEARANCE + indoorArrowLift(pt.position) - pt.position.y
   const t = Transform.getMutable(arrow)
   t.position = Vector3.create(Math.sin(rad) * ARROW_LEAD, localY, Math.cos(rad) * ARROW_LEAD)
   t.rotation = Quaternion.fromEulerDegrees(0, localYaw + ARROW_YAW_OFFSET, 0)
@@ -2005,6 +2192,8 @@ function suppressPetTouchControlsDuringExclusiveActivity(): void {
   if (
     clientState.petting.active ||
     clientState.fetch.active ||
+    clientState.sicknessErrand.active ||
+    clientState.pepitoChase.active ||
     clientState.hatch.active ||
     clientState.feedGame.active ||
     clientState.bathGame.active ||
@@ -2111,24 +2300,51 @@ function updateWander(dt: number): number {
   return localPet ? navStepToward(localPet, wanderTarget, dt, yawOffsetForSpecies(clientState.activePet?.species ?? '')) : 0
 }
 
+/** DEBUG: nudge parent A's bowl offset live with the keyboard; Space logs it. */
+function updateBreedTune(dt: number): void {
+  if (!clientState.breed.active || clientState.breed.phase === 'toNest') {
+    breedTuneLegendShown = false
+    return
+  }
+  if (!breedTuneOff) breedTuneOff = { x: BREED_BOWL_A_OFF.x, y: BREED_BOWL_A_OFF.y, z: BREED_BOWL_A_OFF.z }
+  if (!breedTuneLegendShown) {
+    breedTuneLegendShown = true
+    pushToast('TUNE pet1: E/F=+/-X  1/2=+/-Z  3/4=+/-Y  Space=log')
+  }
+  const step = BREED_TUNE_SPEED * dt
+  const o = breedTuneOff
+  if (inputSystem.isPressed(InputAction.IA_PRIMARY)) o.x += step // E
+  if (inputSystem.isPressed(InputAction.IA_SECONDARY)) o.x -= step // F
+  if (inputSystem.isPressed(InputAction.IA_ACTION_3)) o.z += step // 1
+  if (inputSystem.isPressed(InputAction.IA_ACTION_4)) o.z -= step // 2
+  if (inputSystem.isPressed(InputAction.IA_ACTION_5)) o.y += step // 3
+  if (inputSystem.isPressed(InputAction.IA_ACTION_6)) o.y -= step // 4
+  if (inputSystem.isTriggered(InputAction.IA_JUMP, PointerEventType.PET_DOWN)) {
+    const line = `Vector3.create(${o.x.toFixed(2)}, ${o.y.toFixed(2)}, ${o.z.toFixed(2)})`
+    console.log('[BreedTune] BREED_BOWL_A_OFF =', line)
+    pushToast(`pet1 = ${line}`)
+  }
+}
+
 function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
 
-  // While parent A is placed in the breeding nest, hold it in its bowl (facing
-  // the centre) through the picker/breed steps + the egg cinematic — it must not
-  // wander off. During 'toNest' it's still carried in-hand, so skip that phase.
+  // While parent A is placed in the breeding nest, hold it in its bowl (sitting,
+  // facing the viewer) through the picker/breed steps + the egg cinematic — it
+  // must not wander off. During 'toNest' it's still carried in-hand, so skip that.
   if (clientState.breed.active && clientState.breed.phase !== 'toNest') {
     // Render from the CAPTURED parent A — clientState.activePet has already
     // flipped to the offspring hatchling by now (ensureLocalPet is frozen so the
     // model/skin stay parent A; use the same identity for yaw + tag).
     const petP = breedParentA ?? clientState.activePet
-    const spot = breedSpot(BREED_BOWL_A_OFF)
+    const spot = breedSpot(DEV_BREED_TUNE && breedTuneOff ? breedTuneOff : BREED_BOWL_A_OFF)
     const t = Transform.getMutable(localPet)
     t.parent = engine.RootEntity
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(petP?.species ?? ''))
-    setClip(localPet, 'idle')
+    // Face the viewer (the breed camera sits at the avatar stand) and sit.
+    t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(petP?.species ?? ''))
+    setClip(localPet, 'sit')
     if (localTag && petP) updateTag(localTag, spot, petP.species, petP.size, petP.name, petP)
     return
   }
@@ -2179,12 +2395,14 @@ function updateLocalPet(dt: number): void {
       setLocalTagVisible(false)
       return
     }
-    // Otherwise (adoption) the CURRENT pet steps aside to its home slot so the
-    // hatch spot in front of the player is clear.
+    // Otherwise (adoption) the CURRENT pet gets out of the way so the hatch spot
+    // in front of the player is clear. Its home slot is now in the corral (far),
+    // so teleport it there instead of walking it across the map.
     const idx = activePetSlotIndex()
-    const moved = idx >= 0 ? stepToward(localPet, slotHome(idx), dt, yawOffsetForSpecies(petP.species)) : 0
-    setClip(localPet, moved > 0.003 ? 'walk' : 'idle')
-    if (localTag) updateTag(localTag, Transform.get(localPet).position, petP.species, petP.size, petP.name, petP)
+    const t = Transform.getMutable(localPet)
+    t.position = idx >= 0 ? slotHome(idx) : t.position
+    setClip(localPet, 'idle')
+    if (localTag) updateTag(localTag, t.position, petP.species, petP.size, petP.name, petP)
     return
   }
 
@@ -2201,7 +2419,14 @@ function updateLocalPet(dt: number): void {
     const f = hatchPopT > 0 ? Math.max(0.05, 1 - hatchPopT / HATCH_POP_SECONDS) : 1 // 0 -> 1
     const t = Transform.getMutable(localPet)
     t.scale = Vector3.scale(full, f)
-    if (hatchRevealPos) t.position = Vector3.create(hatchRevealPos.x, C.PET_BASE_Y + HATCH_PET_LIFT, hatchRevealPos.z)
+    if (hatchRevealPos) {
+      const camRad = (HATCH_CAM_YAW * Math.PI) / 180
+      t.position = Vector3.create(
+        hatchRevealPos.x + Math.sin(camRad) * HATCH_PET_FORWARD_OFFSET,
+        C.PET_BASE_Y + HATCH_PET_LIFT,
+        hatchRevealPos.z + Math.cos(camRad) * HATCH_PET_FORWARD_OFFSET
+      )
+    }
     // The hatch camera sits on this bearing, so explicitly face the newborn
     // toward it instead of retaining its orientation from before the reveal.
     t.rotation = Quaternion.fromEulerDegrees(0, HATCH_CAM_YAW + yawOffsetForSpecies(petH.species), 0)
@@ -2327,7 +2552,12 @@ function updateLocalPet(dt: number): void {
         pt.position = Vector3.create(bathSplashFrom.x, bathSplashFrom.y + splash, bathSplashFrom.z)
         pt.rotation = Quaternion.fromEulerDegrees(0, turn + yawOffsetForSpecies(clientState.activePet?.species ?? ''), 0)
       }
-      if (interactClip === 'eat' && eatCinematicActive) break
+      if (
+        (interactClip === 'eat' && eatCinematicActive) ||
+        (interactClip === 'gesture-negative' && sadCinematicActive) ||
+        (interactClip === 'gesture-positive' && cureCinematicActive)
+      )
+        break
       interactTimer -= dt
       if (interactTimer <= 0) {
         if (justBathed) {
@@ -2399,6 +2629,9 @@ function updateLocalPet(dt: number): void {
   } else if (mode === 'interact') setClip(localPet, interactClip)
   else if (moved > 0.003) setClip(localPet, moveClip)
   else if (clientState.activePet?.sleeping) setClip(localPet, 'sleep')
+  // A sick pet can still walk after the player, but it must never snap to the
+  // cheerful neutral idle while waiting for the medicine.
+  else if (clientState.activePet?.sick) setClip(localPet, 'gesture-negative')
   else setClip(localPet, 'idle')
 
   // Floating name tag follows the pet.
@@ -2629,7 +2862,7 @@ function updateInactivePets(dt: number): void {
         } else {
           const r = 0.6 + Math.random() * 1.0
           const ang = Math.random() * Math.PI * 2
-          st.target = Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r)
+          st.target = clampToCorral(Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r))
         }
       } else {
         // navStepToward (not stepToward) so a just-demoted pet walking back from
@@ -2728,6 +2961,7 @@ export function setupPetSystems(): void {
     updateArrow()
     updateHatch(dt)
     updatePetting(dt)
+    if (DEV_BREED_TUNE) updateBreedTune(dt)
     updateLocalPet(dt)
     updateSleepCountdown()
     updateSleepBedScale()

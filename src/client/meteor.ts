@@ -42,7 +42,7 @@ export function dismissMeteorAfterClaim(): void {
 
 // Where the meteor lands. Tune freely (meters; scene is 480x480, base 0,0).
 const SPAWN = {
-  position: Vector3.create(203.2, 0, 229.8),
+  position: Vector3.create(175, 0, 256.75), // matches the "MeteorSpawn" placeholder placed in Creator Hub
   rotationDeg: Vector3.create(0, 0, 0),
   scale: Vector3.create(3.5, 3.5, 3.5) // meteor01 is authored ~5× smaller than the old model
 }

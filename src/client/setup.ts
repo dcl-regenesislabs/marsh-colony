@@ -23,6 +23,8 @@ import { setupInput } from './input'
 import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
+import { setupArk } from './ark'
+import { setupPenDoor } from './penDoor'
 import { setupSkybox } from './skybox'
 import { setupMusic } from './music'
 import { setupEggShake } from './eggShake'
@@ -33,6 +35,11 @@ import { setupDebugGrow } from './debugGrow'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
+import { queueSicknessCinematic, setupSicknessCinematic } from './sicknessCinematic'
+import { setupSicknessErrand } from './sicknessErrand'
+import { setupSicknessProps } from './sicknessProps'
+import { setupPepitoSteal } from './pepitoSteal'
+import { setupPepitoChase } from './pepitoChase'
 import { preloadCreatureTextures } from './creatureSkins'
 import { preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
@@ -91,7 +98,13 @@ function registerHandlers(): void {
     clientState.serverReady = true // lifts the loading gate in ui.tsx (Root)
     try {
       const snap = JSON.parse(data.json) as PlayerSnapshot
+      const hadSnapshot = firstSnapshotSeen
+      const activePetWasSick = clientState.activePet?.sick ?? false
       applySnapshot(snap)
+      // Sickness is persisted and server-authoritative. Only a newly confirmed
+      // sickness during this session gets the post-Feed cinematic; a returning
+      // player simply resumes the Caretaker errand below.
+      if (hadSnapshot && !activePetWasSick && clientState.activePet?.sick) queueSicknessCinematic()
       // Decide whether to show the intro on the FIRST snapshot ONLY, and only
       // here — this used to also be guessed from a timer (elapsed >= 2.5s) in case
       // the server was slow, but that guess could fire showIntro() BEFORE this
@@ -205,11 +218,13 @@ export function setupClient(): void {
   setupSkybox() // Mars ground + boundary colliders
   setupMusic() // background ambient track (jukebox: HUD button switches / mutes it)
   setupEggShake() // subtle constant tremble on the placed decor eggs
-  setupPlantSway() // subtle wind sway on a random subset of the placed plants
+  setupPlantSway() // subtle wind sway on every placed plant, in one of two random styles
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupMeteor() // meteor reward drop (falls, settles, clickable)
+  setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
+  setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
   preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
@@ -223,6 +238,11 @@ export function setupClient(): void {
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
+  setupSicknessCinematic() // poisoned Feed round: sad pet + Caretaker introduction
+  setupSicknessProps() // runtime-only medicine table + potion; intentionally absent from the composite
+  setupSicknessErrand() // walk to the Caretaker, then play the medicine-table cure scene
+  setupPepitoSteal() // preload Pepito so the medicine theft arrives without a model-streaming pop
+  setupPepitoChase() // post-theft orbit plus the first rock-throw interaction
   setupPetEmotes() // floating PNG emote showing the pet's current need/mood — supersedes the text speech bubble (speech.ts, unwired but kept in case it's needed again) and the 4-icon mood bar
   setupNav() // pet navigation: avoid building walls, use doors (WIP: coord capture)
 

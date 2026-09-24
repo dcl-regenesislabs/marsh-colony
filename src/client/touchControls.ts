@@ -95,3 +95,15 @@ export function hidePetTouchControls(): void {
   petTouchControlsVisible = false
   petTouchControlsKey = ''
 }
+
+// Pepito's chase uses a separate native button so it can never collide with
+// Fetch, even if a future flow accidentally tries to show both at once.
+export const ROCK_TOUCH_ACTION = InputAction.IA_SECONDARY
+
+export function showRockTouchButton(iconSrc: string): void {
+  setTouchButtonIcon(ROCK_TOUCH_ACTION, iconSrc)
+}
+
+export function hideRockTouchButton(): void {
+  setTouchButtonIcon(ROCK_TOUCH_ACTION, null)
+}
