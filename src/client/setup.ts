@@ -32,7 +32,6 @@ import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupCaretakerPet } from './caretakerPet'
 import { setupCaptain } from './captain'
-import { setupDebugGrow } from './debugGrow'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
@@ -59,12 +58,16 @@ function setupAvatarModifierAreas(): void {
 
   const modifiers = [AvatarModifierType.AMT_HIDE_AVATARS, AvatarModifierType.AMT_HIDE_NAMETAGS]
   let everyAreaInstalled = true
-  for (const { entityName, area } of PRIVATE_AVATAR_AREAS) {
+  for (const { entityName, area: configuredArea } of PRIVATE_AVATAR_AREAS) {
     const anchor = getPrivateAvatarAreaAnchor(entityName)
     if (anchor === null || !Transform.has(anchor)) {
       everyAreaInstalled = false
       continue
     }
+    // AvatarModifierArea uses its `area` vector and explicitly ignores
+    // Transform.scale. For the Creator Hub cylinder, mirror its scale here so
+    // both volumes stay aligned without hard-coded dimensions.
+    const area = configuredArea ?? Transform.get(anchor).scale
     // excludeIds applies to both modifiers, so the local player keeps both
     // their avatar and nametag while every other player loses both.
     AvatarModifierArea.createOrReplace(anchor, { area, modifiers, excludeIds: [owner] })
@@ -222,7 +225,6 @@ export function setupClient(): void {
   setupPlantSway() // subtle wind sway on every placed plant, in one of two random styles
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
-  setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   setupCaptain() // space Caretaker aboard the ark: tap for a small teaser dialog
   setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)

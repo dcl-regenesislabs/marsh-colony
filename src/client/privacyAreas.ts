@@ -5,11 +5,20 @@ import { engine, Entity, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 
-export const PRIVATE_AVATAR_AREAS = [
+type PrivateAvatarArea = {
+  entityName: EntityNames
+  /** Omit the size to take it from the placed Creator Hub entity's scale. */
+  area?: Vector3
+}
+
+export const PRIVATE_AVATAR_AREAS: readonly PrivateAvatarArea[] = [
   // Matches the 9m Feed errand arrival radius.
   { entityName: EntityNames.tree_glb, area: Vector3.create(18, 6, 18) },
-  { entityName: EntityNames.HomeDome01_glb, area: Vector3.create(12, 6, 12) }
-] as const
+  // The invisible cylinder is authored in Creator Hub. AvatarModifierArea
+  // ignores Transform.scale by itself, so setup.ts passes this same scale as
+  // its explicit `area`, keeping the code volume aligned with the cylinder.
+  { entityName: EntityNames.home_modifier_area }
+]
 
 const cachedAreaAnchors = new Map<EntityNames, Entity>()
 
@@ -25,10 +34,11 @@ export function getPrivateAvatarAreaAnchor(entityName: EntityNames): Entity | nu
 
 /** True when a world position is inside one of the avatar-hide volumes. */
 export function isInsidePrivateAvatarArea(position: Vector3): boolean {
-  for (const { entityName, area } of PRIVATE_AVATAR_AREAS) {
+  for (const { entityName, area: configuredArea } of PRIVATE_AVATAR_AREAS) {
     const anchor = getPrivateAvatarAreaAnchor(entityName)
     const transform = anchor === null ? null : Transform.getOrNull(anchor)
     if (!transform) continue
+    const area = configuredArea ?? transform.scale
 
     // AvatarModifierArea rotates its box with its anchor. Rotate the world
     // point by the inverse anchor rotation before testing the local box.
