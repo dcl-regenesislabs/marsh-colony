@@ -23,6 +23,7 @@ import {
   pointerEventsSystem,
   inputSystem,
   InputAction,
+  PointerEventType,
   PlayerIdentityData,
   PrimaryPointerInfo,
   UiCanvasInformation,
@@ -1436,8 +1437,20 @@ export function finishBath(won: boolean): void {
 // ---------------------------------------------------------------------------
 const BREED_NEST = EntityNames.DualNest01_glb_2
 const BREED_REACH = 6 // metres from the nest that counts as "arrived" (big model)
-const BREED_BOWL_A_OFF = Vector3.create(-0.17, 2.1, -1.61) // left bowl (dialled in-world; spread 25cm out, +5cm up)
-const BREED_BOWL_B_OFF = Vector3.create(-0.17, 2.07, 1.53) // right bowl (dialled in-world; spread 25cm out, +5cm up)
+const BREED_BOWL_A_OFF = Vector3.create(-0.47, 2.35, -1.96) // left bowl (dialled in-world with the breed tuner)
+const BREED_BOWL_B_OFF = Vector3.create(-0.47, 2.34, 2.02) // right bowl (dialled in-world with the breed tuner)
+
+// DEBUG: live-tune parent A's bowl offset with the keyboard while a breed is in
+// progress, then read the final Vector3 off the console/toast and paste it into
+// BREED_BOWL_A_OFF above. Set false to ship. Keys (desktop):
+//   E / F = +X / -X (toward / away from camera)
+//   1 / 2 = +Z / -Z (sideways spread)
+//   3 / 4 = +Y / -Y (up / down)
+//   Space = log the current offset
+const DEV_BREED_TUNE = false
+const BREED_TUNE_SPEED = 0.3 // metres/second while a nudge key is held
+let breedTuneOff: { x: number; y: number; z: number } | null = null // live copy of BREED_BOWL_A_OFF while tuning
+let breedTuneLegendShown = false
 const BREED_EGG_OFF = Vector3.create(0.16, 1.4, -0.01) // centre egg spot (dialled in-world)
 const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
 // Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
@@ -1602,7 +1615,9 @@ export function placeParentA(): void {
     const t = Transform.getMutable(localPet)
     t.parent = engine.RootEntity
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    // Face the viewer (the breed camera sits at the avatar stand) and sit.
+    t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    setClip(localPet, 'sit')
   }
   clientState.breed.phase = 'pickB' // ui.tsx shows the partner picker off this phase
 }
@@ -1624,8 +1639,9 @@ export function chooseBreedPartner(id: string): void {
     const spot = breedSpot(BREED_BOWL_B_OFF)
     const t = Transform.getMutable(roamer.entity)
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(partner.species))
-    setClip(roamer.entity, 'idle')
+    // Face the viewer (the breed camera sits at the avatar stand) and sit.
+    t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(partner.species))
+    setClip(roamer.entity, 'sit')
   }
 }
 
@@ -2251,24 +2267,51 @@ function updateWander(dt: number): number {
   return localPet ? navStepToward(localPet, wanderTarget, dt, yawOffsetForSpecies(clientState.activePet?.species ?? '')) : 0
 }
 
+/** DEBUG: nudge parent A's bowl offset live with the keyboard; Space logs it. */
+function updateBreedTune(dt: number): void {
+  if (!clientState.breed.active || clientState.breed.phase === 'toNest') {
+    breedTuneLegendShown = false
+    return
+  }
+  if (!breedTuneOff) breedTuneOff = { x: BREED_BOWL_A_OFF.x, y: BREED_BOWL_A_OFF.y, z: BREED_BOWL_A_OFF.z }
+  if (!breedTuneLegendShown) {
+    breedTuneLegendShown = true
+    pushToast('TUNE pet1: E/F=+/-X  1/2=+/-Z  3/4=+/-Y  Space=log')
+  }
+  const step = BREED_TUNE_SPEED * dt
+  const o = breedTuneOff
+  if (inputSystem.isPressed(InputAction.IA_PRIMARY)) o.x += step // E
+  if (inputSystem.isPressed(InputAction.IA_SECONDARY)) o.x -= step // F
+  if (inputSystem.isPressed(InputAction.IA_ACTION_3)) o.z += step // 1
+  if (inputSystem.isPressed(InputAction.IA_ACTION_4)) o.z -= step // 2
+  if (inputSystem.isPressed(InputAction.IA_ACTION_5)) o.y += step // 3
+  if (inputSystem.isPressed(InputAction.IA_ACTION_6)) o.y -= step // 4
+  if (inputSystem.isTriggered(InputAction.IA_JUMP, PointerEventType.PET_DOWN)) {
+    const line = `Vector3.create(${o.x.toFixed(2)}, ${o.y.toFixed(2)}, ${o.z.toFixed(2)})`
+    console.log('[BreedTune] BREED_BOWL_A_OFF =', line)
+    pushToast(`pet1 = ${line}`)
+  }
+}
+
 function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
 
-  // While parent A is placed in the breeding nest, hold it in its bowl (facing
-  // the centre) through the picker/breed steps + the egg cinematic — it must not
-  // wander off. During 'toNest' it's still carried in-hand, so skip that phase.
+  // While parent A is placed in the breeding nest, hold it in its bowl (sitting,
+  // facing the viewer) through the picker/breed steps + the egg cinematic — it
+  // must not wander off. During 'toNest' it's still carried in-hand, so skip that.
   if (clientState.breed.active && clientState.breed.phase !== 'toNest') {
     // Render from the CAPTURED parent A — clientState.activePet has already
     // flipped to the offspring hatchling by now (ensureLocalPet is frozen so the
     // model/skin stay parent A; use the same identity for yaw + tag).
     const petP = breedParentA ?? clientState.activePet
-    const spot = breedSpot(BREED_BOWL_A_OFF)
+    const spot = breedSpot(DEV_BREED_TUNE && breedTuneOff ? breedTuneOff : BREED_BOWL_A_OFF)
     const t = Transform.getMutable(localPet)
     t.parent = engine.RootEntity
     t.position = spot
-    t.rotation = yawToward(spot, breedSpot(BREED_EGG_OFF), yawOffsetForSpecies(petP?.species ?? ''))
-    setClip(localPet, 'idle')
+    // Face the viewer (the breed camera sits at the avatar stand) and sit.
+    t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(petP?.species ?? ''))
+    setClip(localPet, 'sit')
     if (localTag && petP) updateTag(localTag, spot, petP.species, petP.size, petP.name, petP)
     return
   }
@@ -2883,6 +2926,7 @@ export function setupPetSystems(): void {
     updateArrow()
     updateHatch(dt)
     updatePetting(dt)
+    if (DEV_BREED_TUNE) updateBreedTune(dt)
     updateLocalPet(dt)
     updateSleepCountdown()
     updateSleepBedScale()
