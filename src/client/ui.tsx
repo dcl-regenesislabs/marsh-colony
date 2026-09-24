@@ -6,7 +6,7 @@
 // Reads the client mirror of authoritative server state.
 
 import ReactEcs, { ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
-import { engine, InputAction } from '@dcl/sdk/ecs'
+import { engine, InputAction, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
@@ -1719,7 +1719,12 @@ const GOALS_CLOSE_CX = 0.908 // X centre, as a fraction of the image width
 const GOALS_CLOSE_CY = 0.159 // X centre, as a fraction of the image height
 const GOALS_CLOSE_FRAC = 0.11 // hit-area size, as a fraction of the image width
 function GoalsPanel() {
-  const size = S(680) // the art is square (1:1)
+  // The art is square (1:1). Fit it to the smaller screen dimension so it never
+  // overflows a short/low-dpr canvas (on mobile S(680) alone is ~1088u, taller
+  // than the ~720u canvas, which would clip the top — including the close X).
+  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const fit = canvas ? Math.min(canvas.width, canvas.height) * 0.92 : Infinity
+  const size = Math.min(S(680), fit)
   const closeSz = Math.round(size * GOALS_CLOSE_FRAC)
   const closeLeft = Math.round(size * GOALS_CLOSE_CX - closeSz / 2)
   const closeTop = Math.round(size * GOALS_CLOSE_CY - closeSz / 2)

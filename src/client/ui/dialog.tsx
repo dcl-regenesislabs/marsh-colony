@@ -7,7 +7,7 @@
 
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { getPlayer } from '@dcl/sdk/players'
-import { advanceDialog, clientState, openDialog } from '../state'
+import { advanceDialog, clientState, openDialog, CAPTAIN_NPC_NAME } from '../state'
 import { S, TactileButton } from './theme'
 
 const SHEET = 'assets/images/revamp/dialogue.png'
@@ -21,7 +21,7 @@ const CARETAKER_ASPECT = 1 // 512x512, circle fills the square
 
 /** Which portrait to show for the current NPC (defaults to the Caretaker). */
 function portraitFor(npcName: string): string {
-  return npcName === 'Captain' ? CAPTAIN_IMG : CARETAKER_IMG
+  return npcName === CAPTAIN_NPC_NAME ? CAPTAIN_IMG : CARETAKER_IMG
 }
 
 /** uiBackground.uvs order: bottom-left, top-left, top-right, bottom-right
