@@ -7,7 +7,7 @@
 
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { getPlayer } from '@dcl/sdk/players'
-import { advanceDialog, clientState, openDialog } from '../state'
+import { advanceDialog, clientState, openDialog, CAPTAIN_NPC_NAME } from '../state'
 import { S, TactileButton } from './theme'
 
 const SHEET = 'assets/images/revamp/dialogue.png'
@@ -16,7 +16,13 @@ const SHEET_H = 1024
 // Dedicated portrait (already a tight circular cutout on its own canvas) —
 // used instead of the spritesheet's own avatar crop.
 const CARETAKER_IMG = 'assets/images/revamp/caretaker.png'
+const CAPTAIN_IMG = 'assets/images/revamp/capitan.png' // same canvas/aspect as caretaker.png
 const CARETAKER_ASPECT = 1 // 512x512, circle fills the square
+
+/** Which portrait to show for the current NPC (defaults to the Caretaker). */
+function portraitFor(npcName: string): string {
+  return npcName === CAPTAIN_NPC_NAME ? CAPTAIN_IMG : CARETAKER_IMG
+}
 
 /** uiBackground.uvs order: bottom-left, top-left, top-right, bottom-right
  *  (PBUiBackground doc: "starting from bottom-left vertex clock-wise").
@@ -171,7 +177,7 @@ export function DialogBox() {
 
         {/* Avatar (left) + name/body column (right), inset within the bubble art. */}
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: padTop, left: padH }, width: bubbleW - padH * 2, height: avatarH, flexDirection: 'row', alignItems: 'flex-start' }}>
-          <UiEntity uiTransform={{ width: avatarW, height: avatarH }} uiBackground={{ texture: { src: CARETAKER_IMG }, textureMode: 'stretch' }} />
+          <UiEntity uiTransform={{ width: avatarW, height: avatarH }} uiBackground={{ texture: { src: portraitFor(d.npcName) }, textureMode: 'stretch' }} />
           <UiEntity uiTransform={{ width: textColW, height: avatarH, flexDirection: 'column', margin: { left: gapAvatarText } }}>
             <Label value={d.npcName} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ width: textColW, height: titleH, margin: { top: S(14) } }} />
             <Label value={body} fontSize={S(18)} color={LGT.body} textAlign="top-left" textWrap="wrap" uiTransform={{ width: textColW, height: bodyTextH, margin: { top: rowGap } }} />
