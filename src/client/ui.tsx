@@ -1929,36 +1929,34 @@ const TOAST_BORDER = 5 // border thickness (pre-S)
 const TOAST_TOP = '25%' as const
 const TOAST_HEIGHT = 92 // pre-S
 const BACK_BUTTON_TOAST_GAP = 14 // pre-S
-const TOAST_MOBILE_OFFSET_X = -320 // pre-S; tuned in the mobile toast debug panel
-const TOAST_MOBILE_OFFSET_Y = -40 // pre-S; tuned in the mobile toast debug panel
-// Temporary mobile tuning surface. It renders a local preview only — it never
-// touches the real notification queue. Set false before shipping the HUD.
-const TOAST_LAYOUT_DEBUG = false
-const TOAST_DEBUG_STEP = 10 // pre-S pixels per tap
-const toastLayoutDebug = { preview: true, x: 0, y: 0 }
+// Intentionally kept at the mobile placement specified for this scene.
+// These are fixed composition adjustments, not safe-area fallbacks.
+const TOAST_MOBILE_OFFSET_X = -320 // pre-S
+const TOAST_MOBILE_OFFSET_Y = -40 // pre-S
 const TOAST_BORDER_COLOR: Color = { r: 0.525, g: 0.318, b: 0.173, a: 1 } // #86512C brown
 const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cream
 
 const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
 const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 
+function toastIsVisible(now: number): boolean {
+  return !bigUiOpen() && !!clientState.currentToast && clientState.currentToast.until > now
+}
+
 function Toasts() {
   const now = Date.now()
-  const showDebugPreview = TOAST_LAYOUT_DEBUG && mobile() && toastLayoutDebug.preview
   // Hold the queue while a panel/modal/dialog owns the screen, so a toast can't
   // paint over open UI (the #186 overlap complaint). Nothing is shifted or shown
   // until they close, then the queue resumes.
   if (bigUiOpen()) return <UiEntity />
-  if (!showDebugPreview && (!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
+  if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
     const next = clientState.toasts.shift()!
     clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }
   }
-  const t = showDebugPreview
-    ? { message: 'Toast debug — acomodalo con el panel', kind: 'info', shownAt: now - TOAST_ENTER_MS, until: now + TOAST_HOLD_MS }
-    : clientState.currentToast
+  const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
-  const toastOffsetX = showDebugPreview ? toastLayoutDebug.x : mobile() ? TOAST_MOBILE_OFFSET_X : 0
-  const toastOffsetY = showDebugPreview ? toastLayoutDebug.y : mobile() ? TOAST_MOBILE_OFFSET_Y : 0
+  const toastOffsetX = mobile() ? TOAST_MOBILE_OFFSET_X : 0
+  const toastOffsetY = mobile() ? TOAST_MOBILE_OFFSET_Y : 0
 
   // A visible BackButton reads the active toast below and shifts beneath this
   // fixed notification row, so the two never overlap.
@@ -2038,65 +2036,26 @@ const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 // screen-center). One place so every action's BACK matches.
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const isM = mobile()
-  const toastVisible = (TOAST_LAYOUT_DEBUG && isM && toastLayoutDebug.preview) || (!!clientState.currentToast && clientState.currentToast.until > Date.now())
-  const toastOffsetY = TOAST_LAYOUT_DEBUG && isM && toastLayoutDebug.preview ? toastLayoutDebug.y : isM ? TOAST_MOBILE_OFFSET_Y : 0
+  const toastVisible = toastIsVisible(Date.now())
+  const toastOffsetY = isM ? TOAST_MOBILE_OFFSET_Y : 0
   const pos = { top: TOAST_TOP, left: isM ? S(210) : S(130) }
   const d = S(90)
   return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: pos, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
-      uiBackground={{
-        texture: { src: BACK_ARROW_ICON },
-        textureMode: 'stretch',
-        // Disabled reads as greyed-out (not just faded) so it doesn't look like a
-        // live button that's simply ignoring taps.
-        color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
-      }}
-      onMouseDown={() => {
-        if (!props.disabled) props.onClick()
-      }}
-    />
-  )
-}
-
-/** Mobile-only temporary controls for placing the toast inside InteractableArea.
- * The displayed X/Y are pre-S values; send the final pair back once the position
- * is right, then this entire panel can be disabled with TOAST_LAYOUT_DEBUG. */
-function ToastLayoutDebugPanel() {
-  if (!TOAST_LAYOUT_DEBUG || !mobile()) return <UiEntity />
-  const button = (label: string, onClick: () => void) => (
-    <UiEntity
-      uiTransform={{ width: S(58), height: S(42), margin: { left: S(3), right: S(3) }, borderRadius: S(8), alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
-      uiBackground={{ color: { r: 0.18, g: 0.12, b: 0.08, a: 0.94 } }}
-      onMouseDown={onClick}
-    >
-      <Label value={label} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
-    </UiEntity>
-  )
-  const move = (x: number, y: number) => () => {
-    toastLayoutDebug.x += x
-    toastLayoutDebug.y += y
-  }
-  return (
     <InteractableArea>
-      <UiEntity
-        uiTransform={{ positionType: 'absolute', position: { bottom: S(12), left: S(12) }, width: S(350), padding: S(10), borderRadius: S(12), flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
-        uiBackground={{ color: { r: 0.05, g: 0.04, b: 0.03, a: 0.88 } }}
-      >
-        <Label value={`TOAST DEBUG  X ${toastLayoutDebug.x}  Y ${toastLayoutDebug.y}`} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(6) } }}>
-          {button('X −', move(-TOAST_DEBUG_STEP, 0))}
-          {button('X +', move(TOAST_DEBUG_STEP, 0))}
-          {button('Y −', move(0, -TOAST_DEBUG_STEP))}
-          {button('Y +', move(0, TOAST_DEBUG_STEP))}
-        </UiEntity>
-        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(6) } }}>
-          {button(toastLayoutDebug.preview ? 'HIDE' : 'SHOW', () => (toastLayoutDebug.preview = !toastLayoutDebug.preview))}
-          {button('RESET', () => {
-            toastLayoutDebug.x = 0
-            toastLayoutDebug.y = 0
-          })}
-        </UiEntity>
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: pos, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+          uiBackground={{
+            texture: { src: BACK_ARROW_ICON },
+            textureMode: 'stretch',
+            // Disabled reads as greyed-out (not just faded) so it doesn't look like a
+            // live button that's simply ignoring taps.
+            color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
+          }}
+          onMouseDown={() => {
+            if (!props.disabled) props.onClick()
+          }}
+        />
       </UiEntity>
     </InteractableArea>
   )
@@ -3407,7 +3366,6 @@ const Root = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       {content}
       {UI_DEBUG_MODE && <DebugBrowserBar />}
-      <ToastLayoutDebugPanel />
       <ScreenFadeOverlay />
     </UiEntity>
   )
