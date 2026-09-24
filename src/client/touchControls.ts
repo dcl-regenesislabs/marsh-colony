@@ -14,14 +14,14 @@ export function applyDefaultTouchControls(): void {
   TouchScreenControls.hide(UNUSED_SCENE_TOUCH_BUTTONS)
   TouchScreenControls.showJoystick()
   TouchScreenControls.showCrosshair()
-  resetPetTouchControlsCache()
+  resetTouchControlRequests()
 }
 
 export function applyFruitGameTouchControls(): void {
   TouchScreenControls.hideAll()
   TouchScreenControls.hideJoystick()
   TouchScreenControls.hideCrosshair()
-  resetPetTouchControlsCache()
+  resetTouchControlRequests()
 }
 
 // The Fetch minigame's mobile Throw button: IA_PRIMARY (E on desktop, one of
@@ -47,45 +47,121 @@ const ROSTER_ICON = 'assets/images/revamp/pets_icon.png'
 const INVENTORY_ICON = 'assets/images/revamp/inventory_icon.png'
 const GOALS_ICON = 'assets/images/revamp/star_icon.png'
 
-// React-ECS renders each frame, so cache the last native-button configuration.
-let petTouchControlsVisible = false
-let petTouchControlsKey = ''
+const MANAGED_TOUCH_ACTIONS = [
+  InputAction.IA_PRIMARY,
+  InputAction.IA_SECONDARY,
+  InputAction.IA_ACTION_3,
+  InputAction.IA_ACTION_4,
+  InputAction.IA_ACTION_5,
+  InputAction.IA_ACTION_6
+]
 
-/** Native-control helpers can overwrite our two entries wholesale. Forget the
- * cached configuration whenever that happens so the next sync re-installs it. */
-function resetPetTouchControlsCache(): void {
-  petTouchControlsVisible = false
-  petTouchControlsKey = ''
+type PetTouchControlRequest = {
+  following: boolean
+  petIcon: string
+  key: string
 }
 
-/** Merges one custom button's icon/visibility into whatever TouchScreenControls
- *  config is already active. createOrReplace() on this component replaces the
- *  WHOLE value, so this reads the current one first (same read-modify-write
- *  the SDK's own hide()/showJoystick() helpers use internally) to avoid
- *  clobbering joystick/crosshair/other-button state set elsewhere. */
-function setTouchButtonIcon(action: InputAction, iconSrc: string | null): void {
+type TouchControlLayout = {
+  key: string
+  petControlsVisible: boolean
+  buttons: Array<{ action: InputAction; icon: string }>
+}
+
+// Systems request their desired controls here. Only reconcileTouchControls()
+// writes TouchScreenControls, so exiting one mode cannot erase the layout that
+// another system restored earlier in the same frame.
+let petTouchControlRequest: PetTouchControlRequest | null = null
+let fetchTouchButtonIcon: string | null = null
+let rockTouchButtonIcon: string | null = null
+let petTouchControlsVisible = false
+let appliedTouchControlLayoutKey = ''
+
+function resetTouchControlRequests(): void {
+  petTouchControlRequest = null
+  fetchTouchButtonIcon = null
+  rockTouchButtonIcon = null
+  petTouchControlsVisible = false
+  appliedTouchControlLayoutKey = ''
+}
+
+function requestedTouchControlLayout(): TouchControlLayout {
+  // Fetch and Pepito are mutually exclusive in normal play. Prioritizing them
+  // nevertheless makes this safe if a future flow momentarily requests both.
+  if (fetchTouchButtonIcon) {
+    return {
+      key: `fetch|${fetchTouchButtonIcon}`,
+      petControlsVisible: false,
+      buttons: [{ action: FETCH_TOUCH_ACTION, icon: fetchTouchButtonIcon }]
+    }
+  }
+
+  if (rockTouchButtonIcon) {
+    return {
+      key: `rock|${rockTouchButtonIcon}`,
+      petControlsVisible: false,
+      buttons: [{ action: ROCK_TOUCH_ACTION, icon: rockTouchButtonIcon }]
+    }
+  }
+
+  if (petTouchControlRequest) {
+    const { following, petIcon, key } = petTouchControlRequest
+    return {
+      key: `pet|${key}`,
+      petControlsVisible: true,
+      buttons: [
+        { action: PET_FOLLOW_TOUCH_ACTION, icon: following ? STOP_ICON : WHISTLE_ICON },
+        { action: PET_ACTIONS_TOUCH_ACTION, icon: petIcon },
+        { action: NAV_ROSTER_TOUCH_ACTION, icon: ROSTER_ICON },
+        { action: NAV_INVENTORY_TOUCH_ACTION, icon: INVENTORY_ICON },
+        { action: NAV_GOALS_TOUCH_ACTION, icon: GOALS_ICON }
+      ]
+    }
+  }
+
+  return { key: 'none', petControlsVisible: false, buttons: [] }
+}
+
+/** Replaces all scene-owned slots together while preserving the Explorer's
+ * joystick, crosshair and unrelated control configuration. */
+function reconcileTouchControls(): void {
+  const layout = requestedTouchControlLayout()
+  petTouchControlsVisible = layout.petControlsVisible
+  if (layout.key === appliedTouchControlLayoutKey) return
+
   const value = TouchScreenControls.getOrNull(engine.RootEntity)
-  const touchInputs = (value?.touchInputs ?? []).map((t) => ({ ...t }))
-  const idx = touchInputs.findIndex((t) => t.inputAction === action)
-  const entry = { inputAction: action, hide: iconSrc === null, icon: iconSrc ? Material.Texture.Common({ src: iconSrc }) : undefined }
-  if (idx >= 0) touchInputs[idx] = entry
-  else touchInputs.push(entry)
+  const managedActions = new Set<InputAction>(MANAGED_TOUCH_ACTIONS)
+  const icons = new Map<InputAction, string>(layout.buttons.map((button) => [button.action, button.icon]))
+  const touchInputs = (value?.touchInputs ?? [])
+    .filter((touchInput) => !managedActions.has(touchInput.inputAction))
+    .map((touchInput) => ({ ...touchInput }))
+
+  for (const action of MANAGED_TOUCH_ACTIONS) {
+    const icon = icons.get(action)
+    touchInputs.push(icon
+      ? { inputAction: action, hide: false, icon: Material.Texture.Common({ src: icon }) }
+      : { inputAction: action, hide: true })
+  }
+
   TouchScreenControls.createOrReplace(engine.RootEntity, {
     touchInputs,
     mainAction: value?.mainAction,
     hideJoystick: value?.hideJoystick ?? false,
     hideCrosshair: value?.hideCrosshair ?? false
   })
+  appliedTouchControlLayoutKey = layout.key
 }
 
 /** Show the Fetch Throw button with the given icon (swap as charge/busy state changes). */
 export function showFetchTouchButton(iconSrc: string): void {
-  setTouchButtonIcon(FETCH_TOUCH_ACTION, iconSrc)
+  fetchTouchButtonIcon = iconSrc
+  reconcileTouchControls()
 }
 
 /** Hide the Fetch Throw button again (back to this scene's normal default). */
 export function hideFetchTouchButton(): void {
-  setTouchButtonIcon(FETCH_TOUCH_ACTION, null)
+  fetchTouchButtonIcon = null
+  reconcileTouchControls()
 }
 
 /** Whether the companion controls are installed in the native mobile HUD. */
@@ -96,37 +172,26 @@ export function petTouchControlsAreVisible(): boolean {
 /** Show the direct companion controls plus the three native overflow entries. */
 export function showPetTouchControls(following: boolean, petIcon: string): void {
   const key = `${following ? 'follow' : 'stay'}|${petIcon}`
-  if (petTouchControlsVisible && petTouchControlsKey === key) return
-
-  setTouchButtonIcon(PET_FOLLOW_TOUCH_ACTION, following ? STOP_ICON : WHISTLE_ICON)
-  setTouchButtonIcon(PET_ACTIONS_TOUCH_ACTION, petIcon)
-  setTouchButtonIcon(NAV_ROSTER_TOUCH_ACTION, ROSTER_ICON)
-  setTouchButtonIcon(NAV_INVENTORY_TOUCH_ACTION, INVENTORY_ICON)
-  setTouchButtonIcon(NAV_GOALS_TOUCH_ACTION, GOALS_ICON)
-  petTouchControlsVisible = true
-  petTouchControlsKey = key
+  petTouchControlRequest = { following, petIcon, key }
+  reconcileTouchControls()
 }
 
-/** Hide companion controls without affecting joystick, crosshair or Fetch. */
+/** Hide the companion request. Fetch or Pepito remains visible when active. */
 export function hidePetTouchControls(): void {
-  if (!petTouchControlsVisible) return
-  setTouchButtonIcon(PET_FOLLOW_TOUCH_ACTION, null)
-  setTouchButtonIcon(PET_ACTIONS_TOUCH_ACTION, null)
-  setTouchButtonIcon(NAV_ROSTER_TOUCH_ACTION, null)
-  setTouchButtonIcon(NAV_INVENTORY_TOUCH_ACTION, null)
-  setTouchButtonIcon(NAV_GOALS_TOUCH_ACTION, null)
-  petTouchControlsVisible = false
-  petTouchControlsKey = ''
+  petTouchControlRequest = null
+  reconcileTouchControls()
 }
 
-// Pepito's chase uses a separate native button so it can never collide with
-// Fetch, even if a future flow accidentally tries to show both at once.
+// Pepito's chase uses the secondary direct slot. The reconciler keeps it
+// exclusive with Fetch and the normal companion layout.
 export const ROCK_TOUCH_ACTION = InputAction.IA_SECONDARY
 
 export function showRockTouchButton(iconSrc: string): void {
-  setTouchButtonIcon(ROCK_TOUCH_ACTION, iconSrc)
+  rockTouchButtonIcon = iconSrc
+  reconcileTouchControls()
 }
 
 export function hideRockTouchButton(): void {
-  setTouchButtonIcon(ROCK_TOUCH_ACTION, null)
+  rockTouchButtonIcon = null
+  reconcileTouchControls()
 }
