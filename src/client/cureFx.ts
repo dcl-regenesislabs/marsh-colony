@@ -4,9 +4,10 @@
 // mobile explorer ignores that component, and spheres also let us know exactly
 // when a drop touches the pet.
 
-import { Billboard, BillboardMode, ColliderLayer, engine, Entity, GltfContainer, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent } from '@dcl/sdk/ecs'
+import { ColliderLayer, engine, Entity, GltfContainer, Material, MaterialTransparencyMode, MeshRenderer, Transform, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { POTION_CURE_MODEL } from './sicknessProps'
+import { createStarburst, hideStarburst, Starburst, updateStarburst } from './starburst'
 
 const NO_COLLISION = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE }
 
@@ -39,17 +40,10 @@ const APPEAR_WOBBLE_DEG = 16
 const APPEAR_WOBBLE_CYCLES = 3
 const APPEAR_STRETCH = 0.5 // how much the elastic overshoot stretches it tall / squeezes it thin
 
-// Spinning light rays behind the bottle to make it pop. assets/images/starburst.png
-// is very faint (max alpha ~20%), so starburst_glow.png is a whiter, ~3x more opaque
-// copy of it; the tint below colors it.
-const BURST_TEXTURE = 'assets/images/starburst_glow.png'
-const BURST_ASPECT = 835 / 658 // image width / height
+// Spinning light rays behind the bottle to make it pop (see starburst.ts).
 const BURST_SIZE = 1.6 // world height of the plane, metres
-const BURST_SPIN_DEG_PER_S = 55
 const BURST_LEAVE_SPEEDUP = 2.5 // the rays shrink this many times faster than the bottle, so they vanish first
-const BURST_PULSE = 0.06
 const BURST_BEHIND = 0.25 // pushed this far away from the camera so the bottle stays in front
-const BURST_TINT = Color3.create(0.85, 1, 0.55)
 
 const DROP_POOL_SIZE = 18
 const DROP_GRAVITY = 9
@@ -65,10 +59,8 @@ type Drop = { entity: Entity; active: boolean; pos: Vector3; vel: Vector3; size:
 
 let anchor: Entity | null = null
 let bottle: Entity | null = null
-let burst: Entity | null = null // billboarded parent, follows the bottle
-let burstPlane: Entity | null = null // its spinning child
+let burst: Starburst | null = null // follows the bottle
 let burstAway = Vector3.Zero() // unit vector from the camera towards the bottle
-let burstTexture: ReturnType<typeof Material.Texture.Common> | null = null
 let drops: Drop[] = []
 let hoverPos = Vector3.Zero()
 let faceRotation = Quaternion.Identity()
@@ -120,26 +112,7 @@ function ensureEntities(): void {
     GltfContainer.createOrReplace(bottle, { src: POTION_CURE_MODEL, ...NO_COLLISION })
     VisibilityComponent.createOrReplace(anchor, { visible: false })
   }
-  if (!burst) {
-    burst = engine.addEntity()
-    burstPlane = engine.addEntity()
-    burstTexture = Material.Texture.Common({ src: BURST_TEXTURE })
-    Transform.createOrReplace(burst, { position: Vector3.Zero(), scale: Vector3.Zero() })
-    Billboard.createOrReplace(burst, { billboardMode: BillboardMode.BM_ALL })
-    Transform.createOrReplace(burstPlane, { parent: burst, scale: Vector3.create(BURST_SIZE * BURST_ASPECT, BURST_SIZE, 1) })
-    MeshRenderer.setPlane(burstPlane)
-    Material.setPbrMaterial(burstPlane, {
-      texture: burstTexture,
-      alphaTexture: burstTexture,
-      emissiveTexture: burstTexture,
-      emissiveColor: BURST_TINT,
-      emissiveIntensity: 1.4,
-      albedoColor: Color4.create(BURST_TINT.r, BURST_TINT.g, BURST_TINT.b, 1),
-      roughness: 1,
-      metallic: 0,
-      transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND
-    })
-  }
+  if (!burst) burst = createStarburst(BURST_SIZE)
   while (drops.length < DROP_POOL_SIZE) {
     const entity = engine.addEntity()
     Transform.createOrReplace(entity, { position: Vector3.Zero(), scale: Vector3.Zero() })
@@ -192,7 +165,7 @@ export function setBottle(appear: number, tilt: number, leave = 0, dt = 0): void
   const t = Transform.getMutable(anchor)
   if (!visible) {
     t.scale = Vector3.Zero()
-    if (burst) Transform.getMutable(burst).scale = Vector3.Zero()
+    if (burst) hideStarburst(burst)
     return
   }
   const bob = Math.sin(bottleClock * BOTTLE_BOB_SPEED) * BOTTLE_BOB_HEIGHT
@@ -229,15 +202,10 @@ export function setBottle(appear: number, tilt: number, leave = 0, dt = 0): void
 /** The rays fade in a beat after the bottle lands its first bounce, spin,
  * breathe a little, and shrink away quicker than the bottle does. */
 function updateBurst(bottlePos: Vector3, appear: number, leave: number): void {
-  if (!burst || !burstPlane) return
+  if (!burst) return
   const grow = easeOutCubic(Math.min(1, Math.max(0, (appear - 0.3) / 0.7)))
-  const pulse = 1 + BURST_PULSE * Math.sin(bottleClock * 3)
   const gone = Math.min(1, leave * BURST_LEAVE_SPEEDUP)
-  const scale = grow * (1 - gone) * (1 - gone) * pulse
-  const b = Transform.getMutable(burst)
-  b.position = Vector3.create(bottlePos.x + burstAway.x * BURST_BEHIND, bottlePos.y + burstAway.y * BURST_BEHIND, bottlePos.z + burstAway.z * BURST_BEHIND)
-  b.scale = Vector3.scale(Vector3.One(), scale)
-  Transform.getMutable(burstPlane).rotation = Quaternion.fromEulerDegrees(0, 0, bottleClock * BURST_SPIN_DEG_PER_S)
+  updateStarburst(burst, bottlePos, burstAway, BURST_BEHIND, grow * (1 - gone) * (1 - gone), bottleClock)
 }
 
 /** Spawn one drop at the bottle's mouth, in the bottle's current pose. */
@@ -301,6 +269,6 @@ export function stopCureFx(): void {
     VisibilityComponent.getMutable(anchor).visible = false
     Transform.getMutable(anchor).scale = Vector3.Zero()
   }
-  if (burst) Transform.getMutable(burst).scale = Vector3.Zero()
+  if (burst) hideStarburst(burst)
   for (const drop of drops) hideDrop(drop)
 }

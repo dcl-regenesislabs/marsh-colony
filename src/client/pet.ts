@@ -59,6 +59,7 @@ import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import { petOverheadTuning } from './petOverheadCalibration'
 import { isInsidePrivateAvatarArea } from './privacyAreas'
+import { createStarburst, hideStarburst, Starburst, updateStarburst } from './starburst'
 
 type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
 
@@ -1295,6 +1296,17 @@ const HATCH_PET_LIFT = 1.1 // raise the newborn during the reveal (sits on the n
 // Nudge the newborn's reveal spot toward the camera/player bearing (HATCH_CAM_YAW),
 // so it doesn't sit deep inside the (now bigger) nest bowl.
 const HATCH_PET_FORWARD_OFFSET = 0.4
+// Starburst behind the newborn (see starburst.ts): it pops in once the newborn has
+// finished growing, spins through the admire beat, then shrinks away quickly.
+const HATCH_BURST_SIZE = 1.7 // world height of the rays, metres
+const HATCH_BURST_START = HATCH_ANIM_SECONDS // once the newborn has finished growing (and the egg is gone)
+const HATCH_BURST_APPEAR_S = 0.5
+const HATCH_BURST_LEAVE_S = 0.4 // shrink-away time, ending as the admire beat ends
+// Along the camera's line of sight from the focus point (the egg's spot). The nest
+// bowl is big, so behind it (positive) the nest hides the rays; the newborn stands
+// ~0.4m in front of the focus, so this puts them just behind it, in front of the bowl.
+const HATCH_BURST_BEHIND = -0.21
+let hatchBurst: Starburst | null = null
 let egg: Entity | null = null
 let hatchSpecies = ''
 let hatchName = ''
@@ -2215,6 +2227,7 @@ function revealHatchedPet(): void {
 function finishHatch(): void {
   clientState.hatch.active = false
   clientState.hatch.progress = 0
+  if (hatchBurst) hideStarburst(hatchBurst)
   if (egg) {
     engine.removeEntity(egg)
     egg = null
@@ -2260,7 +2273,23 @@ function updateHatch(dt: number): void {
       egg = null
     }
   }
+  updateHatchBurst()
   if (hatchAnimT >= HATCH_ANIM_SECONDS + HATCH_ADMIRE_SECONDS) finishHatch()
+}
+
+/** Rays behind the newborn: pop in once it has grown, spin, shrink away at the end. */
+function updateHatchBurst(): void {
+  const appear = Math.min(1, Math.max(0, (hatchAnimT - HATCH_BURST_START) / HATCH_BURST_APPEAR_S))
+  if (appear <= 0 || !hatchFocus || !petCam) return
+  const end = HATCH_ANIM_SECONDS + HATCH_ADMIRE_SECONDS
+  const leave = Math.min(1, Math.max(0, (hatchAnimT - (end - HATCH_BURST_LEAVE_S)) / HATCH_BURST_LEAVE_S))
+  if (!hatchBurst) hatchBurst = createStarburst(HATCH_BURST_SIZE)
+  const center = Transform.get(hatchFocus).position
+  const away = Vector3.normalize(Vector3.subtract(center, Transform.get(petCam).position))
+  // easeOutBack: overshoots a little past full size for a punchy pop.
+  const c1 = 1.70158
+  const pop = 1 + (c1 + 1) * Math.pow(appear - 1, 3) + c1 * Math.pow(appear - 1, 2)
+  updateStarburst(hatchBurst, center, away, HATCH_BURST_BEHIND, pop * (1 - leave) * (1 - leave), hatchAnimT - HATCH_BURST_START)
 }
 
 export function setFollow(enabled: boolean): void {
