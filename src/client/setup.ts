@@ -31,6 +31,7 @@ import { setupEggShake } from './eggShake'
 import { setupPlantSway } from './plantSway'
 import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaretakerIntroLocked } from './caretaker'
 import { setupCaretakerPet } from './caretakerPet'
+import { setupCaptain } from './captain'
 import { setupDebugGrow } from './debugGrow'
 import { setupFeedTask } from './feed'
 import { setupFruitGame } from './fruitGame'
@@ -223,6 +224,7 @@ export function setupClient(): void {
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupMeteor() // meteor reward drop (falls, settles, clickable)
+  setupCaptain() // space Caretaker aboard the ark: tap for a small teaser dialog
   setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   evaluateStreak() // advance / reset the 7-day login streak
