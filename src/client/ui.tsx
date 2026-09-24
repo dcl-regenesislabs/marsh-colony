@@ -679,6 +679,18 @@ const BATH_BUTTON_ASPECT = 812 / 323
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
+// Mobile: the 3 nav squares (Pets / Inventory / Goals) collapse behind a single
+// hamburger button (btn_manu.png) placed bottom-right, above the native Jump
+// control, for the right thumb. Tapping it stacks the 3 buttons above it.
+const BTN_MENU_ICON = 'assets/images/revamp/btn_manu.png'
+const MENU_BTN_SIZE = 90 // pre-S; the menu button diameter
+const MENU_BTN_TOP = 40 // pre-S; distance from the top (top-right) — TUNE
+const MENU_BTN_RIGHT = 50 // pre-S; inset from the right edge (aligned above the Jump control's column) — TUNE
+let mobileNavOpen = false
+// DEV ONLY — force the nav/menu visible without adopting a pet, to dial in the
+// menu button's position. Keep false in shipping builds.
+const DEV_ALWAYS_SHOW_NAV = false
+
 function BottomNav() {
   const p = clientState.player
   // Hidden while any big panel/dialog is open (bigUiOpen) — it sits where these
@@ -703,7 +715,7 @@ function BottomNav() {
   }
 
   // The nav buttons only appear once you actually own a pet (kept at least one).
-  if (p.pets.length === 0) return <UiEntity />
+  if (p.pets.length === 0 && !DEV_ALWAYS_SHOW_NAV) return <UiEntity />
 
   // Icon-only squares (paw / backpack / star) from hud.png. A colored plate
   // shows behind the icon when its panel is open — the icon art itself has no
@@ -721,8 +733,36 @@ function BottomNav() {
       </UiEntity>
     )
   }
+  // MOBILE: a hamburger (btn_manu) on the middle-right edge. Tap it to reveal the
+  // 3 nav buttons; tapping one opens its panel + collapses. (DEV flag also forces
+  // this branch on desktop so the button can be positioned without a mobile device.)
+  if (mobile() || DEV_ALWAYS_SHOW_NAV) {
+    const menuSz = S(MENU_BTN_SIZE)
+    const pick = (open: () => void) => () => {
+      mobileNavOpen = false
+      open()
+    }
+    return (
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(MENU_BTN_TOP), right: S(MENU_BTN_RIGHT) }, width: plateSize, flexDirection: 'column', alignItems: 'center', pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ width: menuSz, height: menuSz, pointerFilter: 'block' }}
+          uiBackground={{ texture: { src: BTN_MENU_ICON }, textureMode: 'stretch' }}
+          onMouseDown={() => (mobileNavOpen = !mobileNavOpen)}
+        />
+        {mobileNavOpen && (
+          <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', margin: { top: S(10) } }}>
+            {nav('nav_pets', NAV_PAW_UVS, 'roster', pick(() => ui.openRoster()))}
+            {nav('nav_inv', NAV_INV_UVS, 'inventory', pick(() => ui.openInventory()))}
+            {nav('nav_goals', NAV_GOALS_UVS, 'goals', pick(() => ui.openGoals()))}
+          </UiEntity>
+        )}
+      </UiEntity>
+    )
+  }
+
+  // DESKTOP: the classic centered bottom bar.
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: mobile() ? S(70) : S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
       {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster())}
       {nav('nav_inv', NAV_INV_UVS, 'inventory', () => ui.openInventory())}
       {nav('nav_goals', NAV_GOALS_UVS, 'goals', () => ui.openGoals())}
@@ -1903,14 +1943,14 @@ function Toasts() {
   // leaving that vertical space empty.
   const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active || getEggPending()
 
-  // Slide in from the RIGHT edge + fade. Enter: from off-screen right -> rest.
-  // Exit: retract back off the right + fade.
+  // Slide in from the LEFT edge + fade. Enter: from off-screen left -> rest.
+  // Exit: retract back off the left + fade. (The nav lives on the right now.)
   const elapsed = now - t.shownAt
   const remaining = t.until - now
   const w = S(500)
   const h = S(92)
-  const rightInset = mobile() ? S(24) : S(16)
-  const offMax = rightInset + w + S(20) // far enough right to sit fully off-screen while hidden
+  const leftInset = mobile() ? S(24) : S(16)
+  const offMax = leftInset + w + S(20) // far enough left to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
@@ -1929,15 +1969,14 @@ function Toasts() {
   // original left-side notification.
   const border = S(TOAST_BORDER)
   return (
-    // Right side, slide-in from the right. Same vertical layout as the former
-    // left-side notification. The pill is drawn in code: a brown border (outer)
-    // wrapping a cream fill (inner), both fully rounded.
+    // Left side, slide-in from the left. The pill is drawn in code: a brown
+    // border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: '25%', right: rightInset },
-          margin: { top: backButtonVisible ? S(96) : 0, right: -slide },
+          position: { top: '25%', left: leftInset },
+          margin: { top: backButtonVisible ? S(96) : 0, left: -slide },
           width: w,
           height: h,
           padding: border, // this padding IS the visible brown border

@@ -18,6 +18,7 @@ const STATIC_UI_ASSETS = [
   'assets/images/bubbleFrame/spritesheet_6x1_512.png',
   'assets/images/revamp/breed.png',
   'assets/images/revamp/breed_ui_hud.png',
+  'assets/images/revamp/btn_manu.png',
   'assets/images/revamp/chip_xp_4frames.png',
   'assets/images/revamp/chip_coins_4frames.png',
   'assets/images/revamp/buy_button_states.png',
