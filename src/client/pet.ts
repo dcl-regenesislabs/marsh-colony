@@ -1118,7 +1118,9 @@ export function setCureCinematicPose(clip: PetClip, emote: 'sick' | 'heart' | nu
   if (!cureCinematicActive) return
   // While the old clip is fading out its bubble stays; the new one applies
   // partway through the blend (tickCureCrossfade).
-  if (clip !== interactClip) playCureClip(clip, true)
+  // Mobile's Animator can leave a bad pose after this weighted blend. Its
+  // single-clip transition is stable, while desktop retains the crossfade.
+  if (clip !== interactClip) playCureClip(clip, !mobile())
   if (cureFade && !cureFade.emoteApplied) cureFade.emote = emote
   else cureCinematicEmote = emote
 }
