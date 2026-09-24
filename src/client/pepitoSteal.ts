@@ -4,6 +4,7 @@
 
 import { Animator, ColliderLayer, engine, Entity, GltfContainer, MainCamera, Transform, VirtualCamera, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
+import { movePlayerTo, stopEmote, triggerEmote, triggerSceneEmote } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { SIZE_BASE, clipForSpecies, modelForSpecies, scaleForSpecies, stageScaleFor, yawOffsetForSpecies } from '../shared/config'
 import { applyCreatureSkin } from './creatureSkins'
@@ -17,7 +18,34 @@ const NO_COLLISION = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisi
 // advances the Caretaker dialog immediately, the open cage and bottle get a
 // readable beat before Pepito arrives.
 const TABLE_REVEAL_HOLD_S = 1.15
-const APPROACH_S = 0.82
+// The player's avatar walks up to the opened table before Pepito appears, then
+// cries when he snatches the potion. movePlayerTo with a duration glides the
+// avatar (interpolated) instead of teleporting it.
+const WALK_STAND_DISTANCE = 1.0 // metres from the table's center, on the Caretaker's side (the table is ~0.7m wide)
+const WALK_SPEED = 2 // m/s, only used to pick how long the glide takes
+const WALK_MIN_S = 1.4
+const WALK_MAX_S = 3.2
+const WALK_SETTLE_S = 0.3 // standing at the table this long before Pepito appears
+const WALK_SKIP_DISTANCE = 0.3 // already this close: no walk
+// Just before Pepito grabs it the avatar reaches for the potion, so the theft reads
+// as "about to pick it up, but it's snatched". There is no pick-up emote, so this
+// borrows the base scene emote 'buttonFront' (one hand reaches out; picked over
+// lever, push and openChest by eye). It reaches with the RIGHT hand, so
+// models/button_front_left_emote.glb is a left/right mirror of it (the rig's bone
+// tracks reflected across the body's center line); if a client rejects that scene
+// emote we fall back to the original. The cry below interrupts it at the grab.
+const REACH_EMOTE_FILE = 'models/button_front_left_emote.glb'
+const REACH_EMOTE_FALLBACK = 'buttonFront'
+// In the emote the hand is at full reach from ~0.2s to ~0.47s, then drops back
+// (it ends at 0.83s). The emote starts so Pepito's grab lands this far into it,
+// i.e. with the hand fully out; the cry then cuts it off.
+const REACH_GRAB_AT_S = 0.35
+// The player's reaction to the theft: Decentraland's own looping base emote "cry"
+// (off-chain base-emotes collection, Cry_Particles.glb), triggered by bare name
+// like 'wave' or 'robot'. If a client ever doesn't resolve the bare name, the full
+// form is 'urn:decentraland:off-chain:base-emotes:cry'.
+const CRY_EMOTE = 'cry'
+const APPROACH_S = 0.5 // a fast dive: ~10 m/s over the ~5m from the frame edge to the potion
 const GRAB_HOLD_S = 0.12
 const ESCAPE_S = 1.0
 
@@ -60,6 +88,9 @@ let stealSystem: ((dt: number) => void) | null = null
 let shotTablePos: Vector3 | null = null
 let shotPotionPos: Vector3 | null = null
 let shotCameraSide: Vector3 | null = null
+let revealHold = TABLE_REVEAL_HOLD_S // pre-flight time: covers the player's walk
+let cried = false
+let reached = false
 
 /** A shallow flight bow reads as a deliberate dive/swoop instead of a model
  * interpolating between two points in a straight line. */
@@ -165,6 +196,14 @@ function placePepito(position: Vector3): void {
   )
 }
 
+/** The cry loops until the player moves, so end it when control is handed back.
+ * Guarded like holdEmote.ts: stopEmote isn't callable on every client build. */
+export function stopCryEmote(): void {
+  if (!cried) return
+  cried = false
+  if (typeof stopEmote === 'function') void stopEmote({}).catch(() => {})
+}
+
 export function pepitoStealHidesHud(): boolean {
   return active
 }
@@ -202,14 +241,27 @@ function endSteal(): void {
 
 function tickSteal(dt: number): void {
   elapsed += dt
-  if (elapsed < TABLE_REVEAL_HOLD_S) return
-  const flightElapsed = elapsed - TABLE_REVEAL_HOLD_S
+  if (!reached && elapsed >= revealHold + APPROACH_S - REACH_GRAB_AT_S) {
+    reached = true
+    const fallback = (): void => void triggerEmote({ predefinedEmote: REACH_EMOTE_FALLBACK }).catch(() => {})
+    triggerSceneEmote({ src: REACH_EMOTE_FILE, loop: false })
+      .then((result) => {
+        if (!result?.success) fallback()
+      })
+      .catch(fallback)
+  }
+  if (elapsed < revealHold) return
+  const flightElapsed = elapsed - revealHold
   if (flightElapsed < APPROACH_S) {
     placePepito(curvedFlight(entry, grab, flightElapsed / APPROACH_S, -0.34, 0.26))
     return
   }
   if (flightElapsed < APPROACH_S + GRAB_HOLD_S) {
     carried = true
+    if (!cried) {
+      cried = true
+      void triggerEmote({ predefinedEmote: CRY_EMOTE }).catch(() => {})
+    }
     placePepito(grab)
     return
   }
@@ -243,13 +295,32 @@ export function startPepitoSteal(onDone: () => void): boolean {
   yaw = (Math.atan2(grab.x - entry.x, grab.z - entry.z) * 180) / Math.PI
   pepito = spawnPepito(entry)
   Transform.getMutable(pepito).rotation = Quaternion.fromEulerDegrees(0, yaw + yawOffsetForSpecies(PEPITO_SPECIES), 0)
-  for (const state of Animator.getMutable(pepito).states) state.speed = 1.45
+  for (const state of Animator.getMutable(pepito).states) state.speed = 1.9
 
   if (!camera) camera = engine.addEntity()
   shotTablePos = Vector3.create(tablePos.x, tablePos.y, tablePos.z)
   shotPotionPos = Vector3.create(potionPos.x, potionPos.y, potionPos.z)
   shotCameraSide = Vector3.create(cameraSide.x, cameraSide.y, cameraSide.z)
   focusStealCamera()
+
+  // Walk the avatar up to the table; Pepito waits until it has arrived.
+  revealHold = TABLE_REVEAL_HOLD_S
+  cried = false
+  reached = false
+  const player = Transform.getOrNull(engine.PlayerEntity)?.position
+  if (player) {
+    const stand = Vector3.create(tablePos.x + cameraSide.x * WALK_STAND_DISTANCE, player.y, tablePos.z + cameraSide.z * WALK_STAND_DISTANCE)
+    const distance = Math.hypot(player.x - stand.x, player.z - stand.z)
+    if (distance > WALK_SKIP_DISTANCE) {
+      const walkS = Math.min(WALK_MAX_S, Math.max(WALK_MIN_S, distance / WALK_SPEED))
+      revealHold = Math.max(TABLE_REVEAL_HOLD_S, walkS + WALK_SETTLE_S)
+      void movePlayerTo({
+        newRelativePosition: stand,
+        avatarTarget: Vector3.create(tablePos.x, stand.y, tablePos.z),
+        duration: walkS
+      }).catch(() => {})
+    }
+  }
 
   active = true
   carried = false
