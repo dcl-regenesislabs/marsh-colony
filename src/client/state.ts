@@ -219,6 +219,10 @@ export function serverConnected(): boolean {
   return Date.now() - clientState.lastServerMsgAt < SERVER_TIMEOUT_MS
 }
 
+// NPC dialog names, shared so the portrait mapping (ui/dialog.tsx) and the NPC
+// setup (captain.ts) can't drift apart on a rename.
+export const CAPTAIN_NPC_NAME = 'Captain'
+
 /** Open a multi-page NPC dialog. Advancing past the last page closes it. */
 export function openDialog(
   npcName: string,

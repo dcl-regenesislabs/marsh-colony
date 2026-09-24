@@ -60,6 +60,7 @@ import { mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import { petOverheadTuning } from './petOverheadCalibration'
 import { isInsidePrivateAvatarArea } from './privacyAreas'
+import { createStarburst, hideStarburst, Starburst, updateStarburst } from './starburst'
 import { PET_ACTIONS_TOUCH_ACTION, PET_FOLLOW_TOUCH_ACTION, petTouchControlsAreVisible } from './touchControls'
 
 type Mode = 'follow' | 'goto' | 'interact' | 'wander' | 'bathhop' | 'asleep'
@@ -98,6 +99,8 @@ let sadCinematicActive = false
 // post-Feed sad hold. Keep this latch so the regular interaction timer cannot
 // immediately replace the happy reaction with follow/idle.
 let cureCinematicActive = false
+let cureCinematicEmote: 'sick' | 'heart' | null = 'sick'
+let cureFade: { from: string; to: string; t: number; emote: 'sick' | 'heart' | null; emoteApplied: boolean } | null = null
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
@@ -123,6 +126,12 @@ const BATH_SPLASH_SECONDS = 2.5 // short win-celebration splash before the hop-o
 const PETTING_CAMERA_LOOK_LIFT = 0.55
 // The Caretaker dialog covers the lower part of the screen. These offset the
 // post-Feed sick shot enough to keep the pet and its bubble above that panel.
+// Cure scene geometry, relative to the pet's name-tag height: the bottle hovers
+// this far above it, and a drop "touches" the pet this far below it.
+const CURE_HOVER_ABOVE_TAG = 0.95
+const CURE_HIT_BELOW_TAG = 0.8 // the sad pose crouches, so this is well below the tag
+const CURE_CROSSFADE_S = 0.8 // sad -> dance blend
+const CURE_EMOTE_SWITCH_AT = 0.4 // fraction of the blend at which the old bubble gives way
 const SAD_CINEMATIC_CAMERA_BACKOFF = 0.55
 const SAD_CINEMATIC_LOOK_DOWN = 0.35
 // Mobile's large bottom dialog occupies more vertical screen space. Widen the
@@ -982,11 +991,20 @@ export function sadCinematicIsActive(): boolean {
   return sadCinematicActive
 }
 
-/** Frame the pet's recovery in its current safe world position. Unlike the
- * sickness reveal this has no dialog to compose around, so it stays closer and
- * centers the pet's happy gesture. The caller owns the virtual camera and the
- * eventual release; this function owns only the pet pose. */
-export function startCureCinematic(): { camPos: Vector3; look: Vector3 } | null {
+export type CureShot = {
+  camPos: Vector3
+  look: Vector3
+  /** Where the medicine bottle hovers: above the name tag, centered on the pet. */
+  hoverPos: Vector3
+  /** World Y at the pet's back/head where a falling drop counts as "touching". */
+  hitY: number
+}
+
+/** Frame the pet's recovery in its current safe world position. The pet starts
+ * in its sad pose; cureCelebration.ts drives the rest via setCureCinematicPose.
+ * The caller owns the virtual camera and the eventual release; this function
+ * owns only the pet pose and the shot geometry. */
+export function startCureCinematic(): CureShot | null {
   const pet = clientState.activePet
   if (!localPet || !pet) return null
 
@@ -994,46 +1012,136 @@ export function startCureCinematic(): { camPos: Vector3; look: Vector3 } | null 
   const player = playerPos()
   let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
   direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
-  const distance = 2.75 + stageScaleFor(pet.size) + (mobile() ? 0.75 : 0)
-  const camPos = Vector3.create(petPos.x + direction.x * distance, petPos.y + 1.35, petPos.z + direction.z * distance)
-  const look = Vector3.create(petPos.x, petPos.y + 0.5, petPos.z)
+  const stage = stageScaleFor(pet.size)
+  const tagHeight = TAG_MIN + TAG_SIZE_MULT * stage + petOverheadTuning(pet.species, pet.size).nameLift
+  const hoverPos = Vector3.create(petPos.x, petPos.y + tagHeight + CURE_HOVER_ABOVE_TAG, petPos.z)
+  // Frame the pet AND the bottle hovering above it.
+  const lookY = (petPos.y + hoverPos.y + 0.3) / 2
+  const distance = 3.2 + stage + (mobile() ? 0.9 : 0)
+  const camPos = Vector3.create(petPos.x + direction.x * distance, lookY + 0.35, petPos.z + direction.z * distance)
+  const look = Vector3.create(petPos.x, lookY, petPos.z)
 
   Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
   onArrive = null
   justBathed = false
   mode = 'interact'
-  interactClip = 'gesture-positive'
   interactTimer = 0
   cureCinematicActive = true
+  cureCinematicEmote = 'sick'
+  playCureClip('gesture-negative')
+  return { camPos, look, hoverPos, hitY: petPos.y + Math.max(0.25, tagHeight - CURE_HIT_BELOW_TAG) }
+}
 
-  // This may be a second recovery in the same session, so force the positive
-  // gesture back to its first frame instead of resuming it midway through.
-  const happyClip = clipForSpecies(pet.species, 'gesture-positive')
-  curClip.set(localPet, happyClip)
-  lastLogicalClip.set(localPet, 'gesture-positive')
-  Animator.playSingleAnimation(localPet, happyClip, true)
-  const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === happyClip)
-  if (state) {
-    state.playing = true
-    state.loop = true
-    state.speed = 1
+/** Force `clip` to start from its first frame. A second recovery in the same
+ * session (or the dev key) would otherwise resume the clip midway. With
+ * `crossfade` the previous clip keeps playing while its weight ramps down and
+ * the new one's ramps up (see tickCureCrossfade), instead of cutting. */
+function playCureClip(clip: PetClip, crossfade = false): void {
+  const pet = clientState.activePet
+  if (!localPet || !pet) return
+  finishCureCrossfade()
+  const prev = curClip.get(localPet)
+  interactClip = clip
+  const name = clipForSpecies(pet.species, clip)
+  curClip.set(localPet, name)
+  lastLogicalClip.set(localPet, clip)
+
+  const states = Animator.getMutable(localPet).states
+  const to = states.find((candidate) => candidate.clip === name)
+  const from = crossfade && prev && prev !== name ? states.find((candidate) => candidate.clip === prev) : undefined
+  if (!from || !to) {
+    Animator.playSingleAnimation(localPet, name, true)
+    const state = Animator.getMutable(localPet).states.find((candidate) => candidate.clip === name)
+    if (state) {
+      state.playing = true
+      state.loop = true
+      state.speed = 1
+      state.weight = 1
+    }
+    return
   }
-  return { camPos, look }
+  // Same recipe as SlidePenguin's working crossfade: zero out EVERY other clip
+  // first. The pet lists ~9 clips at weight 1, and stale non-playing ones bleed
+  // their pose into a blend. shouldReset stays off so the weights aren't reset.
+  for (const state of states) {
+    state.playing = false
+    state.weight = 0
+    state.shouldReset = false
+  }
+  from.playing = true
+  from.loop = true
+  from.weight = 1
+  to.playing = true
+  to.loop = true
+  to.speed = 1
+  to.weight = 0
+  cureFade = { from: prev as string, to: name, t: 0, emote: cureCinematicEmote, emoteApplied: false }
+}
+
+/** Ramp the two clips' weights; the Animator blends everything that is playing. */
+function tickCureCrossfade(dt: number): void {
+  if (!cureFade || !localPet || !Animator.has(localPet)) return
+  cureFade.t += dt
+  const k = Math.min(1, cureFade.t / CURE_CROSSFADE_S)
+  const eased = 0.5 - 0.5 * Math.cos(Math.PI * k) // sine in-out: gentle at both ends
+  for (const state of Animator.getMutable(localPet).states) {
+    if (state.clip === cureFade.from) state.weight = 1 - eased
+    else if (state.clip === cureFade.to) state.weight = eased
+  }
+  if (!cureFade.emoteApplied && k >= CURE_EMOTE_SWITCH_AT) {
+    cureFade.emoteApplied = true
+    cureCinematicEmote = cureFade.emote
+  }
+  if (k >= 1) finishCureCrossfade()
+}
+
+/** Settle a running blend: old clip off, new clip at full weight. Also called
+ * before anything else takes over the Animator so no stale weight lingers. */
+function finishCureCrossfade(): void {
+  if (!cureFade) return
+  const fade = cureFade
+  cureFade = null
+  if (!fade.emoteApplied) cureCinematicEmote = fade.emote
+  if (!localPet || !Animator.has(localPet)) return
+  // Everything back to weight 1: setClip() only toggles `playing`, so a clip left
+  // at weight 0 would play invisibly the next time it is chosen.
+  for (const state of Animator.getMutable(localPet).states) {
+    state.playing = state.clip === fade.to
+    state.weight = 1
+  }
+}
+
+/** Switch the pet's pose during the cure scene (sad -> dance) and choose which
+ * overhead emote it shows once any crossfade is 40% through; `null` hides the
+ * bubble. */
+export function setCureCinematicPose(clip: PetClip, emote: 'sick' | 'heart' | null): void {
+  if (!cureCinematicActive) return
+  // While the old clip is fading out its bubble stays; the new one applies
+  // partway through the blend (tickCureCrossfade).
+  if (clip !== interactClip) playCureClip(clip, true)
+  if (cureFade && !cureFade.emoteApplied) cureFade.emote = emote
+  else cureCinematicEmote = emote
 }
 
 /** Return the pet to its normal follow/wander behavior after its recovery. */
 export function endCureCinematic(): void {
   if (!cureCinematicActive) return
   cureCinematicActive = false
-  if (mode === 'interact' && interactClip === 'gesture-positive') {
+  finishCureCrossfade()
+  if (mode === 'interact') {
     interactTimer = 0
     mode = clientState.followEnabled ? 'follow' : 'wander'
   }
 }
 
-/** Lets the overhead emote hold a happy face for the full recovery shot. */
+/** Lets the overhead emote follow the recovery shot. */
 export function cureCinematicIsActive(): boolean {
   return cureCinematicActive
+}
+
+/** Which bubble the pet shows during the cure scene; null = hidden. */
+export function cureCinematicEmoteId(): 'sick' | 'heart' | null {
+  return cureCinematicEmote
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,6 +1298,17 @@ const HATCH_PET_LIFT = 1.1 // raise the newborn during the reveal (sits on the n
 // Nudge the newborn's reveal spot toward the camera/player bearing (HATCH_CAM_YAW),
 // so it doesn't sit deep inside the (now bigger) nest bowl.
 const HATCH_PET_FORWARD_OFFSET = 0.4
+// Starburst behind the newborn (see starburst.ts): it pops in once the newborn has
+// finished growing, spins through the admire beat, then shrinks away quickly.
+const HATCH_BURST_SIZE = 1.7 // world height of the rays, metres
+const HATCH_BURST_START = HATCH_ANIM_SECONDS // once the newborn has finished growing (and the egg is gone)
+const HATCH_BURST_APPEAR_S = 0.5
+const HATCH_BURST_LEAVE_S = 0.4 // shrink-away time, ending as the admire beat ends
+// Along the camera's line of sight from the focus point (the egg's spot). The nest
+// bowl is big, so behind it (positive) the nest hides the rays; the newborn stands
+// ~0.4m in front of the focus, so this puts them just behind it, in front of the bowl.
+const HATCH_BURST_BEHIND = -0.21
+let hatchBurst: Starburst | null = null
 let egg: Entity | null = null
 let hatchSpecies = ''
 let hatchName = ''
@@ -1341,43 +1460,56 @@ export function cancelCarryPet(): void {
 // Bath minigame camera: a cinematic shot framed on the tub, held (avatar frozen)
 // through the whole minigame — the intro "Start" beat, the countdown, popping and
 // results — the same lock/lookAt pattern the petting/hatch shots use. Tunable.
-const BATH_CAM_DIST = 3.2 // metres out from the tub, on the side AWAY from the home dome (-Z)
+const BATH_CAM_DIST = 3.2 // metres out from the pet, toward -Z
 const BATH_CAM_HEIGHT = 1.6 // metres above the tub
 const BATH_CAM_LOOK_LIFT = 0.6 // focus point above the tub floor (roughly the pet's body)
-const BATH_CAM_AVATAR_BACK = 2 // metres to park the frozen avatar BEHIND the camera, out of the shot
+// Tuned in the mobile bath-camera debug view. Compass bearing: 0=N (+Z),
+// 90=E (+X), 180=S (-Z), 270=W (-X).
+const BATH_MOBILE_CAM_BEARING_DEG = 270
+const BATH_MOBILE_CAM_DIST = 3.8
+const BATH_MOBILE_CAM_HEIGHT = 3.4
 const BATH_CAM_TRANSITION_S = 0.8 // blend-in time, mirrors the fruit minigame's ARRIVAL_CAM_TRANSITION_S (no hard cut)
+
+function bathCameraPosition(bathPos: Vector3): Vector3 {
+  if (!mobile()) return Vector3.create(bathPos.x, bathPos.y + BATH_CAM_HEIGHT, bathPos.z - BATH_CAM_DIST)
+  const radians = (BATH_MOBILE_CAM_BEARING_DEG * Math.PI) / 180
+  return Vector3.create(
+    bathPos.x + Math.sin(radians) * BATH_MOBILE_CAM_DIST,
+    bathPos.y + BATH_MOBILE_CAM_HEIGHT,
+    bathPos.z + Math.cos(radians) * BATH_MOBILE_CAM_DIST
+  )
+}
+
+/** Apply the current camera tune immediately, including making the pet face it. */
+function positionBathCamera(cam: Entity, focus: Entity): void {
+  const bathPos = localPet ? Transform.get(localPet).position : flat(objectPosition(EntityNames.PetPool_glb))
+  const camPos = bathCameraPosition(bathPos)
+  Transform.createOrReplace(focus, { position: Vector3.create(bathPos.x, bathPos.y + BATH_CAM_LOOK_LIFT, bathPos.z) })
+  Transform.createOrReplace(cam, { position: camPos })
+  if (localPet) {
+    Transform.getMutable(localPet).rotation = yawToward(bathPos, camPos, yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+  }
+}
 
 /** Lock the camera onto the bathtub for the bath minigame. */
 function startBathCamera(): void {
-  const tub = objectPosition(EntityNames.PetPool_glb)
   if (!petCam) petCam = engine.addEntity()
   if (!petCamFocus) petCamFocus = engine.addEntity()
-  // Frame the tub from the -Z side: +Z aims straight into HomeDome01, which would
-  // put the camera inside the dome and teleport the frozen avatar through its
-  // wall. nudgeOutsideBuildings is a belt-and-braces guard — relocating the tub
-  // in the editor can never re-park the shot (or the avatar) indoors. (It flattens
-  // Y to PET_BASE_Y, so the camera/avatar height is re-applied afterwards.)
-  const camFlat = nudgeOutsideBuildings(Vector3.create(tub.x, C.PET_BASE_Y, tub.z - BATH_CAM_DIST))
-  const avatarFlat = nudgeOutsideBuildings(Vector3.create(tub.x, C.PET_BASE_Y, tub.z - (BATH_CAM_DIST + BATH_CAM_AVATAR_BACK)))
-  Transform.createOrReplace(petCamFocus, { position: Vector3.create(tub.x, C.PET_BASE_Y + BATH_CAM_LOOK_LIFT, tub.z) })
-  Transform.createOrReplace(petCam, { position: Vector3.create(camFlat.x, C.PET_BASE_Y + BATH_CAM_HEIGHT, camFlat.z) })
+  positionBathCamera(petCam, petCamFocus)
   VirtualCamera.createOrReplace(petCam, {
     lookAtEntity: petCamFocus,
     defaultTransition: { transitionMode: VirtualCamera.Transition.Time(BATH_CAM_TRANSITION_S) } // blend in, like fruitGame
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
-  // Tuck the avatar BEHIND the camera (further out than it) so it's out of the shot
-  // — done before the freeze so the teleport isn't blocked. It stays frozen there.
-  void movePlayerTo({
-    newRelativePosition: Vector3.create(avatarFlat.x, C.PET_BASE_Y, avatarFlat.z),
-    cameraTarget: Vector3.create(tub.x, C.PET_BASE_Y + BATH_CAM_LOOK_LIFT, tub.z)
-  })
+  // Keep the avatar where the player started the bath; only its input is frozen.
+  // Parking it behind this camera can put it outside the home after hand-back.
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
 }
 
 /** Hand the camera + avatar control back when the bath minigame ends (Done/BACK). */
 export function endBathCamera(): void {
   releasePettingView() // shared camera/input release (clears the virtual cam + InputModifier)
+  if (localPet) registerPetOpenClick(localPet) // restore the normal world interaction after the round
 }
 
 /** Bath step 2: place the pet in the tub and start the bubble minigame. The bath
@@ -1409,7 +1541,12 @@ export function placePetAtStation(): void {
   // Lock the camera ONLY if the game actually started — startBathGame no-ops if a
   // round is somehow still live, and locking + freezing the avatar with no overlay
   // and no BACK button behind it would be an unrecoverable soft-lock.
-  if (startBathGame()) startBathCamera() // cinematic lock on the tub for the intro beat + the minigame
+  if (startBathGame()) {
+    // The bath HUD only catches taps on its bubbles, so remove the pet's world
+    // handler entirely rather than letting clicks through to its "Open" action.
+    if (localPet) pointerEventsSystem.removeOnPointerDown(localPet)
+    startBathCamera() // cinematic lock on the tub for the intro beat + the minigame
+  }
 }
 
 /** Called by the bath minigame when it ends. On a WIN the pet plays the short
@@ -2125,6 +2262,7 @@ function revealHatchedPet(): void {
 function finishHatch(): void {
   clientState.hatch.active = false
   clientState.hatch.progress = 0
+  if (hatchBurst) hideStarburst(hatchBurst)
   if (egg) {
     engine.removeEntity(egg)
     egg = null
@@ -2170,7 +2308,23 @@ function updateHatch(dt: number): void {
       egg = null
     }
   }
+  updateHatchBurst()
   if (hatchAnimT >= HATCH_ANIM_SECONDS + HATCH_ADMIRE_SECONDS) finishHatch()
+}
+
+/** Rays behind the newborn: pop in once it has grown, spin, shrink away at the end. */
+function updateHatchBurst(): void {
+  const appear = Math.min(1, Math.max(0, (hatchAnimT - HATCH_BURST_START) / HATCH_BURST_APPEAR_S))
+  if (appear <= 0 || !hatchFocus || !petCam) return
+  const end = HATCH_ANIM_SECONDS + HATCH_ADMIRE_SECONDS
+  const leave = Math.min(1, Math.max(0, (hatchAnimT - (end - HATCH_BURST_LEAVE_S)) / HATCH_BURST_LEAVE_S))
+  if (!hatchBurst) hatchBurst = createStarburst(HATCH_BURST_SIZE)
+  const center = Transform.get(hatchFocus).position
+  const away = Vector3.normalize(Vector3.subtract(center, Transform.get(petCam).position))
+  // easeOutBack: overshoots a little past full size for a punchy pop.
+  const c1 = 1.70158
+  const pop = 1 + (c1 + 1) * Math.pow(appear - 1, 3) + c1 * Math.pow(appear - 1, 2)
+  updateStarburst(hatchBurst, center, away, HATCH_BURST_BEHIND, pop * (1 - leave) * (1 - leave), hatchAnimT - HATCH_BURST_START)
 }
 
 export function setFollow(enabled: boolean): void {
@@ -2360,10 +2514,10 @@ function updateLocalPet(dt: number): void {
   if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
 
   // During the bubble-bath minigame the pet stays put in the tub (where
-  // placePetAtStation teleported it) and just idles — don't let the follow/roam
-  // logic below walk it away while the player is popping bubbles.
+  // placePetAtStation teleported it), reacting happily without letting the
+  // follow/roam logic below walk it away while the player is popping bubbles.
   if (clientState.bathGame.active) {
-    setClip(localPet, 'idle')
+    setClip(localPet, 'gesture-positive')
     return
   }
 
@@ -2540,7 +2694,7 @@ function updateLocalPet(dt: number): void {
       if (
         (interactClip === 'eat' && eatCinematicActive) ||
         (interactClip === 'gesture-negative' && sadCinematicActive) ||
-        (interactClip === 'gesture-positive' && cureCinematicActive)
+        cureCinematicActive
       )
         break
       interactTimer -= dt
@@ -2595,6 +2749,8 @@ function updateLocalPet(dt: number): void {
       break
     }
   }
+
+  tickCureCrossfade(dt)
 
   // Decide animation: interaction clip > movement > sleeping > idle.
   // (sleep only while standing still — a pet dozing mid-walk would just slide.)

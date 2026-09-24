@@ -8,6 +8,7 @@ import { SICKNESS_TABLE_POSITION } from '../shared/sickness'
 
 const TABLE_MODEL = 'assets/Models/PotionTable.glb'
 const POTION_MODEL = 'assets/Models/Potion01.glb'
+export const POTION_CURE_MODEL = 'assets/Models/PotionCure/PotionCure.glb'
 
 let potionTable: Entity | null = null
 let potion: Entity | null = null
@@ -18,7 +19,7 @@ function preloadSicknessProps(): void {
   propsPreloaded = true
   // PotionTable is a 1.1 MB GLB. Warm it before the player reaches the
   // Caretaker so its texture/mesh upload cannot interrupt the cure cinematic.
-  AssetLoad.create(engine.addEntity(), { assets: [TABLE_MODEL, POTION_MODEL] })
+  AssetLoad.create(engine.addEntity(), { assets: [TABLE_MODEL, POTION_MODEL, POTION_CURE_MODEL] })
 }
 
 export function getPotionTableEntity(): Entity | null {

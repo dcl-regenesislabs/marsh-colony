@@ -2,13 +2,14 @@
 // the player to the Caretaker. Reaching them plays the medicine-table scene;
 // Pepito steals its opened cure, while the chase itself comes in the next beat.
 
-import { Animator, engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
+import { Animator, engine, Entity, InputAction, inputSystem, InputModifier, MainCamera, PointerEventType, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
+import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { actions, clientState, pushToast } from './state'
 import { hideArrow, showArrowTo } from './pet'
 import { openCureDialog } from './ui/dialog'
-import { pepitoStealHidesHud, resetStolenPotion, startPepitoSteal } from './pepitoSteal'
+import { pepitoStealHidesHud, resetStolenPotion, startPepitoSteal, stopCryEmote } from './pepitoSteal'
 import { startPepitoChase } from './pepitoChase'
 import { getPotionTableEntity } from './sicknessProps'
 import { sicknessCinematicOwnsFlow } from './sicknessCinematic'
@@ -27,6 +28,7 @@ let cureCamera: Entity | null = null
 let cureTheftRunning = false
 let tableIdleApplied = false
 let cureDialogPending = false
+let replayPending = false // dev replay teleport in flight: keep the real errand from restarting
 
 function caretakerEntity(): Entity | null {
   const entity = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
@@ -112,7 +114,8 @@ function tableShot(table: Entity, caretaker: Entity): { position: Vector3; look:
   }
 }
 
-function beginCure(table: Entity, caretaker: Entity): void {
+/** `preview` (dev replay only) skips the server hand-off and the chase that follows. */
+function beginCure(table: Entity, caretaker: Entity, preview = false): void {
   if (cureRunning) return
   cureRunning = true
   cureClosing = false
@@ -121,7 +124,7 @@ function beginCure(table: Entity, caretaker: Entity): void {
   clientState.screenFade.alpha = 0
   // The server will only honor the final cure after this Care Center hand-off.
   // It independently checks the player's authoritative world position.
-  actions.beginSicknessCure()
+  if (!preview) actions.beginSicknessCure()
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   resetStolenPotion()
   closePotionCage()
@@ -154,6 +157,7 @@ function beginCure(table: Entity, caretaker: Entity): void {
         // blackout has lifted means the Caretaker's rock instruction is never
         // hidden behind it or racing the native camera return.
         finishCure(false, () => {
+          if (preview) return
           if (!startPepitoChase()) {
             pushToast('Pepito got away. Speak to the Caretaker and try again.', 'error')
             startSicknessErrand()
@@ -205,6 +209,7 @@ function finishCure(showTheftToast = true, afterRelease?: () => void): void {
     if (elapsedMs < EXIT_FADE_IN_MS) return
     clientState.screenFade.alpha = 0
     if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+    stopCryEmote()
     cureRunning = false
     cureClosing = false
     cureTheftRunning = false
@@ -216,6 +221,7 @@ function finishCure(showTheftToast = true, afterRelease?: () => void): void {
 }
 
 export function setupSicknessErrand(): void {
+  setupReplayDevKey()
   engine.addSystem(() => {
     // Apply the static closed pose as soon as the composite's Animator exists,
     // not only when the player has already reached the Caretaker.
@@ -252,7 +258,7 @@ export function setupSicknessErrand(): void {
     // cancelled BACK presses, transient entity-load misses, and interrupted
     // Pepito stages. `startSicknessErrand` safely retries until the Caretaker
     // entity itself is ready.
-    if (!task.active && !cureRunning && pet?.sick && !anotherFlowOwnsPlayer) startSicknessErrand()
+    if (!task.active && !cureRunning && !replayPending && pet?.sick && !anotherFlowOwnsPlayer) startSicknessErrand()
     if (!task.active || cureRunning) return
     if (clientState.carryEgg.active || clientState.carryPet.active || !clientState.activePet?.sick || clientState.activePet.id !== task.petId) {
       cancelSicknessErrand()
@@ -266,5 +272,42 @@ export function setupSicknessErrand(): void {
     if (flatDistance(position, target) > CARETAKER_RADIUS) return
     cancelSicknessErrand()
     if (table) beginCure(table, caretaker)
+  })
+}
+
+// DEV ONLY: key "4" (IA_ACTION_6) replays the medicine-table scene (cage opens,
+// avatar walks up, Pepito steals, avatar cries) as often as you like. It skips
+// the server hand-off and the chase, and first drops the avatar back near the
+// Caretaker so the walk always plays. Remove once the scene is finished.
+const REPLAY_START_DISTANCE = 4.2 // metres from the table, on the Caretaker's side
+const REPLAY_TELEPORT_S = 0.5 // give the teleport time to land before the scene starts
+
+function setupReplayDevKey(): void {
+  let countdown = -1
+  engine.addSystem((dt: number) => {
+    if (countdown >= 0) {
+      countdown -= dt
+      if (countdown > 0) return
+      countdown = -1
+      replayPending = false
+      const table = tableEntity()
+      const caretaker = caretakerEntity()
+      if (table && caretaker) beginCure(table, caretaker, true)
+      return
+    }
+    if (!inputSystem.isTriggered(InputAction.IA_ACTION_6, PointerEventType.PET_DOWN)) return
+    if (cureRunning || clientState.pepitoChase.active || clientState.dialog.open || clientState.screenFade.alpha > 0 || pepitoStealHidesHud()) return
+    const table = tableEntity()
+    const caretaker = caretakerEntity()
+    if (!table || !caretaker) return
+    cancelSicknessErrand()
+    const tablePos = Transform.get(table).position
+    const caretakerPos = Transform.get(caretaker).position
+    const flat = Vector3.create(caretakerPos.x - tablePos.x, 0, caretakerPos.z - tablePos.z)
+    const side = Vector3.length(flat) > 0.01 ? Vector3.normalize(flat) : Vector3.create(1, 0, 0)
+    const start = Vector3.create(tablePos.x + side.x * REPLAY_START_DISTANCE, playerPosition()?.y ?? tablePos.y, tablePos.z + side.z * REPLAY_START_DISTANCE)
+    void movePlayerTo({ newRelativePosition: start, cameraTarget: tablePos }).catch(() => {})
+    replayPending = true
+    countdown = REPLAY_TELEPORT_S
   })
 }

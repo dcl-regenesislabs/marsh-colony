@@ -6,7 +6,7 @@
 // Reads the client mirror of authoritative server state.
 
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
-import { engine, InputAction, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
+import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
@@ -1712,29 +1712,37 @@ function MeteorRewardPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Goals / achievements
+// Goals / achievements — the "Your Journey" art (goals.png, 1024²) is the whole
+// panel. The close X is baked into the top-right of the image; an invisible
+// button is overlaid on it. Fractions below are that X's centre in the art.
 // ---------------------------------------------------------------------------
+const GOALS_IMG = 'assets/images/revamp/goals.png'
+const GOALS_CLOSE_CX = 0.908 // X centre, as a fraction of the image width
+const GOALS_CLOSE_CY = 0.159 // X centre, as a fraction of the image height
+const GOALS_CLOSE_FRAC = 0.11 // hit-area size, as a fraction of the image width
 function GoalsPanel() {
-  const p = clientState.player
+  // The art is square (1:1). Fit it to the smaller screen dimension so it never
+  // overflows a short/low-dpr canvas (on mobile S(680) alone is ~1088u, taller
+  // than the ~720u canvas, which would clip the top — including the close X).
+  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const fit = canvas ? Math.min(canvas.width, canvas.height) * 0.92 : Infinity
+  const size = Math.min(S(680), fit)
+  const closeSz = Math.round(size * GOALS_CLOSE_FRAC)
+  const closeLeft = Math.round(size * GOALS_CLOSE_CX - closeSz / 2)
+  const closeTop = Math.round(size * GOALS_CLOSE_CY - closeSz / 2)
   return (
-    <PetHudModal title="Goals" subtitle="Check your goals & achievements!" width={S(680)} height={Math.round(S(680) / PET_MODAL_ASPECT)} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-        {Cfg.ACHIEVEMENTS.map((a) => {
-          const done = (p?.achievements.indexOf(a.id) ?? -1) !== -1
-          const prog = Math.min(p?.counters[a.counter] ?? 0, a.goal)
-          const pct = Math.round((prog / a.goal) * 100)
-          return (
-            <UiEntity key={a.id} uiTransform={{ width: '100%', height: S(66), flexDirection: 'column', margin: { bottom: S(6) }, padding: S(8), borderRadius: S(12) }} uiBackground={{ color: LOC.tile }}>
-              <Label value={`${done ? '[done] ' : ''}${a.label}`} fontSize={S(16)} color={done ? LOC.green : LOC.body} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
-              <UiEntity uiTransform={{ width: '100%', height: S(10), borderRadius: S(5), margin: { top: S(4), bottom: S(2) } }} uiBackground={{ color: LOC.neutral }}>
-                <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(5) }} uiBackground={{ color: done ? LOC.green : LOC.orange }} />
-              </UiEntity>
-              <Label value={`${a.description}  (${prog}/${a.goal})`} fontSize={S(13)} color={LOC.dim} textAlign="middle-left" uiTransform={{ width: '100%', height: S(18) }} />
-            </UiEntity>
-          )
-        })}
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
+      <UiEntity uiTransform={{ width: size, height: size, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_IMG }, textureMode: 'stretch' }}>
+        {/* Invisible close button sitting on the X baked into the art. The fully
+            transparent background is what guarantees the tap/click registers on
+            both mobile and Unity (same trick as the tap-to-exit overlays). */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: closeTop, left: closeLeft }, width: closeSz, height: closeSz, pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => ui.close()}
+        />
       </UiEntity>
-    </PetHudModal>
+    </UiEntity>
   )
 }
 
