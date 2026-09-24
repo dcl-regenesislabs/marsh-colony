@@ -234,20 +234,44 @@ const inactivePets = new Map<string, Roamer>()
 // second entity, no re-skin) rather than leaking one and building another.
 const retiredPets = new Map<string, Entity>()
 
-// Each owned pet gets its OWN home slot so up-to-4 pets never pile up on the same
-// spot. Slots are spread across the care area (objects sit ~x195-214, z235-249);
-// a stored pet roams a little around its slot, and the active pet parks on its
-// slot while you carry/hatch a new egg so the newborn won't overlap it.
-const PET_SLOT_HOMES: Vector3[] = [
-  Vector3.create(200, C.PET_BASE_Y, 239),
-  Vector3.create(206, C.PET_BASE_Y, 239),
-  Vector3.create(200, C.PET_BASE_Y, 245),
-  Vector3.create(206, C.PET_BASE_Y, 245)
+// Non-selected pets live in the CORRAL (a separate fenced area you walk to in
+// order to select another pet). Everything is anchored to the `penArea` scene
+// entity at RUNTIME (its children — floor + fence — are all local to it), so
+// moving the corral in the editor moves the pets with it. CORRAL_LOCAL_OFF is the
+// fence-bbox centre relative to penArea; the half-extents are the inner roaming
+// area, kept off the fence. TUNE with the debug cube.
+const CORRAL_LOCAL_OFF = Vector3.create(4.85, 0, 2.64)
+const CORRAL_HALF_X = 6
+const CORRAL_HALF_Z = 7
+const CORRAL_SLOT_OFF: [number, number][] = [
+  [-4, -4],
+  [4, -4],
+  [-4, 4],
+  [4, 4]
 ]
+
+/** World centre of the corral (penArea anchor + local offset). */
+function corralCenter(): Vector3 {
+  const a = objectPosition(EntityNames.penArea)
+  return Vector3.create(a.x + CORRAL_LOCAL_OFF.x, C.PET_BASE_Y, a.z + CORRAL_LOCAL_OFF.z)
+}
+
+/** Clamp a point to the corral's inner rectangle (so a roamer never crosses the fence). */
+function clampToCorral(p: Vector3): Vector3 {
+  const c = corralCenter()
+  return Vector3.create(
+    Math.max(c.x - CORRAL_HALF_X, Math.min(c.x + CORRAL_HALF_X, p.x)),
+    C.PET_BASE_Y,
+    Math.max(c.z - CORRAL_HALF_Z, Math.min(c.z + CORRAL_HALF_Z, p.z))
+  )
+}
+
+// Each owned pet gets its OWN slot inside the corral so up-to-4 never pile up on
+// the same spot; a stored pet roams a little around its slot.
 function slotHome(index: number): Vector3 {
-  const s = PET_SLOT_HOMES[((index % PET_SLOT_HOMES.length) + PET_SLOT_HOMES.length) % PET_SLOT_HOMES.length]
-  // Keep resting slots out of the buildings — the pet lives in the open.
-  return nudgeOutsideBuildings(Vector3.create(s.x, s.y, s.z))
+  const c = corralCenter()
+  const off = CORRAL_SLOT_OFF[((index % CORRAL_SLOT_OFF.length) + CORRAL_SLOT_OFF.length) % CORRAL_SLOT_OFF.length]
+  return Vector3.create(c.x + off[0], C.PET_BASE_Y, c.z + off[1])
 }
 /** Index of the currently-shown active pet within the roster (-1 if none). */
 function activePetSlotIndex(): number {
@@ -658,13 +682,17 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
     // and updateInactivePets' updateTag never un-hides it — the pet would roam
     // permanently nameless otherwise.
     setTagVisible(outTag, true)
+    const outHome = slotHome(outIndex)
+    // Teleport it straight to its corral slot — the corral is far from where you
+    // deselect, so letting it WALK there would be a long trek across the map.
+    Transform.getMutable(outEntity).position = outHome
     inactivePets.set(outId, {
       entity: outEntity,
       species: localSpecies,
       tag: outTag,
-      home: slotHome(outIndex),
+      home: outHome,
       target: null,
-      pause: 0.4 // brief beat before it starts wandering back to its slot
+      pause: 0.4 // brief beat before it starts wandering around its slot
     })
   } else {
     // The outgoing pet already left the roster (e.g. a discarded hatchling):
@@ -1126,9 +1154,12 @@ const EGG_MODEL = 'models/stylized_dino_egg.glb'
 // The Nest: a fixture inside the house. Eggs hatch ON it — startHatch() drops the
 // egg here (not in front of the player), so hatching always happens on the nest.
 const NEST_MODEL = 'assets/Models/newModels/Nest.glb'
-const NEST_POS = Vector3.create(204, C.PET_BASE_Y, 254) // inside the house, just past HOME_BASE (204,240)
-const NEST_EGG_LIFT = 0.5 // how high the egg sits on the nest (tune to the model's bowl)
-const NEST_YAW = 237 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
+// Position/rotation/scale match the "SpawNest.glb" placeholder placed in Creator Hub
+// (assets/scene/main.composite) to mark where this code-spawned nest should sit.
+const NEST_POS = Vector3.create(199.85373, C.PET_BASE_Y, 247.44547) // inside the house, just past HOME_BASE (204,240)
+const NEST_SCALE = 2.2903 // matches the SpawNest.glb placeholder's scale
+const NEST_EGG_LIFT = 0.5 * NEST_SCALE // how high the egg sits on the nest (tune to the model's bowl)
+const NEST_YAW = -90 // degrees: face the house door (door is west of the dome). Tune if the model's front points elsewhere (try ±90 / 180).
 // Hatch reveal camera, relative to the egg on the nest. HATCH_CAM_YAW is the bearing
 // FROM the egg TO the camera (0 = +Z). Aligned with the nest's facing so the shot is
 // head-on with the nest+egg instead of viewing it from the side. Tune freely.
@@ -1139,7 +1170,11 @@ const HATCH_CAM_HEIGHT = 1.2 // metres above the egg
 /** Place the (static, non-blocking) hatching nest inside the house. Called once. */
 function placeNest(): void {
   const e = engine.addEntity()
-  Transform.create(e, { position: NEST_POS, rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0) })
+  Transform.create(e, {
+    position: NEST_POS,
+    rotation: Quaternion.fromEulerDegrees(0, NEST_YAW, 0),
+    scale: Vector3.create(NEST_SCALE, NEST_SCALE, NEST_SCALE)
+  })
   // No collision — decorative hatch surface; must not block the player walking in.
   GltfContainer.create(e, { src: NEST_MODEL, visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
 }
@@ -1148,8 +1183,11 @@ function placeNest(): void {
 const HATCH_ANIM_SECONDS = 2.0 // total Hatch clip length -> when the egg is removed
 const PET_EMERGE_AT = 1.4 // when the pet pops out (egg is open)
 const HATCH_POP_SECONDS = HATCH_ANIM_SECONDS - PET_EMERGE_AT // pop lasts until the egg is gone
-const HATCH_ADMIRE_SECONDS = 1.2 // camera lingers on the newborn before handing back control
-const HATCH_PET_LIFT = 0.35 // raise the newborn ~35 cm during the reveal (sits on the nest, not the floor)
+const HATCH_ADMIRE_SECONDS = 3.2 // camera lingers on the newborn before handing back control
+const HATCH_PET_LIFT = 1.1 // raise the newborn during the reveal (sits on the nest bowl, not the floor)
+// Nudge the newborn's reveal spot toward the camera/player bearing (HATCH_CAM_YAW),
+// so it doesn't sit deep inside the (now bigger) nest bowl.
+const HATCH_PET_FORWARD_OFFSET = 0.4
 let egg: Entity | null = null
 let hatchSpecies = ''
 let hatchName = ''
@@ -1398,9 +1436,9 @@ export function finishBath(won: boolean): void {
 // ---------------------------------------------------------------------------
 const BREED_NEST = EntityNames.DualNest01_glb_2
 const BREED_REACH = 6 // metres from the nest that counts as "arrived" (big model)
-const BREED_BOWL_A_OFF = Vector3.create(-0.17, 1.85, -1.36) // left bowl (dialled in-world; lowered 20cm)
-const BREED_BOWL_B_OFF = Vector3.create(-0.17, 1.82, 1.28) // right bowl (dialled in-world; lowered 20cm)
-const BREED_EGG_OFF = Vector3.create(0.16, 1.2, -0.01) // centre egg spot (dialled in-world; lowered 20cm)
+const BREED_BOWL_A_OFF = Vector3.create(-0.17, 2.1, -1.61) // left bowl (dialled in-world; spread 25cm out, +5cm up)
+const BREED_BOWL_B_OFF = Vector3.create(-0.17, 2.07, 1.53) // right bowl (dialled in-world; spread 25cm out, +5cm up)
+const BREED_EGG_OFF = Vector3.create(0.16, 1.4, -0.01) // centre egg spot (dialled in-world)
 const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
 // Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
 // on the nest the whole time: the machine trembles, a violet magic orb (UI sprite)
@@ -1420,6 +1458,8 @@ const BREED_RESULT_GRACE_S = 4.0 // after the cinematic, how long to wait for br
 // the camera sits at its eyes looking straight at the egg spot.
 const BREED_CAM_AVATAR_OFF = Vector3.create(4.0, -0.48, 0.15) // where the avatar stands (offset from nest)
 const BREED_CAM_EYE = 1.6 // camera height above the avatar's feet (eye level)
+const BREED_AVATAR_Y = 0.9 // avatar feet height — the nest terrain sits above PET_BASE_Y (0), so parking at 0 buries it. TUNE
+const BREED_AVATAR_BACK = 2 // park the avatar this far BEHIND the camera (away from the nest) so it's out of the shot
 
 export const BREED_ORB_FRAMES = 8 // p1.png: 8-frame loop
 export const BREED_BURST_FRAMES = 6 // p2.png: 6-frame one-shot
@@ -1757,7 +1797,7 @@ function startBreedCamera(): void {
   // is the FPV eye level; parking the avatar itself at the raised camera Y would
   // leave it floating ~1 m up when the camera cuts back). It's behind the lens
   // and out of frame during the cinematic either way.
-  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x, C.PET_BASE_Y, stand.z), cameraTarget: focus })
+  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x + BREED_AVATAR_BACK, BREED_AVATAR_Y, stand.z), cameraTarget: focus })
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
 }
 
@@ -2279,12 +2319,14 @@ function updateLocalPet(dt: number): void {
       setLocalTagVisible(false)
       return
     }
-    // Otherwise (adoption) the CURRENT pet steps aside to its home slot so the
-    // hatch spot in front of the player is clear.
+    // Otherwise (adoption) the CURRENT pet gets out of the way so the hatch spot
+    // in front of the player is clear. Its home slot is now in the corral (far),
+    // so teleport it there instead of walking it across the map.
     const idx = activePetSlotIndex()
-    const moved = idx >= 0 ? stepToward(localPet, slotHome(idx), dt, yawOffsetForSpecies(petP.species)) : 0
-    setClip(localPet, moved > 0.003 ? 'walk' : 'idle')
-    if (localTag) updateTag(localTag, Transform.get(localPet).position, petP.species, petP.size, petP.name, petP)
+    const t = Transform.getMutable(localPet)
+    t.position = idx >= 0 ? slotHome(idx) : t.position
+    setClip(localPet, 'idle')
+    if (localTag) updateTag(localTag, t.position, petP.species, petP.size, petP.name, petP)
     return
   }
 
@@ -2301,7 +2343,14 @@ function updateLocalPet(dt: number): void {
     const f = hatchPopT > 0 ? Math.max(0.05, 1 - hatchPopT / HATCH_POP_SECONDS) : 1 // 0 -> 1
     const t = Transform.getMutable(localPet)
     t.scale = Vector3.scale(full, f)
-    if (hatchRevealPos) t.position = Vector3.create(hatchRevealPos.x, C.PET_BASE_Y + HATCH_PET_LIFT, hatchRevealPos.z)
+    if (hatchRevealPos) {
+      const camRad = (HATCH_CAM_YAW * Math.PI) / 180
+      t.position = Vector3.create(
+        hatchRevealPos.x + Math.sin(camRad) * HATCH_PET_FORWARD_OFFSET,
+        C.PET_BASE_Y + HATCH_PET_LIFT,
+        hatchRevealPos.z + Math.cos(camRad) * HATCH_PET_FORWARD_OFFSET
+      )
+    }
     // The hatch camera sits on this bearing, so explicitly face the newborn
     // toward it instead of retaining its orientation from before the reveal.
     t.rotation = Quaternion.fromEulerDegrees(0, HATCH_CAM_YAW + yawOffsetForSpecies(petH.species), 0)
@@ -2737,7 +2786,7 @@ function updateInactivePets(dt: number): void {
         } else {
           const r = 0.6 + Math.random() * 1.0
           const ang = Math.random() * Math.PI * 2
-          st.target = Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r)
+          st.target = clampToCorral(Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r))
         }
       } else {
         // navStepToward (not stepToward) so a just-demoted pet walking back from
