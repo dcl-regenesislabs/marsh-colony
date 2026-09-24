@@ -5,8 +5,8 @@
 //  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
-import ReactEcs, { ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
-import { engine, InputAction } from '@dcl/sdk/ecs'
+import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
+import { engine, InputAction, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
@@ -32,7 +32,7 @@ import {
   BREED_ORB_FRAMES,
   BREED_BURST_FRAMES
 } from './pet'
-import { hidePetTouchControls, showPetTouchControls } from './touchControls'
+import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, showPetTouchControls } from './touchControls'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
@@ -679,14 +679,6 @@ const BATH_BUTTON_ASPECT = 812 / 323
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
-// Mobile: the 3 nav squares (Pets / Inventory / Goals) collapse behind a single
-// hamburger button (btn_manu.png) placed bottom-right, above the native Jump
-// control, for the right thumb. Tapping it stacks the 3 buttons above it.
-const BTN_MENU_ICON = 'assets/images/revamp/btn_manu.png'
-const MENU_BTN_SIZE = 90 // pre-S; the menu button diameter
-const MENU_BTN_TOP = 40 // pre-S; distance from the top (top-right) — TUNE
-const MENU_BTN_RIGHT = 50 // pre-S; inset from the right edge (aligned above the Jump control's column) — TUNE
-let mobileNavOpen = false
 // DEV ONLY — force the nav/menu visible without adopting a pet, to dial in the
 // menu button's position. Keep false in shipping builds.
 const DEV_ALWAYS_SHOW_NAV = false
@@ -733,32 +725,8 @@ function BottomNav() {
       </UiEntity>
     )
   }
-  // MOBILE: a hamburger (btn_manu) on the middle-right edge. Tap it to reveal the
-  // 3 nav buttons; tapping one opens its panel + collapses. (DEV flag also forces
-  // this branch on desktop so the button can be positioned without a mobile device.)
-  if (mobile() || DEV_ALWAYS_SHOW_NAV) {
-    const menuSz = S(MENU_BTN_SIZE)
-    const pick = (open: () => void) => () => {
-      mobileNavOpen = false
-      open()
-    }
-    return (
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(MENU_BTN_TOP), right: S(MENU_BTN_RIGHT) }, width: plateSize, flexDirection: 'column', alignItems: 'center', pointerFilter: 'none' }}>
-        <UiEntity
-          uiTransform={{ width: menuSz, height: menuSz, pointerFilter: 'block' }}
-          uiBackground={{ texture: { src: BTN_MENU_ICON }, textureMode: 'stretch' }}
-          onMouseDown={() => (mobileNavOpen = !mobileNavOpen)}
-        />
-        {mobileNavOpen && (
-          <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', margin: { top: S(10) } }}>
-            {nav('nav_pets', NAV_PAW_UVS, 'roster', pick(() => ui.openRoster()))}
-            {nav('nav_inv', NAV_INV_UVS, 'inventory', pick(() => ui.openInventory()))}
-            {nav('nav_goals', NAV_GOALS_UVS, 'goals', pick(() => ui.openGoals()))}
-          </UiEntity>
-        )}
-      </UiEntity>
-    )
-  }
+  // Mobile navigation is supplied by Explorer's native "+" overflow menu.
+  if (mobile()) return <UiEntity />
 
   // DESKTOP: the classic centered bottom bar.
   return (
@@ -804,6 +772,13 @@ function syncPetTouchControlsSystem(): void {
     return
   }
   showPetTouchControls(clientState.followEnabled, icon)
+  if (inputSystem.isTriggered(NAV_ROSTER_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openRoster()
+  } else if (inputSystem.isTriggered(NAV_INVENTORY_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openInventory()
+  } else if (inputSystem.isTriggered(NAV_GOALS_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openGoals()
+  }
 }
 
 // Jukebox + Leaderboard entry points now live as icon buttons in the top HUD
@@ -1929,20 +1904,30 @@ function JukeboxPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Toasts (screen right, slide in/out from the right)
+// Toasts (screen left, slide in/out from the left)
 // ---------------------------------------------------------------------------
 // Shows one toast at a time from clientState.toasts (a queue) — advances to the
 // next message once the current one expires, instead of stacking every pushed
-// toast on screen at once. It deploys from the right edge at the same vertical
-// position as the former left-side notification, holds, then retracts right.
+// toast on screen at once. It deploys from the left edge, holds, then retracts
+// left while staying in the Explorer-reported interactable safe zone.
 // The server `notify` kind picks the accent color (error/reward/progress/info).
-const TOAST_ENTER_MS = 240 // slide-in from the right
+const TOAST_ENTER_MS = 240 // slide-in from the left
 const TOAST_HOLD_MS = 3100 // fully-shown dwell
-const TOAST_EXIT_MS = 300 // retract back to the right
+const TOAST_EXIT_MS = 300 // retract back to the left
 const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
 // Notification pill, drawn in code (no image): a cream fill inside a brown border,
 // both fully rounded. TOAST_BORDER is pre-S (applied with S() at render).
 const TOAST_BORDER = 5 // border thickness (pre-S)
+const TOAST_TOP = '25%' as const
+const TOAST_HEIGHT = 92 // pre-S
+const BACK_BUTTON_TOAST_GAP = 14 // pre-S
+const TOAST_MOBILE_OFFSET_X = -320 // pre-S; tuned in the mobile toast debug panel
+const TOAST_MOBILE_OFFSET_Y = -40 // pre-S; tuned in the mobile toast debug panel
+// Temporary mobile tuning surface. It renders a local preview only — it never
+// touches the real notification queue. Set false before shipping the HUD.
+const TOAST_LAYOUT_DEBUG = false
+const TOAST_DEBUG_STEP = 10 // pre-S pixels per tap
+const toastLayoutDebug = { preview: true, x: 0, y: 0 }
 const TOAST_BORDER_COLOR: Color = { r: 0.525, g: 0.318, b: 0.173, a: 1 } // #86512C brown
 const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cream
 
@@ -1951,33 +1936,31 @@ const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 
 function Toasts() {
   const now = Date.now()
+  const showDebugPreview = TOAST_LAYOUT_DEBUG && mobile() && toastLayoutDebug.preview
   // Hold the queue while a panel/modal/dialog owns the screen, so a toast can't
   // paint over open UI (the #186 overlap complaint). Nothing is shifted or shown
   // until they close, then the queue resumes.
   if (bigUiOpen()) return <UiEntity />
-  if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
+  if (!showDebugPreview && (!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
     const next = clientState.toasts.shift()!
     clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }
   }
-  const t = clientState.currentToast
+  const t = showDebugPreview
+    ? { message: 'Toast debug — acomodalo con el panel', kind: 'info', shownAt: now - TOAST_ENTER_MS, until: now + TOAST_HOLD_MS }
+    : clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
+  const toastOffsetX = showDebugPreview ? toastLayoutDebug.x : mobile() ? TOAST_MOBILE_OFFSET_X : 0
+  const toastOffsetY = showDebugPreview ? toastLayoutDebug.y : mobile() ? TOAST_MOBILE_OFFSET_Y : 0
 
-  // Toasts only ever mount in Root's default branch (petting/hatch/feedGame/
-  // bathGame each own the whole screen instead), where a BackButton shows up
-  // in exactly these four spots — FetchOverlay, BathButton (carry-to-bath),
-  // FeedErrandOverlay, SicknessErrandOverlay. When one's actually up, rest BELOW it so the two never
-  // overlap; otherwise sit AT the same height the button would be, instead of
-  // leaving that vertical space empty.
-  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active || getEggPending()
-
+  // A visible BackButton reads the active toast below and shifts beneath this
+  // fixed notification row, so the two never overlap.
   // Slide in from the LEFT edge + fade. Enter: from off-screen left -> rest.
-  // Exit: retract back off the left + fade. (The nav lives on the right now.)
+  // Exit: retract back off the left + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
   const w = S(500)
-  const h = S(92)
-  const leftInset = mobile() ? S(24) : S(16)
-  const offMax = leftInset + w + S(20) // far enough left to sit fully off-screen while hidden
+  const h = S(TOAST_HEIGHT)
+  const offMax = w + S(20) // far enough left to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
@@ -1990,45 +1973,47 @@ function Toasts() {
     alpha = p
   }
 
-  // NOT wrapped in ScreenInsetArea: it sits in the same non-inset coordinate
-  // space as the BackButton and the rest of the HUD (getUiRendererConfig's
-  // screenInset:'none'), so its vertical spacing stays identical to the
-  // original left-side notification.
+  // InteractableArea keeps this notification clear of Explorer chrome and
+  // platform overlays, rather than relying on raw screen-edge coordinates.
   const border = S(TOAST_BORDER)
   return (
     // Left side, slide-in from the left. The pill is drawn in code: a brown
     // border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      <UiEntity
-        uiTransform={{
-          positionType: 'absolute',
-          position: { top: '25%', left: leftInset },
-          margin: { top: backButtonVisible ? S(96) : 0, left: -slide },
-          width: w,
-          height: h,
-          padding: border, // this padding IS the visible brown border
-          borderRadius: h / 2,
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerFilter: 'none'
-        }}
-        uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, alpha) }}
-      >
-        <UiEntity
-          uiTransform={{
-            width: '100%',
-            height: '100%',
-            borderRadius: h / 2 - border,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: { left: S(44), right: S(44) } // clear the rounded caps so text sits on the flat middle
-          }}
-          uiBackground={{ color: withAlpha(TOAST_CREAM, alpha) }}
-        >
-          <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
+      <InteractableArea>
+        <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+          <UiEntity
+            uiTransform={{
+              positionType: 'absolute',
+              position: { top: TOAST_TOP, left: 0 },
+              margin: { left: -slide + S(toastOffsetX), top: S(toastOffsetY) },
+              width: w,
+              height: h,
+              padding: border, // this padding IS the visible brown border
+              borderRadius: h / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerFilter: 'none'
+            }}
+            uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, alpha) }}
+          >
+            <UiEntity
+              uiTransform={{
+                width: '100%',
+                height: '100%',
+                borderRadius: h / 2 - border,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: { left: S(44), right: S(44) } // clear the rounded caps so text sits on the flat middle
+              }}
+              uiBackground={{ color: withAlpha(TOAST_CREAM, alpha) }}
+            >
+              <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
+            </UiEntity>
+          </UiEntity>
         </UiEntity>
-      </UiEntity>
+      </InteractableArea>
     </UiEntity>
   )
 }
@@ -2045,11 +2030,13 @@ const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 // screen-center). One place so every action's BACK matches.
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const isM = mobile()
-  const pos = { top: '25%' as const, left: isM ? S(210) : S(130) }
+  const toastVisible = (TOAST_LAYOUT_DEBUG && isM && toastLayoutDebug.preview) || (!!clientState.currentToast && clientState.currentToast.until > Date.now())
+  const toastOffsetY = TOAST_LAYOUT_DEBUG && isM && toastLayoutDebug.preview ? toastLayoutDebug.y : isM ? TOAST_MOBILE_OFFSET_Y : 0
+  const pos = { top: TOAST_TOP, left: isM ? S(210) : S(130) }
   const d = S(90)
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: pos, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiTransform={{ positionType: 'absolute', position: pos, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{
         texture: { src: BACK_ARROW_ICON },
         textureMode: 'stretch',
@@ -2061,6 +2048,49 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
         if (!props.disabled) props.onClick()
       }}
     />
+  )
+}
+
+/** Mobile-only temporary controls for placing the toast inside InteractableArea.
+ * The displayed X/Y are pre-S values; send the final pair back once the position
+ * is right, then this entire panel can be disabled with TOAST_LAYOUT_DEBUG. */
+function ToastLayoutDebugPanel() {
+  if (!TOAST_LAYOUT_DEBUG || !mobile()) return <UiEntity />
+  const button = (label: string, onClick: () => void) => (
+    <UiEntity
+      uiTransform={{ width: S(58), height: S(42), margin: { left: S(3), right: S(3) }, borderRadius: S(8), alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: { r: 0.18, g: 0.12, b: 0.08, a: 0.94 } }}
+      onMouseDown={onClick}
+    >
+      <Label value={label} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+    </UiEntity>
+  )
+  const move = (x: number, y: number) => () => {
+    toastLayoutDebug.x += x
+    toastLayoutDebug.y += y
+  }
+  return (
+    <InteractableArea>
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: S(12), left: S(12) }, width: S(350), padding: S(10), borderRadius: S(12), flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
+        uiBackground={{ color: { r: 0.05, g: 0.04, b: 0.03, a: 0.88 } }}
+      >
+        <Label value={`TOAST DEBUG  X ${toastLayoutDebug.x}  Y ${toastLayoutDebug.y}`} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(6) } }}>
+          {button('X −', move(-TOAST_DEBUG_STEP, 0))}
+          {button('X +', move(TOAST_DEBUG_STEP, 0))}
+          {button('Y −', move(0, -TOAST_DEBUG_STEP))}
+          {button('Y +', move(0, TOAST_DEBUG_STEP))}
+        </UiEntity>
+        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(6) } }}>
+          {button(toastLayoutDebug.preview ? 'HIDE' : 'SHOW', () => (toastLayoutDebug.preview = !toastLayoutDebug.preview))}
+          {button('RESET', () => {
+            toastLayoutDebug.x = 0
+            toastLayoutDebug.y = 0
+          })}
+        </UiEntity>
+      </UiEntity>
+    </InteractableArea>
   )
 }
 
@@ -3369,6 +3399,7 @@ const Root = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       {content}
       {UI_DEBUG_MODE && <DebugBrowserBar />}
+      <ToastLayoutDebugPanel />
       <ScreenFadeOverlay />
     </UiEntity>
   )

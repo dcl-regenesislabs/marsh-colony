@@ -31,11 +31,21 @@ export function applyFruitGameTouchControls(): void {
 // fetchTouchInputSystem). The joystick/crosshair are left alone — the player
 // can still walk/aim around while charging.
 export const FETCH_TOUCH_ACTION = InputAction.IA_PRIMARY
-export const PET_FOLLOW_TOUCH_ACTION = InputAction.IA_ACTION_3
-export const PET_ACTIONS_TOUCH_ACTION = InputAction.IA_ACTION_4
+// Primary/Secondary occupy the two direct native arc buttons after Pointer.
+// Fetch and Pepito reuse them only while companion controls are hidden.
+export const PET_FOLLOW_TOUCH_ACTION = InputAction.IA_PRIMARY
+export const PET_ACTIONS_TOUCH_ACTION = InputAction.IA_SECONDARY
+// With exactly these three numbered actions visible, Explorer's native "+"
+// overflow presents a compact 1 / 2 / 3 menu for scene navigation.
+export const NAV_ROSTER_TOUCH_ACTION = InputAction.IA_ACTION_3
+export const NAV_INVENTORY_TOUCH_ACTION = InputAction.IA_ACTION_4
+export const NAV_GOALS_TOUCH_ACTION = InputAction.IA_ACTION_5
 
 const WHISTLE_ICON = 'assets/images/whistle_icon.png'
 const STOP_ICON = 'assets/images/stop_icon.png'
+const ROSTER_ICON = 'assets/images/revamp/pets_icon.png'
+const INVENTORY_ICON = 'assets/images/revamp/inventory_icon.png'
+const GOALS_ICON = 'assets/images/revamp/star_icon.png'
 
 // React-ECS renders each frame, so cache the last native-button configuration.
 let petTouchControlsVisible = false
@@ -83,13 +93,16 @@ export function petTouchControlsAreVisible(): boolean {
   return petTouchControlsVisible
 }
 
-/** Show the tap controls for follow/stay and the active pet's actions. */
+/** Show the direct companion controls plus the three native overflow entries. */
 export function showPetTouchControls(following: boolean, petIcon: string): void {
   const key = `${following ? 'follow' : 'stay'}|${petIcon}`
   if (petTouchControlsVisible && petTouchControlsKey === key) return
 
   setTouchButtonIcon(PET_FOLLOW_TOUCH_ACTION, following ? STOP_ICON : WHISTLE_ICON)
   setTouchButtonIcon(PET_ACTIONS_TOUCH_ACTION, petIcon)
+  setTouchButtonIcon(NAV_ROSTER_TOUCH_ACTION, ROSTER_ICON)
+  setTouchButtonIcon(NAV_INVENTORY_TOUCH_ACTION, INVENTORY_ICON)
+  setTouchButtonIcon(NAV_GOALS_TOUCH_ACTION, GOALS_ICON)
   petTouchControlsVisible = true
   petTouchControlsKey = key
 }
@@ -99,6 +112,9 @@ export function hidePetTouchControls(): void {
   if (!petTouchControlsVisible) return
   setTouchButtonIcon(PET_FOLLOW_TOUCH_ACTION, null)
   setTouchButtonIcon(PET_ACTIONS_TOUCH_ACTION, null)
+  setTouchButtonIcon(NAV_ROSTER_TOUCH_ACTION, null)
+  setTouchButtonIcon(NAV_INVENTORY_TOUCH_ACTION, null)
+  setTouchButtonIcon(NAV_GOALS_TOUCH_ACTION, null)
   petTouchControlsVisible = false
   petTouchControlsKey = ''
 }
