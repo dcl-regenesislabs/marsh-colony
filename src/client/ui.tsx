@@ -2,7 +2,7 @@
 //  - TOP: player profile bar (Caretaker level + XP) -> taps to Goals
 //  - TOP (when a pet is selected): pet stat bars + care actions
 //  - BOTTOM: 3 big nav buttons (Pets / Inventory / Goals)
-//  - SIDES: Spin + Shop (right), Whistle (left)
+//  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
 import ReactEcs, { ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
@@ -11,7 +11,6 @@ import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
-  setFollow,
   startPetting,
   cancelPetting,
   petTap,
@@ -33,6 +32,7 @@ import {
   BREED_ORB_FRAMES,
   BREED_BURST_FRAMES
 } from './pet'
+import { hidePetTouchControls, showPetTouchControls } from './touchControls'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
@@ -770,13 +770,40 @@ function BottomNav() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Side buttons: Spin + Shop (right), Whistle (left)
-// ---------------------------------------------------------------------------
-// Spin and Stay/Whistle are suspended until they get revamped — the logic
-// (ui.openSpin(), setFollow()) stays wired, just not reachable from the HUD.
-function SideButtons() {
-  return <UiEntity />
+/** One source of truth for when the native companion buttons may appear.
+ * It intentionally keeps them up for a sleeping pet: the action button still
+ * opens its panel to wake it, while the follow button reports that it is asleep. */
+function canShowPetTouchControls(): boolean {
+  const pet = clientState.activePet
+  return (
+    mobile() &&
+    !!pet &&
+    !bigUiOpen() &&
+    !hasPendingHatchling() &&
+    !clientState.petting.active &&
+    !clientState.fetch.active &&
+    !clientState.feedTask.active &&
+    !clientState.sicknessErrand.active &&
+    !clientState.pepitoChase.active &&
+    !clientState.hatch.active &&
+    !clientState.feedGame.active &&
+    !clientState.bathGame.active &&
+    !clientState.carryEgg.active &&
+    !clientState.carryPet.active &&
+    !clientState.breed.active
+  )
+}
+
+/** Sync native mobile controls from an ECS system, rather than from the React
+ * renderer. This keeps their lifecycle correct when Root swaps to an overlay. */
+function syncPetTouchControlsSystem(): void {
+  const pet = clientState.activePet
+  const icon = pet ? Cfg.speciesControlIcon(pet.species) : undefined
+  if (!canShowPetTouchControls() || !icon) {
+    hidePetTouchControls()
+    return
+  }
+  showPetTouchControls(clientState.followEnabled, icon)
 }
 
 // Jukebox + Leaderboard entry points now live as icon buttons in the top HUD
@@ -3300,7 +3327,6 @@ const Root = () => {
         {!hideHudForPepitoTheft && (
           <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
             <TopBars />
-            <SideButtons />
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />
@@ -3384,6 +3410,7 @@ export function setupUi(): void {
   if (!uiRendererSyncRegistered) {
     uiRendererSyncRegistered = true
     engine.addSystem(syncUiRendererSystem)
+    engine.addSystem(syncPetTouchControlsSystem)
   }
 
   resolveRuntimePlatform()
