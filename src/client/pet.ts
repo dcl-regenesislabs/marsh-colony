@@ -221,20 +221,44 @@ const inactivePets = new Map<string, Roamer>()
 // second entity, no re-skin) rather than leaking one and building another.
 const retiredPets = new Map<string, Entity>()
 
-// Each owned pet gets its OWN home slot so up-to-4 pets never pile up on the same
-// spot. Slots are spread across the care area (objects sit ~x195-214, z235-249);
-// a stored pet roams a little around its slot, and the active pet parks on its
-// slot while you carry/hatch a new egg so the newborn won't overlap it.
-const PET_SLOT_HOMES: Vector3[] = [
-  Vector3.create(200, C.PET_BASE_Y, 239),
-  Vector3.create(206, C.PET_BASE_Y, 239),
-  Vector3.create(200, C.PET_BASE_Y, 245),
-  Vector3.create(206, C.PET_BASE_Y, 245)
+// Non-selected pets live in the CORRAL (a separate fenced area you walk to in
+// order to select another pet). Everything is anchored to the `penArea` scene
+// entity at RUNTIME (its children — floor + fence — are all local to it), so
+// moving the corral in the editor moves the pets with it. CORRAL_LOCAL_OFF is the
+// fence-bbox centre relative to penArea; the half-extents are the inner roaming
+// area, kept off the fence. TUNE with the debug cube.
+const CORRAL_LOCAL_OFF = Vector3.create(4.85, 0, 2.64)
+const CORRAL_HALF_X = 6
+const CORRAL_HALF_Z = 7
+const CORRAL_SLOT_OFF: [number, number][] = [
+  [-4, -4],
+  [4, -4],
+  [-4, 4],
+  [4, 4]
 ]
+
+/** World centre of the corral (penArea anchor + local offset). */
+function corralCenter(): Vector3 {
+  const a = objectPosition(EntityNames.penArea)
+  return Vector3.create(a.x + CORRAL_LOCAL_OFF.x, C.PET_BASE_Y, a.z + CORRAL_LOCAL_OFF.z)
+}
+
+/** Clamp a point to the corral's inner rectangle (so a roamer never crosses the fence). */
+function clampToCorral(p: Vector3): Vector3 {
+  const c = corralCenter()
+  return Vector3.create(
+    Math.max(c.x - CORRAL_HALF_X, Math.min(c.x + CORRAL_HALF_X, p.x)),
+    C.PET_BASE_Y,
+    Math.max(c.z - CORRAL_HALF_Z, Math.min(c.z + CORRAL_HALF_Z, p.z))
+  )
+}
+
+// Each owned pet gets its OWN slot inside the corral so up-to-4 never pile up on
+// the same spot; a stored pet roams a little around its slot.
 function slotHome(index: number): Vector3 {
-  const s = PET_SLOT_HOMES[((index % PET_SLOT_HOMES.length) + PET_SLOT_HOMES.length) % PET_SLOT_HOMES.length]
-  // Keep resting slots out of the buildings — the pet lives in the open.
-  return nudgeOutsideBuildings(Vector3.create(s.x, s.y, s.z))
+  const c = corralCenter()
+  const off = CORRAL_SLOT_OFF[((index % CORRAL_SLOT_OFF.length) + CORRAL_SLOT_OFF.length) % CORRAL_SLOT_OFF.length]
+  return Vector3.create(c.x + off[0], C.PET_BASE_Y, c.z + off[1])
 }
 /** Index of the currently-shown active pet within the roster (-1 if none). */
 function activePetSlotIndex(): number {
@@ -645,13 +669,17 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
     // and updateInactivePets' updateTag never un-hides it — the pet would roam
     // permanently nameless otherwise.
     setTagVisible(outTag, true)
+    const outHome = slotHome(outIndex)
+    // Teleport it straight to its corral slot — the corral is far from where you
+    // deselect, so letting it WALK there would be a long trek across the map.
+    Transform.getMutable(outEntity).position = outHome
     inactivePets.set(outId, {
       entity: outEntity,
       species: localSpecies,
       tag: outTag,
-      home: slotHome(outIndex),
+      home: outHome,
       target: null,
-      pause: 0.4 // brief beat before it starts wandering back to its slot
+      pause: 0.4 // brief beat before it starts wandering around its slot
     })
   } else {
     // The outgoing pet already left the roster (e.g. a discarded hatchling):
@@ -1284,8 +1312,8 @@ export function finishBath(won: boolean): void {
 // ---------------------------------------------------------------------------
 const BREED_NEST = EntityNames.DualNest01_glb_2
 const BREED_REACH = 6 // metres from the nest that counts as "arrived" (big model)
-const BREED_BOWL_A_OFF = Vector3.create(-0.17, 2.05, -1.36) // left bowl (dialled in-world)
-const BREED_BOWL_B_OFF = Vector3.create(-0.17, 2.02, 1.28) // right bowl (dialled in-world)
+const BREED_BOWL_A_OFF = Vector3.create(-0.17, 2.1, -1.61) // left bowl (dialled in-world; spread 25cm out, +5cm up)
+const BREED_BOWL_B_OFF = Vector3.create(-0.17, 2.07, 1.53) // right bowl (dialled in-world; spread 25cm out, +5cm up)
 const BREED_EGG_OFF = Vector3.create(0.16, 1.4, -0.01) // centre egg spot (dialled in-world)
 const BREED_EGG_SCALE = 1.4 // final egg scale in the bowl (TUNE)
 // Egg-creation cinematic timeline (seconds from the Breed press). The camera holds
@@ -1306,6 +1334,8 @@ const BREED_RESULT_GRACE_S = 4.0 // after the cinematic, how long to wait for br
 // the camera sits at its eyes looking straight at the egg spot.
 const BREED_CAM_AVATAR_OFF = Vector3.create(4.0, -0.48, 0.15) // where the avatar stands (offset from nest)
 const BREED_CAM_EYE = 1.6 // camera height above the avatar's feet (eye level)
+const BREED_AVATAR_Y = 0.9 // avatar feet height — the nest terrain sits above PET_BASE_Y (0), so parking at 0 buries it. TUNE
+const BREED_AVATAR_BACK = 2 // park the avatar this far BEHIND the camera (away from the nest) so it's out of the shot
 
 export const BREED_ORB_FRAMES = 8 // p1.png: 8-frame loop
 export const BREED_BURST_FRAMES = 6 // p2.png: 6-frame one-shot
@@ -1643,7 +1673,7 @@ function startBreedCamera(): void {
   // is the FPV eye level; parking the avatar itself at the raised camera Y would
   // leave it floating ~1 m up when the camera cuts back). It's behind the lens
   // and out of frame during the cinematic either way.
-  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x, C.PET_BASE_Y, stand.z), cameraTarget: focus })
+  void movePlayerTo({ newRelativePosition: Vector3.create(stand.x + BREED_AVATAR_BACK, BREED_AVATAR_Y, stand.z), cameraTarget: focus })
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
 }
 
@@ -2157,12 +2187,14 @@ function updateLocalPet(dt: number): void {
       setLocalTagVisible(false)
       return
     }
-    // Otherwise (adoption) the CURRENT pet steps aside to its home slot so the
-    // hatch spot in front of the player is clear.
+    // Otherwise (adoption) the CURRENT pet gets out of the way so the hatch spot
+    // in front of the player is clear. Its home slot is now in the corral (far),
+    // so teleport it there instead of walking it across the map.
     const idx = activePetSlotIndex()
-    const moved = idx >= 0 ? stepToward(localPet, slotHome(idx), dt, yawOffsetForSpecies(petP.species)) : 0
-    setClip(localPet, moved > 0.003 ? 'walk' : 'idle')
-    if (localTag) updateTag(localTag, Transform.get(localPet).position, petP.species, petP.size, petP.name, petP)
+    const t = Transform.getMutable(localPet)
+    t.position = idx >= 0 ? slotHome(idx) : t.position
+    setClip(localPet, 'idle')
+    if (localTag) updateTag(localTag, t.position, petP.species, petP.size, petP.name, petP)
     return
   }
 
@@ -2614,7 +2646,7 @@ function updateInactivePets(dt: number): void {
         } else {
           const r = 0.6 + Math.random() * 1.0
           const ang = Math.random() * Math.PI * 2
-          st.target = Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r)
+          st.target = clampToCorral(Vector3.create(st.home.x + Math.cos(ang) * r, C.PET_BASE_Y, st.home.z + Math.sin(ang) * r))
         }
       } else {
         // navStepToward (not stepToward) so a just-demoted pet walking back from
