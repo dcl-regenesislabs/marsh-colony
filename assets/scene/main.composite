@@ -755,7 +755,7 @@
           "json": {
             "position": {
               "x": 149.6864776611328,
-              "y": -1.0034648667556212e-08,
+              "y": -1.0034648667556212e-8,
               "z": 220.70677185058594
             },
             "scale": {
@@ -818,7 +818,7 @@
           "json": {
             "position": {
               "x": 151.61537170410156,
-              "y": -1.0034765907107612e-08,
+              "y": -1.0034765907107612e-8,
               "z": 219.2783966064453
             },
             "scale": {
@@ -923,7 +923,7 @@
           "json": {
             "position": {
               "x": 148.81072998046875,
-              "y": -1.003465222026989e-08,
+              "y": -1.003465222026989e-8,
               "z": 201.65257263183594
             },
             "scale": {
@@ -2057,7 +2057,7 @@
           "json": {
             "position": {
               "x": 166.93594360351562,
-              "y": -1.1084361872804038e-08,
+              "y": -1.1084361872804038e-8,
               "z": 212.70407104492188
             },
             "scale": {
@@ -2099,7 +2099,7 @@
           "json": {
             "position": {
               "x": 172.32614135742188,
-              "y": -6.901139659731825e-09,
+              "y": -6.901139659731825e-9,
               "z": 202.656982421875
             },
             "scale": {
@@ -2813,7 +2813,7 @@
           "json": {
             "position": {
               "x": 201.76132202148438,
-              "y": -1.1084193118904295e-08,
+              "y": -1.1084193118904295e-8,
               "z": 219.95994567871094
             },
             "scale": {
@@ -3040,6 +3040,111 @@
             "parent": 0
           }
         },
+        "660": {
+          "json": {
+            "position": {
+              "x": 148.5,
+              "y": 0,
+              "z": 225.5
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.3826834261417389,
+              "z": 0,
+              "w": 0.9238795042037964
+            },
+            "scale": {
+              "x": 2.0999999046325684,
+              "y": 2.0999999046325684,
+              "z": 2.0999999046325684
+            },
+            "parent": 0
+          }
+        },
+        "662": {
+          "json": {
+            "position": {
+              "x": 3.2424023151397705,
+              "y": 1.3614931106567383,
+              "z": 0.2534613609313965
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.43977880477905273,
+              "z": 0,
+              "w": 0.8981060981750488
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "parent": 660
+          }
+        },
+        "663": {
+          "json": {
+            "position": {
+              "x": 3.117500066757202,
+              "y": 1.985748291015625,
+              "z": 0.4110613465309143
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.038475390523672104,
+              "z": 0,
+              "w": 0.9992595314979553
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "parent": 660
+          }
+        },
+        "665": {
+          "json": {
+            "position": {
+              "x": -3.1000442504882812,
+              "y": 1.3600000143051147,
+              "z": 0.37104225158691406
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.26013869047164917,
+              "z": 0,
+              "w": -0.9655712246894836
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "parent": 660
+          }
+        },
+        "666": {
+          "json": {
+            "position": {
+              "x": -3.1116764545440674,
+              "y": 0.7523214817047119,
+              "z": 0.37709468603134155
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.20530052483081818,
+              "z": 0,
+              "w": -0.9786989688873291
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "parent": 660
+          }
+        },
         "66050": {
           "json": {
             "position": {
@@ -3124,11 +3229,53 @@
             "parent": 602
           }
         },
+        "66197": {
+          "json": {
+            "position": {
+              "x": 3.240049123764038,
+              "y": 0.7280507683753967,
+              "z": 0.25295785069465637
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.3826834261417389,
+              "z": 0,
+              "w": 0.9238795042037964
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "parent": 660
+          }
+        },
+        "66200": {
+          "json": {
+            "position": {
+              "x": -3.0782132148742676,
+              "y": 1.9897546768188477,
+              "z": 0.4042896032333374
+            },
+            "rotation": {
+              "x": 0,
+              "y": -0.3012794852256775,
+              "z": 0,
+              "w": 0.9535358548164368
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "parent": 660
+          }
+        },
         "131681": {
           "json": {
             "position": {
               "x": 168.61131286621094,
-              "y": -1.1084244633252638e-08,
+              "y": -1.1084244633252638e-8,
               "z": 210.9853515625
             },
             "scale": {
@@ -3884,6 +4031,13 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "582": {
+          "json": {
+            "src": "assets/Models/ark01/ark01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "583": {
           "json": {
             "src": "assets/Models/DualNest01/DualNest01.glb",
@@ -4388,6 +4542,41 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "660": {
+          "json": {
+            "src": "assets/Models/leaderboard/LeaderBoard01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "662": {
+          "json": {
+            "src": "assets/Models/Fruit01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "663": {
+          "json": {
+            "src": "assets/Models/Fruit01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "665": {
+          "json": {
+            "src": "assets/Models/Fruit01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "666": {
+          "json": {
+            "src": "assets/Models/Fruit01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "66059": {
           "json": {
             "src": "assets/Models/Mountain01/mountain01.glb",
@@ -4409,17 +4598,24 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "66197": {
+          "json": {
+            "src": "assets/Models/Fruit01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "66200": {
+          "json": {
+            "src": "assets/Models/Fruit01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "131681": {
           "json": {
             "src": "assets/Models/Plant01/Plant01.glb",
             "visibleMeshesCollisionMask": 2,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
-        "582": {
-          "json": {
-            "src": "assets/Models/ark01/ark01.glb",
-            "visibleMeshesCollisionMask": 0,
             "invisibleMeshesCollisionMask": 3
           }
         }
@@ -4771,6 +4967,11 @@
         "581": {
           "json": {
             "value": "HumanBed.glb"
+          }
+        },
+        "582": {
+          "json": {
+            "value": "ark01.glb"
           }
         },
         "583": {
@@ -5143,6 +5344,31 @@
             "value": "Captain.glb"
           }
         },
+        "660": {
+          "json": {
+            "value": "LeaderBoard01.glb"
+          }
+        },
+        "662": {
+          "json": {
+            "value": "Headpoint02"
+          }
+        },
+        "663": {
+          "json": {
+            "value": "Headpoint01"
+          }
+        },
+        "665": {
+          "json": {
+            "value": "Headpoint05"
+          }
+        },
+        "666": {
+          "json": {
+            "value": "Headpoint06"
+          }
+        },
         "66050": {
           "json": {
             "value": "Plants"
@@ -5163,14 +5389,19 @@
             "value": "Fencewall01.glb_21"
           }
         },
+        "66197": {
+          "json": {
+            "value": "Headpoint03"
+          }
+        },
+        "66200": {
+          "json": {
+            "value": "Headpoint04"
+          }
+        },
         "131681": {
           "json": {
             "value": "Plant01.glb_13"
-          }
-        },
-        "582": {
-          "json": {
-            "value": "ark01.glb"
           }
         }
       }
@@ -5258,9 +5489,9 @@
         "serializationType": "map"
       },
       "data": {
-        "0": {
+        "663": {
           "json": {
-            "gizmo": 0
+            "gizmo": 1
           }
         }
       }
@@ -5359,7 +5590,8 @@
                   583,
                   582,
                   593,
-                  594
+                  594,
+                  660
                 ]
               },
               {
@@ -6061,6 +6293,42 @@
               {
                 "entity": 659,
                 "children": []
+              },
+              {
+                "entity": 660,
+                "open": true,
+                "children": [
+                  66197,
+                  66200,
+                  665,
+                  666,
+                  662,
+                  663
+                ]
+              },
+              {
+                "entity": 66197,
+                "children": []
+              },
+              {
+                "entity": 662,
+                "children": []
+              },
+              {
+                "entity": 663,
+                "children": []
+              },
+              {
+                "entity": 66200,
+                "children": []
+              },
+              {
+                "entity": 665,
+                "children": []
+              },
+              {
+                "entity": 666,
+                "children": []
               }
             ]
           }
@@ -6283,6 +6551,9 @@
           "json": {}
         },
         "581": {
+          "json": {}
+        },
+        "582": {
           "json": {}
         },
         "583": {
@@ -6510,6 +6781,21 @@
         "659": {
           "json": {}
         },
+        "660": {
+          "json": {}
+        },
+        "662": {
+          "json": {}
+        },
+        "663": {
+          "json": {}
+        },
+        "665": {
+          "json": {}
+        },
+        "666": {
+          "json": {}
+        },
         "66050": {
           "json": {}
         },
@@ -6522,10 +6808,13 @@
         "66183": {
           "json": {}
         },
-        "131681": {
+        "66197": {
           "json": {}
         },
-        "582": {
+        "66200": {
+          "json": {}
+        },
+        "131681": {
           "json": {}
         }
       }
