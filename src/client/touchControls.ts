@@ -14,14 +14,14 @@ export function applyDefaultTouchControls(): void {
   TouchScreenControls.hide(UNUSED_SCENE_TOUCH_BUTTONS)
   TouchScreenControls.showJoystick()
   TouchScreenControls.showCrosshair()
-  petTouchControlsVisible = false
+  resetPetTouchControlsCache()
 }
 
 export function applyFruitGameTouchControls(): void {
   TouchScreenControls.hideAll()
   TouchScreenControls.hideJoystick()
   TouchScreenControls.hideCrosshair()
-  petTouchControlsVisible = false
+  resetPetTouchControlsCache()
 }
 
 // The Fetch minigame's mobile Throw button: IA_PRIMARY (E on desktop, one of
@@ -40,6 +40,13 @@ const STOP_ICON = 'assets/images/stop_icon.png'
 // React-ECS renders each frame, so cache the last native-button configuration.
 let petTouchControlsVisible = false
 let petTouchControlsKey = ''
+
+/** Native-control helpers can overwrite our two entries wholesale. Forget the
+ * cached configuration whenever that happens so the next sync re-installs it. */
+function resetPetTouchControlsCache(): void {
+  petTouchControlsVisible = false
+  petTouchControlsKey = ''
+}
 
 /** Merges one custom button's icon/visibility into whatever TouchScreenControls
  *  config is already active. createOrReplace() on this component replaces the
