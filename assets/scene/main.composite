@@ -755,7 +755,7 @@
           "json": {
             "position": {
               "x": 149.6864776611328,
-              "y": -1.0034648667556212e-08,
+              "y": -1.0034648667556212e-8,
               "z": 220.70677185058594
             },
             "scale": {
@@ -818,7 +818,7 @@
           "json": {
             "position": {
               "x": 151.61537170410156,
-              "y": -1.0034765907107612e-08,
+              "y": -1.0034765907107612e-8,
               "z": 219.2783966064453
             },
             "scale": {
@@ -923,7 +923,7 @@
           "json": {
             "position": {
               "x": 148.81072998046875,
-              "y": -1.003465222026989e-08,
+              "y": -1.003465222026989e-8,
               "z": 201.65257263183594
             },
             "scale": {
@@ -2057,7 +2057,7 @@
           "json": {
             "position": {
               "x": 166.93594360351562,
-              "y": -1.1084361872804038e-08,
+              "y": -1.1084361872804038e-8,
               "z": 212.70407104492188
             },
             "scale": {
@@ -2099,7 +2099,7 @@
           "json": {
             "position": {
               "x": 172.32614135742188,
-              "y": -6.901139659731825e-09,
+              "y": -6.901139659731825e-9,
               "z": 202.656982421875
             },
             "scale": {
@@ -2813,7 +2813,7 @@
           "json": {
             "position": {
               "x": 201.76132202148438,
-              "y": -1.1084193118904295e-08,
+              "y": -1.1084193118904295e-8,
               "z": 219.95994567871094
             },
             "scale": {
@@ -3040,6 +3040,27 @@
             "parent": 0
           }
         },
+        "660": {
+          "json": {
+            "position": {
+              "x": 200.75,
+              "y": 0,
+              "z": 247.75
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "scale": {
+              "x": 12,
+              "y": 6,
+              "z": 12
+            },
+            "parent": 0
+          }
+        },
         "66050": {
           "json": {
             "position": {
@@ -3128,7 +3149,7 @@
           "json": {
             "position": {
               "x": 168.61131286621094,
-              "y": -1.1084244633252638e-08,
+              "y": -1.1084244633252638e-8,
               "z": 210.9853515625
             },
             "scale": {
@@ -3884,6 +3905,13 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "582": {
+          "json": {
+            "src": "assets/Models/ark01/ark01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "583": {
           "json": {
             "src": "assets/Models/DualNest01/DualNest01.glb",
@@ -4388,6 +4416,13 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "660": {
+          "json": {
+            "src": "assets/asset-packs/invisible_cylinder/invisible_cylinder.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 0
+          }
+        },
         "66059": {
           "json": {
             "src": "assets/Models/Mountain01/mountain01.glb",
@@ -4413,13 +4448,6 @@
           "json": {
             "src": "assets/Models/Plant01/Plant01.glb",
             "visibleMeshesCollisionMask": 2,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
-        "582": {
-          "json": {
-            "src": "assets/Models/ark01/ark01.glb",
-            "visibleMeshesCollisionMask": 0,
             "invisibleMeshesCollisionMask": 3
           }
         }
@@ -4771,6 +4799,11 @@
         "581": {
           "json": {
             "value": "HumanBed.glb"
+          }
+        },
+        "582": {
+          "json": {
+            "value": "ark01.glb"
           }
         },
         "583": {
@@ -5143,6 +5176,11 @@
             "value": "Captain.glb"
           }
         },
+        "660": {
+          "json": {
+            "value": "home_modifier_area"
+          }
+        },
         "66050": {
           "json": {
             "value": "Plants"
@@ -5166,11 +5204,6 @@
         "131681": {
           "json": {
             "value": "Plant01.glb_13"
-          }
-        },
-        "582": {
-          "json": {
-            "value": "ark01.glb"
           }
         }
       }
@@ -5213,6 +5246,11 @@
           "json": {
             "visible": false
           }
+        },
+        "660": {
+          "json": {
+            "visible": false
+          }
         }
       }
     },
@@ -5241,26 +5279,6 @@
               "Tag Group 3",
               "Tag Group 4"
             ]
-          }
-        }
-      }
-    },
-    {
-      "name": "inspector::Selection",
-      "jsonSchema": {
-        "type": "object",
-        "properties": {
-          "gizmo": {
-            "type": "integer",
-            "serializationType": "int32"
-          }
-        },
-        "serializationType": "map"
-      },
-      "data": {
-        "0": {
-          "json": {
-            "gizmo": 0
           }
         }
       }
@@ -5359,7 +5377,8 @@
                   583,
                   582,
                   593,
-                  594
+                  594,
+                  660
                 ]
               },
               {
@@ -6061,6 +6080,10 @@
               {
                 "entity": 659,
                 "children": []
+              },
+              {
+                "entity": 660,
+                "children": []
               }
             ]
           }
@@ -6283,6 +6306,9 @@
           "json": {}
         },
         "581": {
+          "json": {}
+        },
+        "582": {
           "json": {}
         },
         "583": {
@@ -6510,6 +6536,9 @@
         "659": {
           "json": {}
         },
+        "660": {
+          "json": {}
+        },
         "66050": {
           "json": {}
         },
@@ -6523,9 +6552,6 @@
           "json": {}
         },
         "131681": {
-          "json": {}
-        },
-        "582": {
           "json": {}
         }
       }

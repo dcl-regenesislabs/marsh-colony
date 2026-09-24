@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "components": [
+    {
+      "name": "core::GltfContainer",
+      "data": {
+        "0": {
+          "json": {
+            "src": "{assetPath}/invisible_cylinder.glb",
+            "visibleMeshesCollisionMask": 2,
+            "invisibleMeshesCollisionMask": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "core::VisibilityComponent",
+      "data": {
+        "0": {
+          "json": {
+            "visible": false
+          }
+        }
+      }
+    }
+  ]
+}
