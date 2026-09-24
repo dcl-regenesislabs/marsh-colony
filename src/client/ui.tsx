@@ -1975,7 +1975,7 @@ function Toasts() {
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { top: '18%', left: leftInset },
+          position: { top: '25%', left: leftInset },
           margin: { top: backButtonVisible ? S(96) : 0, left: -slide },
           width: w,
           height: h,
