@@ -22,16 +22,6 @@
           }
         }
       }
-    },
-    {
-      "name": "core-schema::Sync-Components",
-      "data": {
-        "0": {
-          "json": {
-            "value": ["core::GltfContainer"]
-          }
-        }
-      }
     }
   ]
 }

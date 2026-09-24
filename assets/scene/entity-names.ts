@@ -140,7 +140,6 @@ export enum EntityNames {
   egg_glb_8 = "egg.glb_8",
   floormash01_glb = "floormash01.glb",
   home_modifier_area = "home_modifier_area",
-  home_modifier_area_2 = "home_modifier_area_2",
   lane_1 = "lane_1",
   lane_2 = "lane_2",
   lane_3 = "lane_3",

@@ -3043,7 +3043,7 @@
         "660": {
           "json": {
             "position": {
-              "x": 204,
+              "x": 200.75,
               "y": 0,
               "z": 247.75
             },
@@ -3054,9 +3054,9 @@
               "w": 1
             },
             "scale": {
-              "x": 21,
-              "y": 10.800000190734863,
-              "z": 22.899999618530273
+              "x": 12,
+              "y": 6,
+              "z": 12
             },
             "parent": 0
           }
@@ -3164,31 +3164,6 @@
               "w": 0.5910831689834595
             },
             "parent": 66050
-          }
-        }
-      }
-    },
-    {
-      "name": "core-schema::Network-Entity",
-      "jsonSchema": {
-        "type": "object",
-        "properties": {
-          "networkId": {
-            "type": "integer",
-            "serializationType": "int64"
-          },
-          "entityId": {
-            "type": "integer",
-            "serializationType": "entity"
-          }
-        },
-        "serializationType": "map"
-      },
-      "data": {
-        "660": {
-          "json": {
-            "networkId": 0,
-            "entityId": 8002
           }
         }
       }
@@ -5229,32 +5204,6 @@
         "131681": {
           "json": {
             "value": "Plant01.glb_13"
-          }
-        }
-      }
-    },
-    {
-      "name": "core-schema::Sync-Components",
-      "jsonSchema": {
-        "type": "object",
-        "properties": {
-          "componentIds": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "serializationType": "int64"
-            },
-            "serializationType": "array"
-          }
-        },
-        "serializationType": "map"
-      },
-      "data": {
-        "660": {
-          "json": {
-            "componentIds": [
-              1041
-            ]
           }
         }
       }

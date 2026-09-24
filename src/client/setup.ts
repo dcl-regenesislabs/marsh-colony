@@ -10,7 +10,8 @@
 // simTick() still run so the data is ready the instant the gate lifts, but
 // nothing is shown or usable before that.
 
-import { AvatarModifierArea, AvatarModifierType, engine, InputModifier, Transform } from '@dcl/sdk/ecs'
+import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, Transform } from '@dcl/sdk/ecs'
+import { Vector3 } from '@dcl/sdk/math'
 import { room } from '../shared/messages'
 import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
@@ -49,6 +50,22 @@ import { getPrivateAvatarAreaAnchor, PRIVATE_AVATAR_AREAS } from './privacyAreas
 let introTriggered = false
 let firstSnapshotSeen = false // decide the "Choose Location!" modal on the FIRST snapshot only
 let avatarModifierAreasOwner = ''
+let homeModifierRuntimeAnchor: Entity | null = null
+
+/** The Creator Hub cylinder's pivot is at its base, while AvatarModifierArea
+ * is centered on its entity. Use a local runtime anchor at the cylinder's
+ * midpoint so both volumes occupy the same vertical range. */
+function getModifierAnchor(source: Entity, area: Vector3, baseAnchored: boolean | undefined): Entity {
+  if (!baseAnchored) return source
+
+  if (AvatarModifierArea.has(source)) AvatarModifierArea.deleteFrom(source)
+  if (homeModifierRuntimeAnchor === null) homeModifierRuntimeAnchor = engine.addEntity()
+
+  const transform = Transform.get(source)
+  const center = Vector3.add(transform.position, Vector3.rotate(Vector3.create(0, area.y / 2, 0), transform.rotation))
+  Transform.createOrReplace(homeModifierRuntimeAnchor, { position: center, rotation: transform.rotation })
+  return homeModifierRuntimeAnchor
+}
 
 function setupAvatarModifierAreas(): void {
   const owner = resolveMyAddress()
@@ -58,7 +75,7 @@ function setupAvatarModifierAreas(): void {
 
   const modifiers = [AvatarModifierType.AMT_HIDE_AVATARS, AvatarModifierType.AMT_HIDE_NAMETAGS]
   let everyAreaInstalled = true
-  for (const { entityName, area: configuredArea } of PRIVATE_AVATAR_AREAS) {
+  for (const { entityName, area: configuredArea, baseAnchored } of PRIVATE_AVATAR_AREAS) {
     const anchor = getPrivateAvatarAreaAnchor(entityName)
     if (anchor === null || !Transform.has(anchor)) {
       everyAreaInstalled = false
@@ -68,9 +85,10 @@ function setupAvatarModifierAreas(): void {
     // Transform.scale. For the Creator Hub cylinder, mirror its scale here so
     // both volumes stay aligned without hard-coded dimensions.
     const area = configuredArea ?? Transform.get(anchor).scale
+    const modifierAnchor = getModifierAnchor(anchor, area, baseAnchored)
     // excludeIds applies to both modifiers, so the local player keeps both
     // their avatar and nametag while every other player loses both.
-    AvatarModifierArea.createOrReplace(anchor, { area, modifiers, excludeIds: [owner] })
+    AvatarModifierArea.createOrReplace(modifierAnchor, { area, modifiers, excludeIds: [owner] })
   }
 
   // Keep trying until every static anchor is ready; otherwise a transient
