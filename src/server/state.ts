@@ -109,7 +109,7 @@ function shortAddress(address: string): string {
 // has ever saved has a row here, ranked even after the headless server restarts and
 // the cache is empty. Kept in memory, hydrated once from storage, and re-persisted
 // on each savePlayer (see upsertLeaderIndex).
-type LeaderRow = { name: string; coins: number; creatures: number }
+type LeaderRow = { name: string; coins: number; creatures: number; xp: number }
 const LEADER_KEY = 'leaderboard-v1'
 const LEADER_MAX = 200 // cap the persisted set so the record can't grow unbounded
 let leaderIndex: Map<string, LeaderRow> | null = null
@@ -121,7 +121,7 @@ async function ensureLeaderIndex(): Promise<Map<string, LeaderRow>> {
   const idx = new Map<string, LeaderRow>()
   try {
     const arr = await Storage.get<LeaderStored[]>(LEADER_KEY)
-    if (arr) for (const e of arr) idx.set(e.address.toLowerCase(), { name: e.name, coins: e.coins, creatures: e.creatures })
+    if (arr) for (const e of arr) idx.set(e.address.toLowerCase(), { name: e.name, coins: e.coins, creatures: e.creatures, xp: e.xp ?? 0 })
   } catch (e) {
     console.log('[Server] leaderboard index load failed', e)
   }
@@ -137,7 +137,8 @@ async function upsertLeaderIndex(p: PlayerData): Promise<void> {
   idx.set(p.address.toLowerCase(), {
     name: playerNames.get(p.address.toLowerCase()) ?? shortAddress(p.address),
     coins: Math.floor(p.currency),
-    creatures: p.pets.length
+    creatures: p.pets.length,
+    xp: Math.floor(p.caretakerXp)
   })
   try {
     const arr: LeaderStored[] = [...idx.entries()]
@@ -150,12 +151,17 @@ async function upsertLeaderIndex(p: PlayerData): Promise<void> {
   }
 }
 
-/** Top players by coins across the colony, highest first (from the persisted index). */
-export async function leaderboard(limit = 10): Promise<{ address: string; name: string; coins: number; creatures: number }[]> {
+/** Top players across the colony, highest first (from the persisted index).
+ *  `sortBy` picks the ranking metric — 'coins' for the HUD panel, 'xp' for the
+ *  physical scoreboard. Every row carries all metrics regardless. */
+export async function leaderboard(
+  limit = 10,
+  sortBy: 'coins' | 'xp' = 'coins'
+): Promise<{ address: string; name: string; coins: number; creatures: number; xp: number }[]> {
   const idx = await ensureLeaderIndex()
   return [...idx.entries()]
-    .map(([address, r]) => ({ address, name: r.name, coins: r.coins, creatures: r.creatures }))
-    .sort((a, b) => b.coins - a.coins)
+    .map(([address, r]) => ({ address, name: r.name, coins: r.coins, creatures: r.creatures, xp: r.xp }))
+    .sort((a, b) => (sortBy === 'xp' ? b.xp - a.xp : b.coins - a.coins))
     .slice(0, limit)
 }
 

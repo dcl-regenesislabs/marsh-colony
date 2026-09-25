@@ -26,6 +26,7 @@ import { setupMeteor } from './meteor'
 import { setupArk } from './ark'
 import { setupPenDoor } from './penDoor'
 import { setupLeaderboardHeads } from './leaderboardHeads'
+import { setupScoreboard } from './scoreboard'
 import { setupSkybox } from './skybox'
 import { setupMusic } from './music'
 import { setupEggShake } from './eggShake'
@@ -154,6 +155,16 @@ function registerHandlers(): void {
     }
   })
 
+  // XP leaderboard — the response to requestLeaderboardXp (physical scoreboard).
+  room.onMessage('leaderboardXp', (data) => {
+    markServerAlive()
+    try {
+      clientState.leaderboardXp = JSON.parse(data.json) as LeaderboardEntry[]
+    } catch (e) {
+      console.log('[Client] bad leaderboardXp', e)
+    }
+  })
+
   room.onMessage('notify', (data) => {
     markServerAlive()
     // Drives petEmotes.ts's heart reaction — no toast here, the floating
@@ -227,6 +238,7 @@ export function setupClient(): void {
   setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   setupLeaderboardHeads() // spinning face-heads of the top 6 players on the LeaderBoard01 model
+  setupScoreboard() // physical XP scoreboard text rows on LeaderBoard01 (top-5 by XP)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
   preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear

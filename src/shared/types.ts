@@ -95,6 +95,7 @@ export interface LeaderboardEntry {
   name: string // player display name (from getPlayer().name at requestState)
   coins: number
   creatures: number // how many pets the player has raised (from persisted storage)
+  xp: number // caretaker XP (drives the physical XP scoreboard)
 }
 
 /** Snapshot sent to the owning client to drive the HUD. */

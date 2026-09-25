@@ -113,6 +113,17 @@ export function server(): void {
     room.send('leaderboard', { json: JSON.stringify(await S.leaderboard()) }, { to: [ctx.from] })
   })
 
+  // XP-sorted leaderboard for the physical scoreboard — same rate-limit budget.
+  const lastLeaderXpReq = new Map<string, number>()
+  room.onMessage('requestLeaderboardXp', async (_data, ctx) => {
+    if (!ctx) return
+    const now = Date.now()
+    if (now - (lastLeaderXpReq.get(ctx.from) ?? 0) < 2000) return
+    lastLeaderXpReq.set(ctx.from, now)
+    await S.loadPlayer(ctx.from) // cache + tick the requester so their own row is current
+    room.send('leaderboardXp', { json: JSON.stringify(await S.leaderboard(5, 'xp')) }, { to: [ctx.from] })
+  })
+
   room.onMessage('adopt', async (data, ctx) => {
     if (!ctx) return
     console.log('[Server] adopt from', ctx.from, data.species)
