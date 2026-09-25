@@ -1947,6 +1947,8 @@ const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
 // both fully rounded. TOAST_BORDER is pre-S (applied with S() at render).
 const TOAST_BORDER = 5 // border thickness (pre-S)
 const TOAST_TOP = '25%' as const
+const DESKTOP_ACTION_LEFT = 0 // pre-S; left edge of the interactable area
+const MOBILE_BACK_LEFT = 16 // pre-S; device-safe edge without clipping the art
 const TOAST_HEIGHT = 92 // pre-S
 const BACK_BUTTON_TOAST_GAP = 14 // pre-S
 // Intentionally kept at the mobile placement specified for this scene.
@@ -1958,6 +1960,19 @@ const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cre
 
 const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
 const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
+
+// Toasts stay inside the Explorer's interactable area. BACK uses the device
+// safe area on mobile because its Explorer interactable area is far too inset.
+function actionHudLayout() {
+  const isM = mobile()
+  return {
+    mobile: isM,
+    toastPosition: { top: TOAST_TOP, left: isM ? 0 : S(DESKTOP_ACTION_LEFT) },
+    toastMargin: { left: isM ? S(TOAST_MOBILE_OFFSET_X) : 0, top: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0 },
+    backPosition: { top: TOAST_TOP, left: isM ? S(MOBILE_BACK_LEFT) : S(DESKTOP_ACTION_LEFT) },
+    toastBackOffsetY: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0
+  }
+}
 
 function toastIsVisible(now: number): boolean {
   return !bigUiOpen() && !!clientState.currentToast && clientState.currentToast.until > now
@@ -1975,8 +1990,7 @@ function Toasts() {
   }
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
-  const toastOffsetX = mobile() ? TOAST_MOBILE_OFFSET_X : 0
-  const toastOffsetY = mobile() ? TOAST_MOBILE_OFFSET_Y : 0
+  const layout = actionHudLayout()
 
   // A visible BackButton reads the active toast below and shifts beneath this
   // fixed notification row, so the two never overlap.
@@ -1999,8 +2013,6 @@ function Toasts() {
     alpha = p
   }
 
-  // InteractableArea keeps this notification clear of Explorer chrome and
-  // platform overlays, rather than relying on raw screen-edge coordinates.
   const border = S(TOAST_BORDER)
   return (
     // Left side, slide-in from the left. The pill is drawn in code: a brown
@@ -2011,8 +2023,8 @@ function Toasts() {
           <UiEntity
             uiTransform={{
               positionType: 'absolute',
-              position: { top: TOAST_TOP, left: 0 },
-              margin: { left: -slide + S(toastOffsetX), top: S(toastOffsetY) },
+              position: layout.toastPosition,
+              margin: { left: -slide + layout.toastMargin.left, top: layout.toastMargin.top },
               width: w,
               height: h,
               padding: border, // this padding IS the visible brown border
@@ -2050,21 +2062,18 @@ function Toasts() {
 const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
-// game / Bath / Feed errand). Top-left, inset from the corner, pushed further
-// in on mobile so the app's own corner UI doesn't cover it, and sat a quarter
-// of the way down the screen (halfway between the top edge and
-// screen-center). One place so every action's BACK matches.
+// game / Bath / Feed errand). On mobile it is anchored against the device-safe
+// edge; desktop uses the Explorer-safe interactable area to clear native UI.
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
-  const isM = mobile()
   const toastVisible = toastIsVisible(Date.now())
-  const toastOffsetY = isM ? TOAST_MOBILE_OFFSET_Y : 0
-  const pos = { top: TOAST_TOP, left: isM ? S(210) : S(130) }
+  const layout = actionHudLayout()
+  const BackArea = layout.mobile ? ScreenInsetArea : InteractableArea
   const d = S(90)
   return (
-    <InteractableArea>
+    <BackArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <UiEntity
-          uiTransform={{ positionType: 'absolute', position: pos, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+          uiTransform={{ positionType: 'absolute', position: layout.backPosition, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP) + layout.toastBackOffsetY : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
           uiBackground={{
             texture: { src: BACK_ARROW_ICON },
             textureMode: 'stretch',
@@ -2077,7 +2086,7 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
           }}
         />
       </UiEntity>
-    </InteractableArea>
+    </BackArea>
   )
 }
 
