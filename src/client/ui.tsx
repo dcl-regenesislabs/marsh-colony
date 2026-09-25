@@ -2,16 +2,15 @@
 //  - TOP: player profile bar (Caretaker level + XP) -> taps to Goals
 //  - TOP (when a pet is selected): pet stat bars + care actions
 //  - BOTTOM: 3 big nav buttons (Pets / Inventory / Goals)
-//  - SIDES: Spin + Shop (right), Whistle (left)
+//  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
-import ReactEcs, { ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
-import { engine, InputAction } from '@dcl/sdk/ecs'
+import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
+import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import type { CareAction, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
-  setFollow,
   startPetting,
   cancelPetting,
   petTap,
@@ -33,6 +32,7 @@ import {
   BREED_ORB_FRAMES,
   BREED_BURST_FRAMES
 } from './pet'
+import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, showPetTouchControls } from './touchControls'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
@@ -679,6 +679,10 @@ const BATH_BUTTON_ASPECT = 812 / 323
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
 // ---------------------------------------------------------------------------
+// DEV ONLY — force the nav/menu visible without adopting a pet, to dial in the
+// menu button's position. Keep false in shipping builds.
+const DEV_ALWAYS_SHOW_NAV = false
+
 function BottomNav() {
   const p = clientState.player
   // Hidden while any big panel/dialog is open (bigUiOpen) — it sits where these
@@ -703,7 +707,7 @@ function BottomNav() {
   }
 
   // The nav buttons only appear once you actually own a pet (kept at least one).
-  if (p.pets.length === 0) return <UiEntity />
+  if (p.pets.length === 0 && !DEV_ALWAYS_SHOW_NAV) return <UiEntity />
 
   // Icon-only squares (paw / backpack / star) from hud.png. A colored plate
   // shows behind the icon when its panel is open — the icon art itself has no
@@ -721,8 +725,12 @@ function BottomNav() {
       </UiEntity>
     )
   }
+  // Mobile navigation is supplied by Explorer's native "+" overflow menu.
+  if (mobile()) return <UiEntity />
+
+  // DESKTOP: the classic centered bottom bar.
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: mobile() ? S(70) : S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
       {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster())}
       {nav('nav_inv', NAV_INV_UVS, 'inventory', () => ui.openInventory())}
       {nav('nav_goals', NAV_GOALS_UVS, 'goals', () => ui.openGoals())}
@@ -730,13 +738,47 @@ function BottomNav() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Side buttons: Spin + Shop (right), Whistle (left)
-// ---------------------------------------------------------------------------
-// Spin and Stay/Whistle are suspended until they get revamped — the logic
-// (ui.openSpin(), setFollow()) stays wired, just not reachable from the HUD.
-function SideButtons() {
-  return <UiEntity />
+/** One source of truth for when the native companion buttons may appear.
+ * It intentionally keeps them up for a sleeping pet: the action button still
+ * opens its panel to wake it, while the follow button reports that it is asleep. */
+function canShowPetTouchControls(): boolean {
+  const pet = clientState.activePet
+  return (
+    mobile() &&
+    !!pet &&
+    !bigUiOpen() &&
+    !hasPendingHatchling() &&
+    !clientState.petting.active &&
+    !clientState.fetch.active &&
+    !clientState.feedTask.active &&
+    !clientState.sicknessErrand.active &&
+    !clientState.pepitoChase.active &&
+    !clientState.hatch.active &&
+    !clientState.feedGame.active &&
+    !clientState.bathGame.active &&
+    !clientState.carryEgg.active &&
+    !clientState.carryPet.active &&
+    !clientState.breed.active
+  )
+}
+
+/** Sync native mobile controls from an ECS system, rather than from the React
+ * renderer. This keeps their lifecycle correct when Root swaps to an overlay. */
+function syncPetTouchControlsSystem(): void {
+  const pet = clientState.activePet
+  const icon = pet ? Cfg.speciesControlIcon(pet.species) : undefined
+  if (!canShowPetTouchControls() || !icon) {
+    hidePetTouchControls()
+    return
+  }
+  showPetTouchControls(clientState.followEnabled, icon)
+  if (inputSystem.isTriggered(NAV_ROSTER_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openRoster()
+  } else if (inputSystem.isTriggered(NAV_INVENTORY_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openInventory()
+  } else if (inputSystem.isTriggered(NAV_GOALS_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openGoals()
+  }
 }
 
 // Jukebox + Leaderboard entry points now live as icon buttons in the top HUD
@@ -1670,29 +1712,37 @@ function MeteorRewardPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Goals / achievements
+// Goals / achievements — the "Your Journey" art (goals.png, 1024²) is the whole
+// panel. The close X is baked into the top-right of the image; an invisible
+// button is overlaid on it. Fractions below are that X's centre in the art.
 // ---------------------------------------------------------------------------
+const GOALS_IMG = 'assets/images/revamp/goals.png'
+const GOALS_CLOSE_CX = 0.908 // X centre, as a fraction of the image width
+const GOALS_CLOSE_CY = 0.159 // X centre, as a fraction of the image height
+const GOALS_CLOSE_FRAC = 0.11 // hit-area size, as a fraction of the image width
 function GoalsPanel() {
-  const p = clientState.player
+  // The art is square (1:1). Fit it to the smaller screen dimension so it never
+  // overflows a short/low-dpr canvas (on mobile S(680) alone is ~1088u, taller
+  // than the ~720u canvas, which would clip the top — including the close X).
+  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const fit = canvas ? Math.min(canvas.width, canvas.height) * 0.92 : Infinity
+  const size = Math.min(S(680), fit)
+  const closeSz = Math.round(size * GOALS_CLOSE_FRAC)
+  const closeLeft = Math.round(size * GOALS_CLOSE_CX - closeSz / 2)
+  const closeTop = Math.round(size * GOALS_CLOSE_CY - closeSz / 2)
   return (
-    <PetHudModal title="Goals" subtitle="Check your goals & achievements!" width={S(680)} height={Math.round(S(680) / PET_MODAL_ASPECT)} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-        {Cfg.ACHIEVEMENTS.map((a) => {
-          const done = (p?.achievements.indexOf(a.id) ?? -1) !== -1
-          const prog = Math.min(p?.counters[a.counter] ?? 0, a.goal)
-          const pct = Math.round((prog / a.goal) * 100)
-          return (
-            <UiEntity key={a.id} uiTransform={{ width: '100%', height: S(66), flexDirection: 'column', margin: { bottom: S(6) }, padding: S(8), borderRadius: S(12) }} uiBackground={{ color: LOC.tile }}>
-              <Label value={`${done ? '[done] ' : ''}${a.label}`} fontSize={S(16)} color={done ? LOC.green : LOC.body} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
-              <UiEntity uiTransform={{ width: '100%', height: S(10), borderRadius: S(5), margin: { top: S(4), bottom: S(2) } }} uiBackground={{ color: LOC.neutral }}>
-                <UiEntity uiTransform={{ width: `${pct}%`, height: '100%', borderRadius: S(5) }} uiBackground={{ color: done ? LOC.green : LOC.orange }} />
-              </UiEntity>
-              <Label value={`${a.description}  (${prog}/${a.goal})`} fontSize={S(13)} color={LOC.dim} textAlign="middle-left" uiTransform={{ width: '100%', height: S(18) }} />
-            </UiEntity>
-          )
-        })}
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
+      <UiEntity uiTransform={{ width: size, height: size, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_IMG }, textureMode: 'stretch' }}>
+        {/* Invisible close button sitting on the X baked into the art. The fully
+            transparent background is what guarantees the tap/click registers on
+            both mobile and Unity (same trick as the tap-to-exit overlays). */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: closeTop, left: closeLeft }, width: closeSz, height: closeSz, pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => ui.close()}
+        />
       </UiEntity>
-    </PetHudModal>
+    </UiEntity>
   )
 }
 
@@ -1862,25 +1912,36 @@ function JukeboxPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Toasts (screen right, slide in/out from the right)
+// Toasts (screen left, slide in/out from the left)
 // ---------------------------------------------------------------------------
 // Shows one toast at a time from clientState.toasts (a queue) — advances to the
 // next message once the current one expires, instead of stacking every pushed
-// toast on screen at once. It deploys from the right edge at the same vertical
-// position as the former left-side notification, holds, then retracts right.
+// toast on screen at once. It deploys from the left edge, holds, then retracts
+// left while staying in the Explorer-reported interactable safe zone.
 // The server `notify` kind picks the accent color (error/reward/progress/info).
-const TOAST_ENTER_MS = 240 // slide-in from the right
+const TOAST_ENTER_MS = 240 // slide-in from the left
 const TOAST_HOLD_MS = 3100 // fully-shown dwell
-const TOAST_EXIT_MS = 300 // retract back to the right
+const TOAST_EXIT_MS = 300 // retract back to the left
 const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
 // Notification pill, drawn in code (no image): a cream fill inside a brown border,
 // both fully rounded. TOAST_BORDER is pre-S (applied with S() at render).
 const TOAST_BORDER = 5 // border thickness (pre-S)
+const TOAST_TOP = '25%' as const
+const TOAST_HEIGHT = 92 // pre-S
+const BACK_BUTTON_TOAST_GAP = 14 // pre-S
+// Intentionally kept at the mobile placement specified for this scene.
+// These are fixed composition adjustments, not safe-area fallbacks.
+const TOAST_MOBILE_OFFSET_X = -320 // pre-S
+const TOAST_MOBILE_OFFSET_Y = -40 // pre-S
 const TOAST_BORDER_COLOR: Color = { r: 0.525, g: 0.318, b: 0.173, a: 1 } // #86512C brown
 const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cream
 
 const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
 const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
+
+function toastIsVisible(now: number): boolean {
+  return !bigUiOpen() && !!clientState.currentToast && clientState.currentToast.until > now
+}
 
 function Toasts() {
   const now = Date.now()
@@ -1894,23 +1955,18 @@ function Toasts() {
   }
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
+  const toastOffsetX = mobile() ? TOAST_MOBILE_OFFSET_X : 0
+  const toastOffsetY = mobile() ? TOAST_MOBILE_OFFSET_Y : 0
 
-  // Toasts only ever mount in Root's default branch (petting/hatch/feedGame/
-  // bathGame each own the whole screen instead), where a BackButton shows up
-  // in exactly these four spots — FetchOverlay, BathButton (carry-to-bath),
-  // FeedErrandOverlay, SicknessErrandOverlay. When one's actually up, rest BELOW it so the two never
-  // overlap; otherwise sit AT the same height the button would be, instead of
-  // leaving that vertical space empty.
-  const backButtonVisible = clientState.fetch.active || clientState.carryPet.active || clientState.feedTask.active || clientState.sicknessErrand.active || getEggPending()
-
-  // Slide in from the RIGHT edge + fade. Enter: from off-screen right -> rest.
-  // Exit: retract back off the right + fade.
+  // A visible BackButton reads the active toast below and shifts beneath this
+  // fixed notification row, so the two never overlap.
+  // Slide in from the LEFT edge + fade. Enter: from off-screen left -> rest.
+  // Exit: retract back off the left + fade.
   const elapsed = now - t.shownAt
   const remaining = t.until - now
   const w = S(500)
-  const h = S(92)
-  const rightInset = mobile() ? S(24) : S(16)
-  const offMax = rightInset + w + S(20) // far enough right to sit fully off-screen while hidden
+  const h = S(TOAST_HEIGHT)
+  const offMax = w + S(20) // far enough left to sit fully off-screen while hidden
   let slide = 0
   let alpha = 1
   if (elapsed < TOAST_ENTER_MS) {
@@ -1923,46 +1979,47 @@ function Toasts() {
     alpha = p
   }
 
-  // NOT wrapped in ScreenInsetArea: it sits in the same non-inset coordinate
-  // space as the BackButton and the rest of the HUD (getUiRendererConfig's
-  // screenInset:'none'), so its vertical spacing stays identical to the
-  // original left-side notification.
+  // InteractableArea keeps this notification clear of Explorer chrome and
+  // platform overlays, rather than relying on raw screen-edge coordinates.
   const border = S(TOAST_BORDER)
   return (
-    // Right side, slide-in from the right. Same vertical layout as the former
-    // left-side notification. The pill is drawn in code: a brown border (outer)
-    // wrapping a cream fill (inner), both fully rounded.
+    // Left side, slide-in from the left. The pill is drawn in code: a brown
+    // border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      <UiEntity
-        uiTransform={{
-          positionType: 'absolute',
-          position: { top: '25%', right: rightInset },
-          margin: { top: backButtonVisible ? S(96) : 0, right: -slide },
-          width: w,
-          height: h,
-          padding: border, // this padding IS the visible brown border
-          borderRadius: h / 2,
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerFilter: 'none'
-        }}
-        uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, alpha) }}
-      >
-        <UiEntity
-          uiTransform={{
-            width: '100%',
-            height: '100%',
-            borderRadius: h / 2 - border,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: { left: S(44), right: S(44) } // clear the rounded caps so text sits on the flat middle
-          }}
-          uiBackground={{ color: withAlpha(TOAST_CREAM, alpha) }}
-        >
-          <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
+      <InteractableArea>
+        <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+          <UiEntity
+            uiTransform={{
+              positionType: 'absolute',
+              position: { top: TOAST_TOP, left: 0 },
+              margin: { left: -slide + S(toastOffsetX), top: S(toastOffsetY) },
+              width: w,
+              height: h,
+              padding: border, // this padding IS the visible brown border
+              borderRadius: h / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerFilter: 'none'
+            }}
+            uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, alpha) }}
+          >
+            <UiEntity
+              uiTransform={{
+                width: '100%',
+                height: '100%',
+                borderRadius: h / 2 - border,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: { left: S(44), right: S(44) } // clear the rounded caps so text sits on the flat middle
+              }}
+              uiBackground={{ color: withAlpha(TOAST_CREAM, alpha) }}
+            >
+              <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
+            </UiEntity>
+          </UiEntity>
         </UiEntity>
-      </UiEntity>
+      </InteractableArea>
     </UiEntity>
   )
 }
@@ -1979,22 +2036,28 @@ const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 // screen-center). One place so every action's BACK matches.
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const isM = mobile()
-  const pos = { top: '25%' as const, left: isM ? S(210) : S(130) }
+  const toastVisible = toastIsVisible(Date.now())
+  const toastOffsetY = isM ? TOAST_MOBILE_OFFSET_Y : 0
+  const pos = { top: TOAST_TOP, left: isM ? S(210) : S(130) }
   const d = S(90)
   return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: pos, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
-      uiBackground={{
-        texture: { src: BACK_ARROW_ICON },
-        textureMode: 'stretch',
-        // Disabled reads as greyed-out (not just faded) so it doesn't look like a
-        // live button that's simply ignoring taps.
-        color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
-      }}
-      onMouseDown={() => {
-        if (!props.disabled) props.onClick()
-      }}
-    />
+    <InteractableArea>
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: pos, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+          uiBackground={{
+            texture: { src: BACK_ARROW_ICON },
+            textureMode: 'stretch',
+            // Disabled reads as greyed-out (not just faded) so it doesn't look like a
+            // live button that's simply ignoring taps.
+            color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
+          }}
+          onMouseDown={() => {
+            if (!props.disabled) props.onClick()
+          }}
+        />
+      </UiEntity>
+    </InteractableArea>
   )
 }
 
@@ -3261,7 +3324,6 @@ const Root = () => {
         {!hideHudForPepitoTheft && (
           <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
             <TopBars />
-            <SideButtons />
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />
@@ -3345,6 +3407,7 @@ export function setupUi(): void {
   if (!uiRendererSyncRegistered) {
     uiRendererSyncRegistered = true
     engine.addSystem(syncUiRendererSystem)
+    engine.addSystem(syncPetTouchControlsSystem)
   }
 
   resolveRuntimePlatform()

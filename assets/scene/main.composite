@@ -755,7 +755,7 @@
           "json": {
             "position": {
               "x": 149.6864776611328,
-              "y": -1.0034648667556212e-8,
+              "y": -1.0034648667556212e-08,
               "z": 220.70677185058594
             },
             "scale": {
@@ -818,7 +818,7 @@
           "json": {
             "position": {
               "x": 151.61537170410156,
-              "y": -1.0034765907107612e-8,
+              "y": -1.0034765907107612e-08,
               "z": 219.2783966064453
             },
             "scale": {
@@ -923,7 +923,7 @@
           "json": {
             "position": {
               "x": 148.81072998046875,
-              "y": -1.003465222026989e-8,
+              "y": -1.003465222026989e-08,
               "z": 201.65257263183594
             },
             "scale": {
@@ -2057,7 +2057,7 @@
           "json": {
             "position": {
               "x": 166.93594360351562,
-              "y": -1.1084361872804038e-8,
+              "y": -1.1084361872804038e-08,
               "z": 212.70407104492188
             },
             "scale": {
@@ -2099,7 +2099,7 @@
           "json": {
             "position": {
               "x": 172.32614135742188,
-              "y": -6.901139659731825e-9,
+              "y": -6.901139659731825e-09,
               "z": 202.656982421875
             },
             "scale": {
@@ -2813,7 +2813,7 @@
           "json": {
             "position": {
               "x": 201.76132202148438,
-              "y": -1.1084193118904295e-8,
+              "y": -1.1084193118904295e-08,
               "z": 219.95994567871094
             },
             "scale": {
@@ -3040,6 +3040,111 @@
             "parent": 0
           }
         },
+        "66050": {
+          "json": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "parent": 0
+          }
+        },
+        "66059": {
+          "json": {
+            "position": {
+              "x": 196.77037048339844,
+              "y": -2.4091222286224365,
+              "z": 166.03956604003906
+            },
+            "scale": {
+              "x": 7.099999904632568,
+              "y": 7.099999904632568,
+              "z": 7.099999904632568
+            },
+            "rotation": {
+              "x": 0,
+              "y": -0.2027226835489273,
+              "z": 0,
+              "w": 0.9792361855506897
+            },
+            "parent": 0
+          }
+        },
+        "66094": {
+          "json": {
+            "position": {
+              "x": 257.5,
+              "y": -6.5,
+              "z": 210.75
+            },
+            "scale": {
+              "x": 9.300000190734863,
+              "y": 11.300000190734863,
+              "z": 9.300000190734863
+            },
+            "rotation": {
+              "x": 0,
+              "y": -0.3826834261417389,
+              "z": 0,
+              "w": 0.9238795042037964
+            },
+            "parent": 0
+          }
+        },
+        "66183": {
+          "json": {
+            "position": {
+              "x": 8.623443603515625,
+              "y": 0.004353837110102177,
+              "z": 10.4688720703125
+            },
+            "scale": {
+              "x": 1.5585588216781616,
+              "y": 1,
+              "z": 0.9999997019767761
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.3823864758014679,
+              "z": 0,
+              "w": 0.9240022897720337
+            },
+            "parent": 602
+          }
+        },
+        "131681": {
+          "json": {
+            "position": {
+              "x": 168.61131286621094,
+              "y": -1.1084244633252638e-08,
+              "z": 210.9853515625
+            },
+            "scale": {
+              "x": 5.099999904632568,
+              "y": 2.799999952316284,
+              "z": 5.099999904632568
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.806610643863678,
+              "z": 0,
+              "w": 0.5910831689834595
+            },
+            "parent": 66050
+          }
+        },
         "660": {
           "json": {
             "position": {
@@ -3145,90 +3250,6 @@
             "parent": 660
           }
         },
-        "66050": {
-          "json": {
-            "position": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "parent": 0
-          }
-        },
-        "66059": {
-          "json": {
-            "position": {
-              "x": 196.77037048339844,
-              "y": -2.4091222286224365,
-              "z": 166.03956604003906
-            },
-            "scale": {
-              "x": 7.099999904632568,
-              "y": 7.099999904632568,
-              "z": 7.099999904632568
-            },
-            "rotation": {
-              "x": 0,
-              "y": -0.2027226835489273,
-              "z": 0,
-              "w": 0.9792361855506897
-            },
-            "parent": 0
-          }
-        },
-        "66094": {
-          "json": {
-            "position": {
-              "x": 257.5,
-              "y": -6.5,
-              "z": 210.75
-            },
-            "scale": {
-              "x": 9.300000190734863,
-              "y": 11.300000190734863,
-              "z": 9.300000190734863
-            },
-            "rotation": {
-              "x": 0,
-              "y": -0.3826834261417389,
-              "z": 0,
-              "w": 0.9238795042037964
-            },
-            "parent": 0
-          }
-        },
-        "66183": {
-          "json": {
-            "position": {
-              "x": 8.623443603515625,
-              "y": 0.004353837110102177,
-              "z": 10.4688720703125
-            },
-            "scale": {
-              "x": 1.5585588216781616,
-              "y": 1,
-              "z": 0.9999997019767761
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0.3823864758014679,
-              "z": 0,
-              "w": 0.9240022897720337
-            },
-            "parent": 602
-          }
-        },
         "66197": {
           "json": {
             "position": {
@@ -3271,25 +3292,25 @@
             "parent": 660
           }
         },
-        "131681": {
+        "131682": {
           "json": {
             "position": {
-              "x": 168.61131286621094,
-              "y": -1.1084244633252638e-8,
-              "z": 210.9853515625
-            },
-            "scale": {
-              "x": 5.099999904632568,
-              "y": 2.799999952316284,
-              "z": 5.099999904632568
+              "x": 200.75,
+              "y": 0,
+              "z": 247.75
             },
             "rotation": {
               "x": 0,
-              "y": 0.806610643863678,
+              "y": 0,
               "z": 0,
-              "w": 0.5910831689834595
+              "w": 1
             },
-            "parent": 66050
+            "scale": {
+              "x": 12,
+              "y": 6,
+              "z": 12
+            },
+            "parent": 0
           }
         }
       }
@@ -4031,13 +4052,6 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "582": {
-          "json": {
-            "src": "assets/Models/ark01/ark01.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
         "583": {
           "json": {
             "src": "assets/Models/DualNest01/DualNest01.glb",
@@ -4542,6 +4556,41 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "66059": {
+          "json": {
+            "src": "assets/Models/Mountain01/mountain01.glb",
+            "visibleMeshesCollisionMask": 2,
+            "invisibleMeshesCollisionMask": 2
+          }
+        },
+        "66094": {
+          "json": {
+            "src": "assets/Models/Mountain02/Mountain02.glb",
+            "visibleMeshesCollisionMask": 2,
+            "invisibleMeshesCollisionMask": 2
+          }
+        },
+        "66183": {
+          "json": {
+            "src": "assets/Models/Fencewall01/Fencewall01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "131681": {
+          "json": {
+            "src": "assets/Models/Plant01/Plant01.glb",
+            "visibleMeshesCollisionMask": 2,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
+        "582": {
+          "json": {
+            "src": "assets/Models/ark01/ark01.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "660": {
           "json": {
             "src": "assets/Models/leaderboard/LeaderBoard01.glb",
@@ -4577,27 +4626,6 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "66059": {
-          "json": {
-            "src": "assets/Models/Mountain01/mountain01.glb",
-            "visibleMeshesCollisionMask": 2,
-            "invisibleMeshesCollisionMask": 2
-          }
-        },
-        "66094": {
-          "json": {
-            "src": "assets/Models/Mountain02/Mountain02.glb",
-            "visibleMeshesCollisionMask": 2,
-            "invisibleMeshesCollisionMask": 2
-          }
-        },
-        "66183": {
-          "json": {
-            "src": "assets/Models/Fencewall01/Fencewall01.glb",
-            "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
-          }
-        },
         "66197": {
           "json": {
             "src": "assets/Models/Fruit01.glb",
@@ -4612,11 +4640,11 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
-        "131681": {
+        "131682": {
           "json": {
-            "src": "assets/Models/Plant01/Plant01.glb",
-            "visibleMeshesCollisionMask": 2,
-            "invisibleMeshesCollisionMask": 3
+            "src": "assets/asset-packs/invisible_cylinder/invisible_cylinder.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 0
           }
         }
       }
@@ -4967,11 +4995,6 @@
         "581": {
           "json": {
             "value": "HumanBed.glb"
-          }
-        },
-        "582": {
-          "json": {
-            "value": "ark01.glb"
           }
         },
         "583": {
@@ -5344,6 +5367,36 @@
             "value": "Captain.glb"
           }
         },
+        "66050": {
+          "json": {
+            "value": "Plants"
+          }
+        },
+        "66059": {
+          "json": {
+            "value": "mountain01.glb"
+          }
+        },
+        "66094": {
+          "json": {
+            "value": "Mountain02.glb"
+          }
+        },
+        "66183": {
+          "json": {
+            "value": "Fencewall01.glb_21"
+          }
+        },
+        "131681": {
+          "json": {
+            "value": "Plant01.glb_13"
+          }
+        },
+        "582": {
+          "json": {
+            "value": "ark01.glb"
+          }
+        },
         "660": {
           "json": {
             "value": "LeaderBoard01.glb"
@@ -5369,26 +5422,6 @@
             "value": "Headpoint06"
           }
         },
-        "66050": {
-          "json": {
-            "value": "Plants"
-          }
-        },
-        "66059": {
-          "json": {
-            "value": "mountain01.glb"
-          }
-        },
-        "66094": {
-          "json": {
-            "value": "Mountain02.glb"
-          }
-        },
-        "66183": {
-          "json": {
-            "value": "Fencewall01.glb_21"
-          }
-        },
         "66197": {
           "json": {
             "value": "Headpoint03"
@@ -5399,9 +5432,9 @@
             "value": "Headpoint04"
           }
         },
-        "131681": {
+        "131682": {
           "json": {
-            "value": "Plant01.glb_13"
+            "value": "home_modifier_area"
           }
         }
       }
@@ -5441,6 +5474,11 @@
           }
         },
         "590": {
+          "json": {
+            "visible": false
+          }
+        },
+        "131682": {
           "json": {
             "visible": false
           }
@@ -5489,6 +5527,11 @@
         "serializationType": "map"
       },
       "data": {
+        "0": {
+          "json": {
+            "gizmo": 0
+          }
+        },
         "663": {
           "json": {
             "gizmo": 1
@@ -5591,7 +5634,8 @@
                   582,
                   593,
                   594,
-                  660
+                  660,
+                  131682
                 ]
               },
               {
@@ -6329,6 +6373,10 @@
               {
                 "entity": 666,
                 "children": []
+              },
+              {
+                "entity": 131682,
+                "children": []
               }
             ]
           }
@@ -6551,9 +6599,6 @@
           "json": {}
         },
         "581": {
-          "json": {}
-        },
-        "582": {
           "json": {}
         },
         "583": {
@@ -6781,6 +6826,24 @@
         "659": {
           "json": {}
         },
+        "66050": {
+          "json": {}
+        },
+        "66059": {
+          "json": {}
+        },
+        "66094": {
+          "json": {}
+        },
+        "66183": {
+          "json": {}
+        },
+        "131681": {
+          "json": {}
+        },
+        "582": {
+          "json": {}
+        },
         "660": {
           "json": {}
         },
@@ -6796,25 +6859,13 @@
         "666": {
           "json": {}
         },
-        "66050": {
-          "json": {}
-        },
-        "66059": {
-          "json": {}
-        },
-        "66094": {
-          "json": {}
-        },
-        "66183": {
-          "json": {}
-        },
         "66197": {
           "json": {}
         },
         "66200": {
           "json": {}
         },
-        "131681": {
+        "131682": {
           "json": {}
         }
       }
@@ -7162,7 +7213,7 @@
         "0": {
           "json": {
             "name": "Marsh Colony",
-            "description": "A Tamagotchi-style pet care game for Decentraland (SDK7) — adopt a pet, keep it fed, clean, rested and happy, earn coins from its happiness, and raise it in a shared social Care Center",
+            "description": "A Tamagotchi-style pet care game for Decentraland (SDK7) \u2014 adopt a pet, keep it fed, clean, rested and happy, earn coins from its happiness, and raise it in a shared social Care Center",
             "thumbnail": "assets/images/thumbnail.png",
             "categories": [],
             "author": "RGL",

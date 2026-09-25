@@ -19,7 +19,7 @@ import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
-import { cureCinematicIsActive, getLocalPet, getInactivePetEntity, petIsPresent, sadCinematicIsActive, TAG_MIN, TAG_SIZE_MULT } from './pet'
+import { cureCinematicEmoteId, cureCinematicIsActive, getLocalPet, getInactivePetEntity, petIsPresent, sadCinematicIsActive, TAG_MIN, TAG_SIZE_MULT } from './pet'
 import { petOverheadTuning } from './petOverheadCalibration'
 
 type EmoteId = 'food' | 'clean' | 'play' | 'sick' | 'happy' | 'sad' | 'angry' | 'heart' | 'music' | 'sleep1' | 'sleep2'
@@ -210,7 +210,7 @@ function dominantEmote(st: EmoteState, pet: PetData, now: number, dt: number, is
   // The cinematic needs the bubble before Feed's state is released; after that
   // the persisted `pet.sick` status owns it until the cure.
   if (isActive && sadCinematicIsActive()) return 'sick'
-  if (isActive && cureCinematicIsActive()) return 'happy'
+  if (isActive && cureCinematicIsActive()) return cureCinematicEmoteId() ?? 'happy'
   // Do not spoil the post-Feed reveal if the server snapshot arrives before
   // the player has pressed Exit on the results screen.
   if (pet.sick && !(isActive && clientState.feedGame.active)) return 'sick'
@@ -241,6 +241,7 @@ function activePetMomentIsTaken(): boolean {
     clientState.breed.active ||
     clientState.petting.active ||
     clientState.fetch.active ||
+    (cureCinematicIsActive() && cureCinematicEmoteId() === null) ||
     (clientState.dialog.open && !sadCinematicIsActive())
   )
 }

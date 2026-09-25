@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, speciesLabel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -221,6 +221,10 @@ export function serverConnected(): boolean {
   if (clientState.lastServerMsgAt === 0) return false // never heard from it
   return Date.now() - clientState.lastServerMsgAt < SERVER_TIMEOUT_MS
 }
+
+// NPC dialog names, shared so the portrait mapping (ui/dialog.tsx) and the NPC
+// setup (captain.ts) can't drift apart on a rename.
+export const CAPTAIN_NPC_NAME = 'Captain'
 
 /** Open a multi-page NPC dialog. Advancing past the last page closes it. */
 export function openDialog(
@@ -482,9 +486,6 @@ export const actions = {
   buySlot(): void {
     room.send('buySlot', {})
   },
-  debugGrowAdult(): void {
-    room.send('debugGrowAdult', {})
-  },
   buyPotion(): void {
     room.send('buyPotion', {})
   },
@@ -506,18 +507,4 @@ export const actions = {
   breed(partnerPetId: string, name = '', usePotion = false): void {
     room.send('breed', { partnerPetId, name, usePotion })
   }
-}
-
-/** DEBUG cheat: optimistically grow the active pet to Adult + Lv5 locally (so the
- *  HUD updates instantly), then tell the server, which persists it and re-broadcasts
- *  the authoritative snapshot. Mirrors server/state.ts debugGrowAdult(). */
-export function debugGrowAdultLocal(): void {
-  const pet = clientState.activePet
-  if (!pet) return
-  pet.careCount = Math.max(pet.careCount, 70)
-  pet.size = SIZE_MAX
-  pet.petXp = Math.max(pet.petXp, xpForLevel(5))
-  pet.petLevel = levelForXp(pet.petXp)
-  if (clientState.player) clientState.player.currency = Math.max(clientState.player.currency, slotPrice(clientState.player.petSlots))
-  actions.debugGrowAdult()
 }

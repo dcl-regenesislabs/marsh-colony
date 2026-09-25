@@ -5,11 +5,22 @@ import { engine, Entity, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 
-export const PRIVATE_AVATAR_AREAS = [
+type PrivateAvatarArea = {
+  entityName: EntityNames
+  /** Omit the size to take it from the placed Creator Hub entity's scale. */
+  area?: Vector3
+  /** The invisible cylinder mesh's pivot is at its base, not its center. */
+  baseAnchored?: boolean
+}
+
+export const PRIVATE_AVATAR_AREAS: readonly PrivateAvatarArea[] = [
   // Matches the 9m Feed errand arrival radius.
   { entityName: EntityNames.tree_glb, area: Vector3.create(18, 6, 18) },
-  { entityName: EntityNames.HomeDome01_glb, area: Vector3.create(12, 6, 12) }
-] as const
+  // The invisible cylinder is authored in Creator Hub. AvatarModifierArea
+  // ignores Transform.scale by itself, so setup.ts passes this same scale as
+  // its explicit `area`, keeping the code volume aligned with the cylinder.
+  { entityName: EntityNames.home_modifier_area, baseAnchored: true }
+]
 
 const cachedAreaAnchors = new Map<EntityNames, Entity>()
 
@@ -25,14 +36,16 @@ export function getPrivateAvatarAreaAnchor(entityName: EntityNames): Entity | nu
 
 /** True when a world position is inside one of the avatar-hide volumes. */
 export function isInsidePrivateAvatarArea(position: Vector3): boolean {
-  for (const { entityName, area } of PRIVATE_AVATAR_AREAS) {
+  for (const { entityName, area: configuredArea, baseAnchored } of PRIVATE_AVATAR_AREAS) {
     const anchor = getPrivateAvatarAreaAnchor(entityName)
     const transform = anchor === null ? null : Transform.getOrNull(anchor)
     if (!transform) continue
+    const area = configuredArea ?? transform.scale
+    const center = baseAnchored ? Vector3.add(transform.position, Vector3.rotate(Vector3.create(0, area.y / 2, 0), transform.rotation)) : transform.position
 
     // AvatarModifierArea rotates its box with its anchor. Rotate the world
     // point by the inverse anchor rotation before testing the local box.
-    const relative = Vector3.create(position.x - transform.position.x, position.y - transform.position.y, position.z - transform.position.z)
+    const relative = Vector3.create(position.x - center.x, position.y - center.y, position.z - center.z)
     const local = Vector3.rotate(relative, {
       x: -transform.rotation.x,
       y: -transform.rotation.y,
