@@ -1712,27 +1712,47 @@ function MeteorRewardPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Goals / achievements — the "Your Journey" art (goals.png, 1024²) is the whole
-// panel. The close X is baked into the top-right of the image; an invisible
-// button is overlaid on it. Fractions below are that X's centre in the art.
+// Goals / achievements — the "Your Journey" art (goals.png) is the whole panel.
+// The 1024² file has transparent padding, so we crop to the art's opaque box
+// (measured from the PNG's alpha) and render it at the SAME width as the Inventory
+// panel so all three nav panels read as the same size. The close X is baked into
+// the top-right; an invisible button is overlaid on it.
 // ---------------------------------------------------------------------------
 const GOALS_IMG = 'assets/images/revamp/goals.png'
-const GOALS_CLOSE_CX = 0.908 // X centre, as a fraction of the image width
-const GOALS_CLOSE_CY = 0.159 // X centre, as a fraction of the image height
-const GOALS_CLOSE_FRAC = 0.11 // hit-area size, as a fraction of the image width
+const GOALS_TEX = 1024 // source canvas
+const GOALS_ART = { x0: 13, y0: 92, x1: 1011, y1: 906 } // opaque bbox (alpha)
+const GOALS_ART_W = GOALS_ART.x1 - GOALS_ART.x0
+const GOALS_ART_H = GOALS_ART.y1 - GOALS_ART.y0
+const GOALS_ART_ASPECT = GOALS_ART_W / GOALS_ART_H // ~1.226
+// uvs cropping the opaque box (UI order: BL, TL, TR, BR; V flipped).
+const GOALS_UVS = [
+  GOALS_ART.x0 / GOALS_TEX, 1 - GOALS_ART.y1 / GOALS_TEX,
+  GOALS_ART.x0 / GOALS_TEX, 1 - GOALS_ART.y0 / GOALS_TEX,
+  GOALS_ART.x1 / GOALS_TEX, 1 - GOALS_ART.y0 / GOALS_TEX,
+  GOALS_ART.x1 / GOALS_TEX, 1 - GOALS_ART.y1 / GOALS_TEX
+]
+// Close-X centre, re-expressed relative to the CROPPED art frame.
+const GOALS_CLOSE_CX = (0.908 * GOALS_TEX - GOALS_ART.x0) / GOALS_ART_W
+const GOALS_CLOSE_CY = (0.159 * GOALS_TEX - GOALS_ART.y0) / GOALS_ART_H
+const GOALS_CLOSE_FRAC = 0.11 * GOALS_TEX / GOALS_ART_W // hit-area, as a fraction of the frame width
 function GoalsPanel() {
-  // The art is square (1:1). Fit it to the smaller screen dimension so it never
-  // overflows a short/low-dpr canvas (on mobile S(680) alone is ~1088u, taller
-  // than the ~720u canvas, which would clip the top — including the close X).
+  // Match the Inventory panel's width; height follows the art's aspect. Clamp to
+  // the canvas so it never overflows a short/low-dpr screen (esp. mobile).
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
-  const fit = canvas ? Math.min(canvas.width, canvas.height) * 0.92 : Infinity
-  const size = Math.min(S(680), fit)
-  const closeSz = Math.round(size * GOALS_CLOSE_FRAC)
-  const closeLeft = Math.round(size * GOALS_CLOSE_CX - closeSz / 2)
-  const closeTop = Math.round(size * GOALS_CLOSE_CY - closeSz / 2)
+  let w = S(660) // same width as the Inventory modal (consistent across nav panels)
+  let h = Math.round(w / GOALS_ART_ASPECT)
+  if (canvas) {
+    const maxW = canvas.width * 0.92
+    const maxH = canvas.height * 0.92
+    if (w > maxW) { w = maxW; h = Math.round(w / GOALS_ART_ASPECT) }
+    if (h > maxH) { h = maxH; w = Math.round(h * GOALS_ART_ASPECT) }
+  }
+  const closeSz = Math.round(w * GOALS_CLOSE_FRAC)
+  const closeLeft = Math.round(w * GOALS_CLOSE_CX - closeSz / 2)
+  const closeTop = Math.round(h * GOALS_CLOSE_CY - closeSz / 2)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
-      <UiEntity uiTransform={{ width: size, height: size, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_IMG }, textureMode: 'stretch' }}>
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_IMG }, textureMode: 'stretch', uvs: GOALS_UVS }}>
         {/* Invisible close button sitting on the X baked into the art. The fully
             transparent background is what guarantees the tap/click registers on
             both mobile and Unity (same trick as the tap-to-exit overlays). */}

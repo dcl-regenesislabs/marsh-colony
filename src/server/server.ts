@@ -5,6 +5,7 @@ import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
 import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
+import { DEBUG_GROW_ENABLED } from '../shared/config'
 import * as S from './state'
 import { trackEvent } from '../shared/analytics'
 
@@ -254,6 +255,17 @@ export function server(): void {
     await S.savePlayer(ctx.from)
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)
+  })
+
+  room.onMessage('debugGrowAdult', async (_data, ctx) => {
+    if (!ctx) return
+    if (!DEBUG_GROW_ENABLED) return // cheat off -> ignore the grant entirely (see #275)
+    const p = await S.loadPlayer(ctx.from)
+    const notes = S.debugGrowAdult(p)
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+    broadcastPresence() // its size/level changed — mirror it for everyone
   })
 
   room.onMessage('buyPotion', async (_data, ctx) => {
