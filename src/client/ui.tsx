@@ -1739,7 +1739,7 @@ function GoalsPanel() {
   // Match the Inventory panel's width; height follows the art's aspect. Clamp to
   // the canvas so it never overflows a short/low-dpr screen (esp. mobile).
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
-  let w = S(920) // larger than the other nav panels (by request)
+  let w = S(660) // same width as the Inventory modal (consistent across nav panels)
   let h = Math.round(w / GOALS_ART_ASPECT)
   if (canvas) {
     const maxW = canvas.width * 0.92

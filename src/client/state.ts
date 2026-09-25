@@ -516,6 +516,10 @@ export function debugGrowAdultLocal(): void {
   pet.size = SIZE_MAX
   pet.petXp = Math.max(pet.petXp, xpForLevel(5))
   pet.petLevel = levelForXp(pet.petXp)
-  if (clientState.player) clientState.player.currency = Math.max(clientState.player.currency, slotPrice(clientState.player.petSlots))
+  if (clientState.player) {
+    // Buffer for the next two slots (buy slot 2, grow, buy slot 3 -> breeding).
+    const bump = slotPrice(clientState.player.petSlots) + slotPrice(clientState.player.petSlots + 1)
+    clientState.player.currency = Math.max(clientState.player.currency, bump)
+  }
   actions.debugGrowAdult()
 }

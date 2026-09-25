@@ -21,6 +21,15 @@ export const SERVER_TIMEOUT_MS = 10000
  */
 export const DEV_SKIP_SERVER_GATE = false
 
+/**
+ * DEBUG cheat: the "grow to Adult" totem (client) AND the `debugGrowAdult` server
+ * grant. This single flag gates BOTH halves — the totem is only spawned and the
+ * server handler only applies the grant while it is true. Flip to `false` to ship
+ * (see issue #275): that removes the totem AND closes the server grant that any
+ * client could otherwise reach directly, totem or not.
+ */
+export const DEBUG_GROW_ENABLED = true
+
 // ---------------------------------------------------------------------------
 // Pet speech — what the pet says over its head to nudge the player into a care
 // action. The bubble is NOT on a timer: `need` names the stat that drives the

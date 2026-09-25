@@ -924,7 +924,8 @@ export function buySlot(p: PlayerData): Notify[] {
 }
 
 /** DEBUG cheat (client's glowing totem): grow the active pet straight to Adult +
- *  Lv5 so breeding can be tested, and top coins up enough for the next slot. */
+ *  Lv5 so breeding can be tested, and top coins up with buffer for the next couple
+ *  of slots (so you can buy slot 2, grow pet 2, buy slot 3 and reach breeding). */
 export function debugGrowAdult(p: PlayerData): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
@@ -932,7 +933,9 @@ export function debugGrowAdult(p: PlayerData): Notify[] {
   pet.size = C.SIZE_MAX // Adult (>= PET_STAGE_ADULT_SIZE)
   pet.petXp = Math.max(pet.petXp, C.xpForLevel(5))
   pet.petLevel = C.levelForXp(pet.petXp)
-  p.currency = Math.max(p.currency, C.slotPrice(p.petSlots)) // afford the next slot
+  // Cover the next slot PLUS the one after, so there's headroom after each buy.
+  const bump = C.slotPrice(p.petSlots) + C.slotPrice(p.petSlots + 1)
+  p.currency = Math.max(p.currency, bump)
   return [{ kind: 'shop', message: `DEBUG: ${pet.name} is now Adult (Lv ${pet.petLevel}) — breeding unlocked.` }]
 }
 
