@@ -1816,6 +1816,15 @@ function spawnBreedEgg(): void {
   if (!breedEgg) breedEgg = engine.addEntity()
   Transform.createOrReplace(breedEgg, { position: breedSpot(BREED_EGG_OFF), scale: Vector3.Zero() })
   GltfContainer.createOrReplace(breedEgg, { src: EGG_MODEL })
+  // Pin it to Idle. Without an explicit Animator, some clients (mobile) auto-play
+  // the GLB's embedded clips — which fired the 'Hatch' animation the moment the egg
+  // appeared in the nest. Declaring Idle playing + Hatch stopped keeps it closed.
+  Animator.createOrReplace(breedEgg, {
+    states: [
+      { clip: 'Idle', playing: true, loop: true },
+      { clip: 'Hatch', playing: false, loop: false, shouldReset: true }
+    ]
+  })
 }
 
 function removeBreedEgg(): void {

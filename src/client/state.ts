@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, speciesLabel, type SpinReward } from '../shared/config'
+import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -480,6 +480,9 @@ export const actions = {
   buySlot(): void {
     room.send('buySlot', {})
   },
+  debugGrowAdult(): void {
+    room.send('debugGrowAdult', {})
+  },
   buyPotion(): void {
     room.send('buyPotion', {})
   },
@@ -501,4 +504,18 @@ export const actions = {
   breed(partnerPetId: string, name = '', usePotion = false): void {
     room.send('breed', { partnerPetId, name, usePotion })
   }
+}
+
+/** DEBUG cheat: optimistically grow the active pet to Adult + Lv5 locally (so the
+ *  HUD updates instantly), then tell the server, which persists it and re-broadcasts
+ *  the authoritative snapshot. Mirrors server/state.ts debugGrowAdult(). */
+export function debugGrowAdultLocal(): void {
+  const pet = clientState.activePet
+  if (!pet) return
+  pet.careCount = Math.max(pet.careCount, 70)
+  pet.size = SIZE_MAX
+  pet.petXp = Math.max(pet.petXp, xpForLevel(5))
+  pet.petLevel = levelForXp(pet.petXp)
+  if (clientState.player) clientState.player.currency = Math.max(clientState.player.currency, slotPrice(clientState.player.petSlots))
+  actions.debugGrowAdult()
 }

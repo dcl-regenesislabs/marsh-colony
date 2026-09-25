@@ -24,6 +24,7 @@ import { setupInput } from './input'
 import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
+import { setupDebugGrow } from './debugGrow'
 import { setupArk } from './ark'
 import { setupPenDoor } from './penDoor'
 import { setupSkybox } from './skybox'
@@ -244,6 +245,7 @@ export function setupClient(): void {
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupMeteor() // meteor reward drop (falls, settles, clickable)
+  setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupCaptain() // space Caretaker aboard the ark: tap for a small teaser dialog
   setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it

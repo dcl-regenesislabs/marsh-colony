@@ -923,6 +923,19 @@ export function buySlot(p: PlayerData): Notify[] {
   return [{ kind: 'shop', message: `Unlocked pet slot ${p.petSlots}!` }]
 }
 
+/** DEBUG cheat (client's glowing totem): grow the active pet straight to Adult +
+ *  Lv5 so breeding can be tested, and top coins up enough for the next slot. */
+export function debugGrowAdult(p: PlayerData): Notify[] {
+  const pet = activePet(p)
+  if (!pet) return [{ kind: 'error', message: 'No active pet' }]
+  pet.careCount = Math.max(pet.careCount, 70) // keeps size maxed even after decay
+  pet.size = C.SIZE_MAX // Adult (>= PET_STAGE_ADULT_SIZE)
+  pet.petXp = Math.max(pet.petXp, C.xpForLevel(5))
+  pet.petLevel = C.levelForXp(pet.petXp)
+  p.currency = Math.max(p.currency, C.slotPrice(p.petSlots)) // afford the next slot
+  return [{ kind: 'shop', message: `DEBUG: ${pet.name} is now Adult (Lv ${pet.petLevel}) — breeding unlocked.` }]
+}
+
 /** Roll a weighted reward from the pool and apply it. Shared by spin + meteor. */
 function rollAndApplyReward(p: PlayerData): { reward: C.SpinReward; index: number } {
   const total = C.SPIN_REWARDS.reduce((s, r) => s + r.weight, 0)
