@@ -1,14 +1,14 @@
-# My Dear Pet
+# Marsh Colony
 
 > A cozy, multiplayer virtual-pet game built for Decentraland.
 
-![My Dear Pet scene preview](assets/images/thumbnail.png)
+![Marsh Colony scene preview](assets/images/thumbnail.png)
 
-**My Dear Pet** turns everyday pet care into a shared Decentraland adventure. Adopt a companion, keep it healthy and happy, help it grow, discover new family combinations through breeding, and meet other caretakers in a persistent social world.
+**Marsh Colony** turns everyday pet care into a shared Decentraland adventure. Adopt a companion, keep it healthy and happy, help it grow, discover new family combinations through breeding, and meet other caretakers in a persistent social world.
 
 ## Play now
 
-My Dear Pet is currently deployed in the Decentraland World **`marshcolony.dcl.eth`**.
+Marsh Colony is currently deployed in the Decentraland World **`marshcolony.dcl.eth`**.
 
 ## The experience
 
@@ -45,7 +45,7 @@ Your pet's hunger, hygiene, energy, and happiness change over real time, includi
 
 ## Built for Decentraland
 
-My Dear Pet is a Decentraland SDK7 scene with an authoritative multiplayer server. The server validates gameplay actions, applies stat decay and rewards, saves player state by wallet, and sends snapshots back to the client. The client handles the responsive UI, local animation, navigation, minigames, and rendering of other players' pets.
+Marsh Colony is a Decentraland SDK7 scene with an authoritative multiplayer server. The server validates gameplay actions, applies stat decay and rewards, saves player state by wallet, and sends snapshots back to the client. The client handles the responsive UI, local animation, navigation, minigames, and rendering of other players' pets.
 
 ```text
 src/
@@ -110,4 +110,4 @@ To test social features locally, open the preview in two separate player session
 
 ## Project status
 
-My Dear Pet is in active development. The current build focuses on a complete care loop, collectible pet progression, and meaningful social play in a persistent Decentraland scene.
+Marsh Colony is in active development. The current build focuses on a complete care loop, collectible pet progression, and meaningful social play in a persistent Decentraland scene.
