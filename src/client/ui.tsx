@@ -1937,7 +1937,7 @@ function JukeboxPanel() {
 // Shows one toast at a time from clientState.toasts (a queue) — advances to the
 // next message once the current one expires, instead of stacking every pushed
 // toast on screen at once. It deploys from the left edge, holds, then retracts
-// left while staying in the Explorer-reported interactable safe zone.
+// left while respecting the platform-specific HUD area.
 // The server `notify` kind picks the accent color (error/reward/progress/info).
 const TOAST_ENTER_MS = 240 // slide-in from the left
 const TOAST_HOLD_MS = 3100 // fully-shown dwell
@@ -1947,6 +1947,7 @@ const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
 // both fully rounded. TOAST_BORDER is pre-S (applied with S() at render).
 const TOAST_BORDER = 5 // border thickness (pre-S)
 const TOAST_TOP = '25%' as const
+const DESKTOP_ACTION_LEFT = 60 // pre-S; shared left margin for toast and back
 const TOAST_HEIGHT = 92 // pre-S
 const BACK_BUTTON_TOAST_GAP = 14 // pre-S
 // Intentionally kept at the mobile placement specified for this scene.
@@ -1975,8 +1976,10 @@ function Toasts() {
   }
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
-  const toastOffsetX = mobile() ? TOAST_MOBILE_OFFSET_X : 0
-  const toastOffsetY = mobile() ? TOAST_MOBILE_OFFSET_Y : 0
+  const isM = mobile()
+  const HudArea = isM ? InteractableArea : ScreenInsetArea
+  const toastOffsetX = isM ? TOAST_MOBILE_OFFSET_X : 0
+  const toastOffsetY = isM ? TOAST_MOBILE_OFFSET_Y : 0
 
   // A visible BackButton reads the active toast below and shifts beneath this
   // fixed notification row, so the two never overlap.
@@ -1999,19 +2002,19 @@ function Toasts() {
     alpha = p
   }
 
-  // InteractableArea keeps this notification clear of Explorer chrome and
-  // platform overlays, rather than relying on raw screen-edge coordinates.
+  // Mobile retains its calibrated interactable-area placement. Desktop uses
+  // screen insets: its interactable area reserves the left quarter for client UI.
   const border = S(TOAST_BORDER)
   return (
     // Left side, slide-in from the left. The pill is drawn in code: a brown
     // border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      <InteractableArea>
+      <HudArea>
         <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
           <UiEntity
             uiTransform={{
               positionType: 'absolute',
-              position: { top: TOAST_TOP, left: 0 },
+              position: { top: TOAST_TOP, left: isM ? 0 : S(DESKTOP_ACTION_LEFT) },
               margin: { left: -slide + S(toastOffsetX), top: S(toastOffsetY) },
               width: w,
               height: h,
@@ -2039,7 +2042,7 @@ function Toasts() {
             </UiEntity>
           </UiEntity>
         </UiEntity>
-      </InteractableArea>
+      </HudArea>
     </UiEntity>
   )
 }
@@ -2050,21 +2053,21 @@ function Toasts() {
 const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
-// game / Bath / Feed errand). Top-left, inset from the corner, pushed further
-// in on mobile so the app's own corner UI doesn't cover it, and sat a quarter
-// of the way down the screen (halfway between the top edge and
-// screen-center). One place so every action's BACK matches.
+// game / Bath / Feed errand). Desktop shares the toast's left-edge anchor
+// a quarter down the screen and only moves vertically when a toast is visible.
+// Mobile shares the notification's calibrated horizontal offset.
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const isM = mobile()
   const toastVisible = toastIsVisible(Date.now())
   const toastOffsetY = isM ? TOAST_MOBILE_OFFSET_Y : 0
-  const pos = { top: TOAST_TOP, left: isM ? S(210) : S(130) }
+  const HudArea = isM ? InteractableArea : ScreenInsetArea
+  const pos = { top: TOAST_TOP, left: isM ? 0 : S(DESKTOP_ACTION_LEFT) }
   const d = S(90)
   return (
-    <InteractableArea>
+    <HudArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <UiEntity
-          uiTransform={{ positionType: 'absolute', position: pos, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+          uiTransform={{ positionType: 'absolute', position: pos, margin: { left: isM ? S(TOAST_MOBILE_OFFSET_X) : 0, top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP + toastOffsetY) : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
           uiBackground={{
             texture: { src: BACK_ARROW_ICON },
             textureMode: 'stretch',
@@ -2077,7 +2080,7 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
           }}
         />
       </UiEntity>
-    </InteractableArea>
+    </HudArea>
   )
 }
 
