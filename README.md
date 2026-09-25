@@ -1,63 +1,109 @@
 # My Dear Pet
 
-A Tamagotchi-style **pet care game** for Decentraland (SDK7) — adopt a pet, keep
-it fed, clean, rested and happy, earn coins from its happiness, and raise it in a
-shared social Care Center. Inspired by Pou + Roblox Adopt Me.
+> A cozy, multiplayer virtual-pet game built for Decentraland.
 
-> Status: MVP in active development. See [`dev-docs/mvp.md`](dev-docs/mvp.md) for
-> the full design doc and implementation status.
+![My Dear Pet scene preview](assets/images/thumbnail.png)
+
+**My Dear Pet** turns everyday pet care into a shared Decentraland adventure. Adopt a companion, keep it healthy and happy, help it grow, discover new family combinations through breeding, and meet other caretakers in a persistent social world.
+
+## The experience
+
+```text
+Adopt a pet -> care for its needs -> grow together -> collect new companions -> share the world
+```
+
+Your pet's hunger, hygiene, energy, and happiness change over real time, including while you are away. Looking after it earns experience and coins, helps it grow from Junior to Teenager to Adult, and unlocks longer-term collection goals.
 
 ## Features
 
-- **Adopt & raise pets** — pick from 11 species, name them, watch them grow with care.
-- **Care loop** — Feed (Bowl), Bath (Pond), Sleep (Bed), Play (Ball). Actions are
-  queued: the pet walks to each station, animates, then rests before the next.
-- **Live stats & decay** — Hunger / Hygiene / Energy / Happiness decay over time.
-- **Economy** — happiness generates passive coins; a tabbed Shop sells food and
-  extra pet slots; an Inventory holds consumables.
-- **Progression** — Caretaker level (player XP) + per-pet XP, achievements/goals,
-  a **7-day login streak** calendar, and a weighted **spin wheel**.
-- **Multiple pets** — your non-active pets roam the world; tap one to select it.
-- **Social** — other players' active pets are visible following them in real time
-  (native `MessageBus` peer presence); pet other players' pets for a Giving score.
-- **Mobile-first UI** — rounded, animated, touch-sized HUD with a dialog-driven
-  Caretaker tutorial. Nothing is placed in screen corners (reserved by DCL mobile).
+### Care, play, and wellbeing
 
-## Architecture
+- Adopt one of four starter pet families: **Sprout, Pepito, Amebita,** or **Fluflito**.
+- Feed your pet through a fruit-catching minigame, clean it in a bubble-popping bath, let it rest in bed, and play fetch together.
+- Pets express their needs, can be petted for a happiness boost, and may become sick after eating bad fruit. Visit the Caretaker to complete the cure sequence.
+- Care actions are animated in the world: pets navigate to the relevant station, interact with it, and return to their routine.
+- A responsive, mobile-friendly HUD keeps care, inventory, goals, rewards, and your pet roster close at hand.
 
-Single codebase, server/client split via `isServer()` (`src/index.ts`):
+### Growth, collection, and rewards
 
-```
+- Earn pet XP, Caretaker XP, coins, achievements, and login-streak rewards through consistent care.
+- Use the shop for food, additional pet slots, and rarity potions.
+- Grow pets through **Junior**, **Teenager**, and **Adult** stages. Adult pets can breed with another pet in your roster.
+- Hatch offspring with inherited head/body family combinations. Four families create 16 possible visual combinations, with common, rare, and legendary cosmetic rarities.
+- Build your collection with daily rewards, spin tickets, and a once-per-day meteor reward.
+
+### A social pet world
+
+- Your active pet follows you through the scene; choose whether it should follow or stay, and carry it when needed.
+- See other players' active pets in real time, pet them to raise their happiness, and earn Giving progress.
+- Offer a direct pet-for-pet swap to another nearby player.
+- Compete on persistent coin and Caretaker XP leaderboards, while contributing to the shared pet-population counter.
+
+## Built for Decentraland
+
+My Dear Pet is a Decentraland SDK7 scene with an authoritative multiplayer server. The server validates gameplay actions, applies stat decay and rewards, saves player state by wallet, and sends snapshots back to the client. The client handles the responsive UI, local animation, navigation, minigames, and rendering of other players' pets.
+
+```text
 src/
-  shared/   types, tuning config (all balance lives in config.ts), message schemas
-  server/   headless authoritative server: state, decay, persistence (Storage)
-  client/   pet rendering/animation/navigation, peer presence, local simulation, UI
+  index.ts       Client/server entry point selected with isServer()
+  shared/        Game types, balance configuration, and message contracts
+  server/        Authoritative state, validation, persistence, and presence
+  client/        UI, pet rendering, navigation, interactions, and minigames
+
+assets/scene/main.composite
+                  Static Creator Hub scene entities and interaction stations
 ```
 
-The client also **simulates the game locally** (seeds a default player, runs decay
-/ economy / streak) so the HUD always renders and play stays responsive; the
-authoritative server corrects and persists state via snapshots when reachable.
+Static objects such as the feeder, bed, pool, Caretaker, shop, and home are placed in `assets/scene/main.composite`. Game code finds those scene objects by name, keeping world layout in the Creator Hub and gameplay logic in TypeScript.
 
-Scene objects (Bowl, Bed, Ball, Pond, Caretaker, Shop) are placed in the Creator
-Hub editor (`assets/scene/main.composite`) and referenced by name.
+## Run locally
 
-## Develop
+### Requirements
+
+- Node.js 22 or later
+- npm
+
+### Commands
 
 ```bash
 npm install
-npm start      # preview (auto-starts the authoritative server)
-npm run build  # type-check + bundle
+npm start
 ```
 
-Open two browser windows against the preview to test multiplayer (each is a
-separate player).
+`npm start` launches the local Decentraland preview and its authoritative server. For an offline visual-preview workflow, use:
 
-## Notes
+```bash
+npm run start:offline
+```
 
-- Uses the `@dcl/sdk@auth-server` branch (required for `isServer`, `Storage`,
-  `registerMessages`).
-- To see `[Server]` logs, add your wallet address to `logsPermissions` in `scene.json`.
-- A couple of clearly-commented `// TEST` hooks (free coins via the Caretaker /
-  Shop) exist for fast economy testing — remove before launch.
+Build the project before sharing or deploying changes:
 
-🤖 Built with [Claude Code](https://claude.com/claude-code)
+```bash
+npm run build
+```
+
+To test social features locally, open the preview in two separate player sessions. Each session receives its own saved state and can see the other player's active pet.
+
+## Available scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm start` | Start the local preview and authoritative server. |
+| `npm run start:offline` | Start a local preview without the authentication screen. |
+| `npm run build` | Type-check and bundle the scene. |
+| `npm run deploy` | Deploy using the default Decentraland target. |
+| `npm run deploy:testing` | Deploy to the Decentraland testing content server. |
+| `npm run deploy:production` | Deploy to the Decentraland production content server. |
+| `npm run server-logs` | Read logs from the authoritative server. |
+
+## Configuration and development notes
+
+- All gameplay balance lives in [`src/shared/config.ts`](src/shared/config.ts): stat decay, rewards, prices, XP, care effects, breeding odds, species, and progression thresholds.
+- Shared player and pet data contracts are defined in [`src/shared/types.ts`](src/shared/types.ts), while client/server messages live in [`src/shared/messages.ts`](src/shared/messages.ts).
+- The server is the source of truth for stats, currency, inventory, breeding, swaps, rewards, and persistence. Keep client-side changes responsive, but do not move authoritative rules out of `src/server/`.
+- Before a production release, set `DEBUG_GROW_ENABLED` to `false` in `src/shared/config.ts` to disable the development growth shortcut. `DEV_SKIP_SERVER_GATE` is also intended only for visual scene work without a live server.
+- To view server logs in the Explorer, add the appropriate wallet address to `logsPermissions` in `scene.json`.
+
+## Project status
+
+My Dear Pet is in active development. The current build focuses on a complete care loop, collectible pet progression, and meaningful social play in a persistent Decentraland scene.
