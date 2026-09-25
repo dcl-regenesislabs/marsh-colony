@@ -28,6 +28,15 @@ import {
 import { getPlayer } from '@dcl/sdk/players'
 import { Vector3, Quaternion, Color4 } from '@dcl/sdk/math'
 import { actions, clientState } from './state'
+import { mobile } from './ui/theme'
+import { requestPlayerFace, getPlayerFaceUrl } from './snapshots'
+
+// Cap the name so it can't grow into the centred dashes column. Mobile is tighter.
+const NAME_MAX_MOBILE = 6
+const NAME_MAX_DESKTOP = 7
+function displayName(n: string): string {
+  return n.slice(0, mobile() ? NAME_MAX_MOBILE : NAME_MAX_DESKTOP)
+}
 
 const ROWS = 5 // top-5
 
@@ -43,15 +52,15 @@ const ROW_STEP = 0.5 // vertical gap between rows (5 rows centred on the anchor)
 const FACE_OUT = 0.15 // how far every element floats off the panel surface (+Z)
 const FACE_X = -1.35 // avatar face column (left)
 const NAME_X = -1.05 // name starts here (left-aligned)
-const DASH_X = 0.2 // the "-----" filler, centred here
+const DASH_X = 0.45 // the "-----" filler, centred here (right of the name column)
 const XP_X = 1.35 // value ends here (right-aligned)
 const FACE_SIZE = 0.4 // avatar face plane side length
 // In-world TextShape fontSize is ~2–3 (NOT metres / the UI's px scale) — small
 // values render invisibly tiny.
-const NAME_SIZE = 1.6
-const XP_SIZE = 1.6
-const DASH_SIZE = 1.3
-const DASHES = '----------'
+const NAME_SIZE = 2.2
+const XP_SIZE = 2.2
+const DASH_SIZE = 1.8
+const DASHES = '------'
 
 const REFRESH_S = 30 // standings refresh cadence (server also rate-limits)
 const FIRST_REQUEST_S = 3
@@ -66,7 +75,8 @@ const DASH_COLOR = Color4.create(0.75, 0.78, 0.85, 1)
 const DIM_COLOR = Color4.create(0.7, 0.72, 0.78, 1) // placeholder text
 const OUTLINE = Color4.create(0, 0, 0, 1)
 
-type Row = { face: Entity; name: Entity; dash: Entity; xp: Entity; address: string }
+type Row = { face: Entity; name: Entity; dash: Entity; xp: Entity; address: string; faceUrl: string }
+const FACE_PLACEHOLDER = Color4.create(0.28, 0.3, 0.36, 1) // shown while the face loads
 type Kind = 'xp' | 'placeholder'
 type Block = { kind: Kind; rows: Row[]; pos: Vector3; rot: Quaternion; shownKey: string }
 
@@ -102,7 +112,8 @@ function buildBlock(kind: Kind, pos: Vector3, yaw: number): Block {
       name: makeText(b, NAME_X, y, NAME_SIZE, NAME_COLOR, TextAlignMode.TAM_MIDDLE_LEFT),
       dash: makeText(b, DASH_X, y, DASH_SIZE, DASH_COLOR, TextAlignMode.TAM_MIDDLE_CENTER),
       xp: makeText(b, XP_X, y, XP_SIZE, XP_COLOR, TextAlignMode.TAM_MIDDLE_RIGHT),
-      address: ''
+      address: '',
+      faceUrl: ''
     })
   }
   return b
@@ -162,17 +173,35 @@ function refreshBlock(b: Block): void {
       TextShape.getMutable(row.xp).text = ''
       VisibilityComponent.getMutable(row.face).visible = false
       row.address = ''
+      row.faceUrl = ''
       return
     }
-    TextShape.getMutable(row.name).text = `#${i + 1}  ${r.name}`
+    TextShape.getMutable(row.name).text = `#${i + 1}  ${displayName(r.name)}`
     TextShape.getMutable(row.dash).text = DASHES
     TextShape.getMutable(row.xp).text = `${r.xp} XP`
+    // Faces come from the profile snapshot (face256.png) over HTTP — works on all
+    // clients. Kick off the fetch and show a placeholder tile until it resolves;
+    // updateFaces() swaps in the texture once the URL is ready.
     if (r.address !== row.address) {
       row.address = r.address
-      Material.setBasicMaterial(row.face, { texture: Material.Texture.Avatar({ userId: r.address }) })
+      row.faceUrl = ''
+      requestPlayerFace(r.address)
+      Material.setBasicMaterial(row.face, { diffuseColor: FACE_PLACEHOLDER })
       VisibilityComponent.getMutable(row.face).visible = true
     }
   })
+}
+
+// Swap the placeholder tile for the real face once its snapshot URL resolves.
+function updateFaces(b: Block): void {
+  for (const row of b.rows) {
+    if (!row.address) continue
+    const url = getPlayerFaceUrl(row.address)
+    if (url && url !== row.faceUrl) {
+      row.faceUrl = url
+      Material.setBasicMaterial(row.face, { texture: Material.Texture.Common({ src: url }) })
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +264,10 @@ export function setupScoreboard(): void {
       if (DEBUG_TUNER) beginTuner(blocks.find((b) => b.kind === TUNE_BLOCK)!)
       return
     }
-    for (const b of blocks) refreshBlock(b)
+    for (const b of blocks) {
+      refreshBlock(b)
+      if (b.kind === 'xp') updateFaces(b) // swap in profile faces as they resolve
+    }
 
     if (DEBUG_TUNER) {
       const target = blocks.find((b) => b.kind === TUNE_BLOCK)
