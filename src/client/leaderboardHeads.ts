@@ -23,7 +23,7 @@ const HEAD_POINTS = [
   EntityNames.Headpoint06
 ]
 
-const AVATAR_SCALE = 0.42// avatar size relative to the Headpoint's own scale (a 1.75 m avatar -> ~0.5 m)
+const AVATAR_SCALE = 0.42 // avatar scale in the Headpoint's LOCAL space. The Headpoints are children of LeaderBoard01 (parent scale 2.1), so the real seated height is ~1.75 m × 0.42 × 2.1 ≈ 1.54 m.
 // Slots alternate poses (1st/3rd/5th use the first, 2nd/4th/6th the second) for variety.
 // Built-ins: sittingChair1/2, sittingGround1/2.
 const SIT_EMOTES = ['sittingChair1', 'sittingChair2']
