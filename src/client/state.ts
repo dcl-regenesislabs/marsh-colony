@@ -157,6 +157,8 @@ export const clientState: {
   colonyPopulation: number
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
+  // XP leaderboard (top 5), polled by the physical scoreboard (requestLeaderboardXp).
+  leaderboardXp: LeaderboardEntry[]
 } = {
   myAddress: '',
   player: null,
@@ -192,7 +194,8 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
-  leaderboard: []
+  leaderboard: [],
+  leaderboardXp: []
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
@@ -430,6 +433,9 @@ export const actions = {
   },
   requestLeaderboard(): void {
     room.send('requestLeaderboard', {})
+  },
+  requestLeaderboardXp(): void {
+    room.send('requestLeaderboardXp', {})
   },
   adopt(species: string, name: string): void {
     console.log('[Client] -> adopt', species, name)

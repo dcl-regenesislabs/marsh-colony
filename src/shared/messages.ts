@@ -61,10 +61,14 @@ export const Messages = {
   respondSwap: Schemas.Map({ accept: Schemas.Boolean }),
   // Ask the server for the current coins leaderboard (sent when the panel opens).
   requestLeaderboard: Schemas.Map({}),
+  // Ask the server for the XP-sorted leaderboard (drives the physical scoreboard).
+  requestLeaderboardXp: Schemas.Map({}),
 
   // ---- Server -> Client ----
   // Coins leaderboard (LeaderboardEntry[] JSON), sent to the requesting client.
   leaderboard: Schemas.Map({ json: Schemas.String }),
+  // XP leaderboard (LeaderboardEntry[] JSON), sent to the requesting client.
+  leaderboardXp: Schemas.Map({ json: Schemas.String }),
   // Full owner snapshot (PlayerSnapshot JSON) for the requesting client.
   stateSnapshot: Schemas.Map({ json: Schemas.String }),
   // Broadcast of all pet presence entries (PresenceEntry[] JSON) for social rendering.

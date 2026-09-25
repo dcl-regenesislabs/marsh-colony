@@ -951,7 +951,16 @@
   ],
   "requiredPermissions": [
     "ALLOW_TO_TRIGGER_AVATAR_EMOTE",
-    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE"
+    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE",
+    "ALLOW_MEDIA_HOSTNAMES",
+    "USE_FETCH"
+  ],
+  "allowedMediaHostnames": [
+    "peer.decentraland.org",
+    "peer-ec1.decentraland.org",
+    "peer-eu1.decentraland.org",
+    "profile-images.decentraland.org",
+    "profile-images-bucket-43d0c58.s3.us-east-1.amazonaws.com"
   ],
   "featureToggles": {
     "voiceChat": "enabled",
