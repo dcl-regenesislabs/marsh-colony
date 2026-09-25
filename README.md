@@ -6,6 +6,10 @@
 
 **My Dear Pet** turns everyday pet care into a shared Decentraland adventure. Adopt a companion, keep it healthy and happy, help it grow, discover new family combinations through breeding, and meet other caretakers in a persistent social world.
 
+## Play now
+
+My Dear Pet is currently deployed in the Decentraland World **`marshcolony.dcl.eth`**.
+
 ## The experience
 
 ```text
