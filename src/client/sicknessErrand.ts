@@ -15,12 +15,16 @@ import { getPotionTableEntity } from './sicknessProps'
 import { sicknessCinematicOwnsFlow } from './sicknessCinematic'
 
 const CARETAKER_RADIUS = 5
-const ENTER_TRANSITION_S = 0.35
+// Give the Care Center shot enough time to settle before its dialogue appears.
+// This is also the visual lead-in to Pepito's theft sequence.
+const ENTER_TRANSITION_S = 0.55
 const TABLE_ESTABLISH_S = 0.75
 const CAGE_OPEN_SPEED = 0.4
-const EXIT_FADE_OUT_MS = 160
-const EXIT_FADE_HOLD_MS = 250
-const EXIT_FADE_IN_MS = 200
+// The camera has already glided back behind the avatar when this fade starts.
+// These gentler timings conceal only the native-rig hand-off, not the story beat.
+const EXIT_FADE_OUT_MS = 240
+const EXIT_FADE_HOLD_MS = 320
+const EXIT_FADE_IN_MS = 260
 
 let cureRunning = false
 let cureClosing = false

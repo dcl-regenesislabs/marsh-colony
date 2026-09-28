@@ -1153,6 +1153,7 @@ export function cureCinematicEmoteId(): 'sick' | 'heart' | null {
 // ---------------------------------------------------------------------------
 let petCam: Entity | null = null
 let petCamFocus: Entity | null = null
+const PETTING_CAM_TRANSITION_S = 0.5
 
 /** Enter petting mode: frame the pet, face it to camera, freeze the avatar. */
 export function startPetting(): void {
@@ -1177,7 +1178,10 @@ export function startPetting(): void {
     position: Vector3.create(petPos.x, petPos.y + PETTING_CAMERA_LOOK_LIFT, petPos.z)
   })
   Transform.createOrReplace(petCam, { position: camPos })
-  VirtualCamera.createOrReplace(petCam, { lookAtEntity: petCamFocus })
+  VirtualCamera.createOrReplace(petCam, {
+    lookAtEntity: petCamFocus,
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(PETTING_CAM_TRANSITION_S) }
+  })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
 
   // Turn the pet to face the camera so we see its front, and freeze it there.
@@ -1471,6 +1475,7 @@ const BATH_MOBILE_CAM_BEARING_DEG = 270
 const BATH_MOBILE_CAM_DIST = 3.8
 const BATH_MOBILE_CAM_HEIGHT = 3.4
 const BATH_CAM_TRANSITION_S = 0.8 // blend-in time, mirrors the fruit minigame's ARRIVAL_CAM_TRANSITION_S (no hard cut)
+const HATCH_CAM_TRANSITION_S = 0.6
 
 function bathCameraPosition(bathPos: Vector3): Vector3 {
   if (!mobile()) return Vector3.create(bathPos.x, bathPos.y + BATH_CAM_HEIGHT, bathPos.z - BATH_CAM_DIST)
@@ -2244,7 +2249,10 @@ export function startHatch(species: string, name: string): void {
   const camPos = Vector3.create(eggPos.x + Math.sin(camRad) * HATCH_CAM_DIST, eggPos.y + HATCH_CAM_HEIGHT, eggPos.z + Math.cos(camRad) * HATCH_CAM_DIST)
   if (!petCam) petCam = engine.addEntity()
   Transform.createOrReplace(petCam, { position: camPos })
-  VirtualCamera.createOrReplace(petCam, { lookAtEntity: hatchFocus })
+  VirtualCamera.createOrReplace(petCam, {
+    lookAtEntity: hatchFocus,
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(HATCH_CAM_TRANSITION_S) }
+  })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: petCam })
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
 }
