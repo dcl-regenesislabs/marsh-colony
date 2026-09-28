@@ -2065,9 +2065,7 @@ const DESKTOP_ACTION_LEFT = 0 // pre-S; left edge of the interactable area
 const MOBILE_BACK_LEFT = 16 // pre-S; device-safe edge without clipping the art
 const TOAST_HEIGHT = 92 // pre-S
 const BACK_BUTTON_TOAST_GAP = 14 // pre-S
-// Intentionally kept at the mobile placement specified for this scene.
-// These are fixed composition adjustments, not safe-area fallbacks.
-const TOAST_MOBILE_OFFSET_X = -320 // pre-S
+// This is a fixed vertical composition adjustment, not a safe-area fallback.
 const TOAST_MOBILE_OFFSET_Y = -40 // pre-S
 const TOAST_BORDER_COLOR: Color = { r: 0.525, g: 0.318, b: 0.173, a: 1 } // #86512C brown
 const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cream
@@ -2075,14 +2073,16 @@ const TOAST_CREAM: Color = { r: 0.969, g: 0.941, b: 0.871, a: 1 } // #F7F0DE cre
 const withAlpha = (c: Color, a: number): Color => ({ r: c.r, g: c.g, b: c.b, a: c.a * a })
 const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 
-// Toasts stay inside the Explorer's interactable area. BACK uses the device
-// safe area on mobile because its Explorer interactable area is far too inset.
+// Desktop toasts stay inside the Explorer's interactable area. The main renderer
+// uses screenInset: 'none', so mobile toasts use ScreenInsetArea to take their
+// left edge directly from the renderer-reported device safe border; the slide
+// tween then remains relative to that live edge.
 function actionHudLayout() {
   const isM = mobile()
   return {
     mobile: isM,
-    toastPosition: { top: TOAST_TOP, left: isM ? 0 : S(DESKTOP_ACTION_LEFT) },
-    toastMargin: { left: isM ? S(TOAST_MOBILE_OFFSET_X) : 0, top: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0 },
+    toastPosition: { top: TOAST_TOP, left: S(DESKTOP_ACTION_LEFT) },
+    toastMargin: { left: 0, top: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0 },
     backPosition: { top: TOAST_TOP, left: isM ? S(MOBILE_BACK_LEFT) : S(DESKTOP_ACTION_LEFT) },
     toastBackOffsetY: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0
   }
@@ -2105,6 +2105,7 @@ function Toasts() {
   const t = clientState.currentToast
   if (!t || t.until <= now) return <UiEntity />
   const layout = actionHudLayout()
+  const ToastArea = layout.mobile ? ScreenInsetArea : InteractableArea
 
   // A visible BackButton reads the active toast below and shifts beneath this
   // fixed notification row, so the two never overlap.
@@ -2132,7 +2133,7 @@ function Toasts() {
     // Left side, slide-in from the left. The pill is drawn in code: a brown
     // border (outer) wrapping a cream fill (inner), both fully rounded.
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      <InteractableArea>
+      <ToastArea>
         <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
           <UiEntity
             uiTransform={{
@@ -2165,7 +2166,7 @@ function Toasts() {
             </UiEntity>
           </UiEntity>
         </UiEntity>
-      </InteractableArea>
+      </ToastArea>
     </UiEntity>
   )
 }
