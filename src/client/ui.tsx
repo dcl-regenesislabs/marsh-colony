@@ -55,6 +55,7 @@ import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './
 import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 import { pepitoStealHidesHud } from './pepitoSteal'
+import { areCriticalUiAssetsReady } from './uiAssets'
 
 export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard'
 export type ShopTabId = 'food' | 'slots'
@@ -3417,9 +3418,19 @@ const LOADING_HINT_DELAY_MS = 8000
 function LoadingGate() {
   if (loadingGateSince === 0) loadingGateSince = Date.now()
   const waitingTooLong = Date.now() - loadingGateSince > LOADING_HINT_DELAY_MS
+  const waitingForAssets = !areCriticalUiAssetsReady()
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'flex-end', pointerFilter: 'block' }}>
-      {waitingTooLong && (
+      {waitingForAssets && (
+        <Label
+          value="Loading game art..."
+          fontSize={S(16)}
+          color={C.dim}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', height: S(30), margin: { bottom: S(60) } }}
+        />
+      )}
+      {!waitingForAssets && waitingTooLong && (
         <Label
           value="Still connecting to the server…"
           fontSize={S(16)}
@@ -3444,7 +3455,7 @@ const Root = () => {
   // below can render on top of ANY of these branches, not just the default one.
   const hideHudForPepitoTheft = pepitoStealHidesHud()
   const content =
-    !clientState.serverReady ? (
+    !clientState.serverReady || (!Cfg.DEV_SKIP_SERVER_GATE && !areCriticalUiAssetsReady()) ? (
       <LoadingGate />
     ) : clientState.petting.active ? (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>

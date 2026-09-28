@@ -45,7 +45,7 @@ import { setupSicknessProps } from './sicknessProps'
 import { setupPepitoSteal } from './pepitoSteal'
 import { setupPepitoChase } from './pepitoChase'
 import { preloadCreatureTextures } from './creatureSkins'
-import { preloadUiAssets } from './uiAssets'
+import { onCriticalUiAssetsReady, preloadUiAssets } from './uiAssets'
 import { setupPetEmotes } from './petEmotes'
 import { setupNav } from './nav'
 import { getPrivateAvatarAreaAnchor, PRIVATE_AVATAR_AREAS } from './privacyAreas'
@@ -248,6 +248,14 @@ function registerHandlers(): void {
 }
 
 export function setupClient(): void {
+  // Start the Raft-style HUD cache before any client bootstrap work. Its
+  // critical first-frame textures also gate the HUD reveal below.
+  preloadUiAssets()
+  // Creature skins are a large optional cache. Start them after the initial
+  // HUD has settled so a first-time mobile visit does not download them in
+  // competition with the textures the player can see immediately.
+  onCriticalUiAssetsReady(preloadCreatureTextures)
+
   resolveMyAddress()
   seedLocalPlayer() // HUD renders immediately, no waiting on the network
   setupSkybox() // Mars ground + boundary colliders
@@ -265,12 +273,10 @@ export function setupClient(): void {
   setupScoreboard() // physical XP scoreboard text rows on LeaderBoard01 (top-5 by XP)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
-  preloadUiAssets() // warm panel, icon, and minigame-control textures before the UI can appear
   setupUi()
   applyDefaultTouchControls()
   setupAvatarModifierAreas() // hide other players in the Feed tree and house focus areas
   setupInput()
-  preloadCreatureTextures() // warm the creature-skin PNG cache so runtime skins don't pop in
   setupPetSystems() // renders + simulates remote pets from server `presence`
   setupPlay() // Play action: throw an animated meteorite forward
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
