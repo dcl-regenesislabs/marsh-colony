@@ -2062,7 +2062,6 @@ const TOAST_TOTAL_MS = TOAST_ENTER_MS + TOAST_HOLD_MS + TOAST_EXIT_MS
 const TOAST_BORDER = 5 // border thickness (pre-S)
 const TOAST_TOP = '25%' as const
 const DESKTOP_ACTION_LEFT = 60 // pre-S; left padding from the device-safe edge
-const MOBILE_BACK_LEFT = 16 // pre-S; device-safe edge without clipping the art
 const TOAST_HEIGHT = 92 // pre-S
 const BACK_BUTTON_TOAST_GAP = 14 // pre-S
 // This is a fixed vertical composition adjustment, not a safe-area fallback.
@@ -2079,11 +2078,12 @@ const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3)
 // the Explorer interactable area. The slide tween remains relative to that edge.
 function actionHudLayout() {
   const isM = mobile()
+  const toastLeft = isM ? 0 : S(DESKTOP_ACTION_LEFT)
   return {
     mobile: isM,
-    toastPosition: { top: TOAST_TOP, left: isM ? 0 : S(DESKTOP_ACTION_LEFT) },
+    toastPosition: { top: TOAST_TOP, left: toastLeft },
     toastMargin: { left: 0, top: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0 },
-    backPosition: { top: TOAST_TOP, left: isM ? S(MOBILE_BACK_LEFT) : S(DESKTOP_ACTION_LEFT) },
+    backPosition: { top: TOAST_TOP, left: toastLeft },
     toastBackOffsetY: isM ? S(TOAST_MOBILE_OFFSET_Y) : 0
   }
 }
@@ -2175,15 +2175,14 @@ function Toasts() {
 const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
-// game / Bath / Feed errand). On mobile it is anchored against the device-safe
-// edge; desktop uses the Explorer-safe interactable area to clear native UI.
+// game / Bath / Feed errand). It shares the toast's device-safe anchor on both
+// mobile and Unity, then moves below the toast while that notification is open.
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const toastVisible = toastIsVisible(Date.now())
   const layout = actionHudLayout()
-  const BackArea = layout.mobile ? ScreenInsetArea : InteractableArea
   const d = S(90)
   return (
-    <BackArea>
+    <ScreenInsetArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: layout.backPosition, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP) + layout.toastBackOffsetY : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
@@ -2199,7 +2198,7 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
           }}
         />
       </UiEntity>
-    </BackArea>
+    </ScreenInsetArea>
   )
 }
 
