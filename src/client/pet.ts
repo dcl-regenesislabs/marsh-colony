@@ -154,6 +154,7 @@ const remotePets = new Map<string, Entity>()
 const remoteSpecies = new Map<string, string>()
 const remoteSkinKey = new Map<string, string>() // addr -> species|rarity of the applied skin
 const remoteCarried = new Map<string, Entity>() // addr -> anchor attached to that owner's avatar
+const remoteEggs = new Map<string, { egg: Entity; anchor: Entity }>()
 const hiddenRemotePets = new Set<string>()
 
 // Floating tag above each pet: just its name. A billboard root faces the
@@ -2162,6 +2163,7 @@ function updateGetEgg(): void {
 export function startCarryEgg(species: string, name: string, isBreed = false): void {
   carryIsBreed = isBreed
   clientState.carryEgg = { active: true, species, name, atHome: false }
+  actions.setEggCarried(true)
 
   // An empty follows the right hand; the egg is a child offset into the palm.
   if (!carriedEggAnchor) carriedEggAnchor = engine.addEntity()
@@ -2206,6 +2208,7 @@ export function beginHatchFromCarry(): void {
     carriedEggAnchor = null
   }
   clientState.carryEgg = { active: false, species: '', name: '', atHome: false }
+  actions.setEggCarried(false)
   stopHoldEmote() // drop the hold pose, egg is no longer in hand
   hideArrow('carryEgg') // stop guiding home, the egg is no longer being carried
   startHatch(species, name)
@@ -2831,6 +2834,37 @@ function setRemotePetVisible(address: string, pet: Entity, visible: boolean): vo
   VisibilityComponent.createOrReplace(pet, { visible })
 }
 
+/** Mirror an egg held by another player without requiring an active pet. */
+function showRemoteEgg(address: string, visible: boolean): void {
+  let remoteEgg = remoteEggs.get(address)
+  if (!remoteEgg) {
+    const anchor = engine.addEntity()
+    Transform.create(anchor, {})
+    AvatarAttach.create(anchor, { avatarId: address, anchorPointId: AvatarAnchorPointType.AAPT_RIGHT_HAND })
+
+    const egg = engine.addEntity()
+    Transform.create(egg, {
+      parent: anchor,
+      position: EGG_HAND_OFFSET,
+      rotation: EGG_HAND_ROTATION,
+      scale: Vector3.scale(Vector3.One(), EGG_HAND_SCALE)
+    })
+    GltfContainer.create(egg, { src: EGG_MODEL })
+    Animator.create(egg, { states: [{ clip: 'Idle', playing: true, loop: true }] })
+    remoteEgg = { egg, anchor }
+    remoteEggs.set(address, remoteEgg)
+  }
+  VisibilityComponent.createOrReplace(remoteEgg.egg, { visible })
+}
+
+function removeRemoteEgg(address: string): void {
+  const remoteEgg = remoteEggs.get(address)
+  if (!remoteEgg) return
+  engine.removeEntity(remoteEgg.egg)
+  engine.removeEntity(remoteEgg.anchor)
+  remoteEggs.delete(address)
+}
+
 function updateRemotePets(dt: number): void {
   const me = clientState.myAddress.toLowerCase()
   const positions = remotePlayerPositions()
@@ -2842,6 +2876,19 @@ function updateRemotePets(dt: number): void {
     const ownerPos = positions.get(addr)
     if (!ownerPos) continue
     seen.add(addr)
+
+    if (entry.carriedEgg) {
+      const pet = remotePets.get(addr)
+      if (pet) {
+        setRemotePetVisible(addr, pet, false)
+        setRemotePetPointerCollider(pet, false)
+      }
+      const tag = remoteTags.get(addr)
+      if (tag) setTagVisible(tag, false)
+      showRemoteEgg(addr, !isInsidePrivateAvatarArea(ownerPos))
+      continue
+    }
+    removeRemoteEgg(addr)
 
     let ent = remotePets.get(addr)
     if (!ent) {
@@ -2920,6 +2967,10 @@ function updateRemotePets(dt: number): void {
     setRemotePetPointerCollider(ent, visible)
     if (tag) setTagVisible(tag, visible)
     if (tag) updateTag(tag, t.position, entry.species, entry.size, entry.name, null)
+  }
+
+  for (const [addr] of remoteEggs) {
+    if (!seen.has(addr)) removeRemoteEgg(addr)
   }
 
   for (const [addr, ent] of remotePets) {

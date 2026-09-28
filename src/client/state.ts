@@ -501,6 +501,9 @@ export const actions = {
   setCarried(carried: boolean): void {
     room.send('setCarried', { carried })
   },
+  setEggCarried(carried: boolean): void {
+    room.send('setEggCarried', { carried })
+  },
   openMeteor(): void {
     room.send('openMeteor', {})
   },

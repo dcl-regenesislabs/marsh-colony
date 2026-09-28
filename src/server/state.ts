@@ -33,6 +33,9 @@ const followState = new Map<string, boolean>()
 // Per-player bath carry state. Like follow state, this is session-only and is
 // broadcast in presence so other clients can render the pet on its owner.
 const carriedState = new Map<string, boolean>()
+// Like a carried pet, an egg exists only in the client carry flow, so retain
+// its session-only visual state separately for presence broadcasts.
+const carriedEggState = new Map<string, boolean>()
 
 /** Record a player's pet follow state so presence can broadcast it. */
 export function setFollowState(address: string, following: boolean): void {
@@ -42,6 +45,11 @@ export function setFollowState(address: string, following: boolean): void {
 /** Record whether a player is carrying their pet to the bath. */
 export function setCarriedState(address: string, carried: boolean): void {
   carriedState.set(address.toLowerCase(), carried)
+}
+
+/** Record whether a player is carrying an unhatched egg home. */
+export function setEggCarriedState(address: string, carried: boolean): void {
+  carriedEggState.set(address.toLowerCase(), carried)
 }
 
 /** Arm a cure only after server-side position validation at the Care Center. */
@@ -1026,17 +1034,21 @@ export function claimDailyReward(p: PlayerData): { notes: Notify[]; currency: nu
 // ---------------------------------------------------------------------------
 export function presenceFor(p: PlayerData): PresenceEntry | null {
   const pet = activePet(p)
-  if (!pet) return null
+  const carriedEgg = carriedEggState.get(p.address.toLowerCase()) ?? false
+  if (!pet && !carriedEgg) return null
   return {
     address: p.address,
-    species: pet.species,
-    name: pet.name,
-    rarity: pet.rarity,
-    size: pet.size,
-    mood: deriveMood(pet),
-    level: pet.petLevel,
+    // An egg can be carried before its first pet exists. The remote renderer
+    // branches on carriedEgg before reading these pet-only fallback fields.
+    species: pet?.species ?? '',
+    name: pet?.name ?? '',
+    rarity: pet?.rarity ?? 'common',
+    size: pet?.size ?? 1,
+    mood: pet ? deriveMood(pet) : 0,
+    level: pet?.petLevel ?? 1,
     following: followState.get(p.address.toLowerCase()) ?? true,
-    carried: carriedState.get(p.address.toLowerCase()) ?? false
+    carried: carriedState.get(p.address.toLowerCase()) ?? false,
+    carriedEgg
   }
 }
 

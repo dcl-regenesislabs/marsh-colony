@@ -330,6 +330,12 @@ export function server(): void {
     broadcastPresence() // remote clients need the carry pose immediately
   })
 
+  room.onMessage('setEggCarried', (data, ctx) => {
+    if (!ctx) return
+    S.setEggCarriedState(ctx.from, data.carried)
+    broadcastPresence() // remote clients need the carried egg immediately
+  })
+
   room.onMessage('proposeSwap', async (data, ctx) => {
     if (!ctx) return
     const from = await S.loadPlayer(ctx.from)
@@ -412,6 +418,7 @@ export function server(): void {
         connected.delete(addr)
         sessionStart.delete(addr)
         S.setCarriedState(addr, false)
+        S.setEggCarriedState(addr, false)
       }
     }
 
