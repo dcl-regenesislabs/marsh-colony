@@ -24,6 +24,7 @@ const BOTTLE_LEAVE_S = 0.6 // untips and shrinks away
 const HEART_HOLD_S = 1.8
 const CURE_REACTION_DELAY_S = 0.5 // the medicine needs a moment to work before the dance starts
 const CURE_FALLBACK_AFTER_POUR_S = 1.5 // cure anyway if no drop is ever seen landing
+const ENTER_TRANSITION_S = 0.5
 
 const APPEAR_AT_S = SAD_ESTABLISH_S
 const TILT_AT_S = APPEAR_AT_S + BOTTLE_APPEAR_S + BOTTLE_HOVER_S
@@ -55,7 +56,7 @@ export function startCureCelebration(onDone: () => void): boolean {
     rotation: Quaternion.fromLookAt(shot.camPos, shot.look)
   })
   VirtualCamera.createOrReplace(camera, {
-    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0.25) }
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(ENTER_TRANSITION_S) }
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
 

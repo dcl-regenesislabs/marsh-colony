@@ -9,7 +9,7 @@ import { endSadCinematic, startSadCinematic } from './pet'
 import { startSicknessErrand } from './sicknessErrand'
 import { openSicknessDialog } from './ui/dialog'
 
-const ENTER_TRANSITION_S = 0.35
+const ENTER_TRANSITION_S = 0.5
 const EXIT_FADE_OUT_MS = 160
 const EXIT_FADE_HOLD_MS = 250
 const EXIT_FADE_IN_MS = 200
