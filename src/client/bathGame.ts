@@ -16,7 +16,7 @@ import { applyCareLocal } from './sim'
 import { finishBath, endBathCamera } from './pet'
 
 export const BATH_DURATION_S = 16 // seconds of the timed popping phase
-export const BUBBLE_GOAL = 12 // pops needed for the pet to count as clean
+export const BUBBLE_GOAL = 25 // pops needed for the pet to count as clean
 export const BATH_COUNTDOWN_S = 3 // 3-2-1 before popping starts
 const MAX_BUBBLES = 9 // bubbles alive on screen at once
 const SPAWN_STAGGER_S = 0.22 // min gap between spawns so they don't appear in clumps
