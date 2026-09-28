@@ -87,6 +87,7 @@ export interface PresenceEntry {
   level: number
   following?: boolean // is the owner's pet currently following them?
   carried?: boolean // is the owner currently carrying the pet to the bath?
+  carriedEgg?: boolean // is the owner currently carrying an unhatched egg?
 }
 
 /** One row of the coins leaderboard (server-ranked, top N by currency). */
