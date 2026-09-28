@@ -58,6 +58,8 @@ import { pepitoStealHidesHud } from './pepitoSteal'
 
 export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard'
 export type ShopTabId = 'food' | 'slots'
+type MobileNameInput = 'adopt' | 'breed'
+type MobileMagnifierPhase = 'idle' | 'opening' | 'closing'
 
 const uiState = {
   panel: 'none' as Panel,
@@ -65,13 +67,6 @@ const uiState = {
   adoptStep: 'pick' as 'pick' | 'name',
   adoptSpecies: Cfg.SPECIES[0],
   adoptName: '',
-  // The full adoption card stays mounted while this compact mobile overlay is
-  // visible, so the native keyboard keeps focus on the original Input.
-  mobileNameTyping: false,
-  mobileNameMinimizing: false,
-  // UiInput emits onSubmit followed by onChange for the same native event.
-  // This prevents that trailing change from reopening the typing overlay.
-  mobileNameSubmitPending: false,
   // Breeding: partner pet chosen to cross with, and the name the player types for
   // the offspring (the server prefixes it "Gen-N ").
   breedPartnerId: '',
@@ -84,27 +79,63 @@ const uiState = {
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
-let mobileNameOverlayStartedAt = 0
-
-function showMobileNameOverlay(): void {
-  uiState.mobileNameMinimizing = false
-  if (uiState.mobileNameTyping) return
-  uiState.mobileNameTyping = true
-  mobileNameOverlayStartedAt = Date.now()
+const mobileMagnifier = {
+  target: null as MobileNameInput | null,
+  phase: 'idle' as MobileMagnifierPhase,
+  startedAt: 0,
+  // UiInput can report a submit as an immediately-following onChange. Remember
+  // that value only long enough to ignore that echo; a later changed value opens
+  // the magnifier normally.
+  submittedEcho: null as { target: MobileNameInput; value: string } | null
 }
 
-function hideMobileNameOverlay(): void {
-  if (!uiState.mobileNameTyping) return
-  uiState.mobileNameTyping = false
-  uiState.mobileNameMinimizing = true
-  mobileNameOverlayStartedAt = Date.now()
+function resetMobileMagnifier(): void {
+  mobileMagnifier.target = null
+  mobileMagnifier.phase = 'idle'
+  mobileMagnifier.startedAt = 0
+  mobileMagnifier.submittedEcho = null
 }
 
-function mobileNameOverlayProgress(): number {
-  const elapsed = Date.now() - mobileNameOverlayStartedAt
+function showMobileMagnifier(target: MobileNameInput): void {
+  if (mobileMagnifier.target === target && mobileMagnifier.phase === 'opening') return
+  mobileMagnifier.target = target
+  mobileMagnifier.phase = 'opening'
+  mobileMagnifier.startedAt = Date.now()
+}
+
+function hideMobileMagnifier(target: MobileNameInput, value: string): void {
+  mobileMagnifier.submittedEcho = { target, value }
+  if (mobileMagnifier.target !== target || mobileMagnifier.phase === 'idle') return
+  mobileMagnifier.phase = 'closing'
+  mobileMagnifier.startedAt = Date.now()
+}
+
+function isMobileMagnifierSubmitEcho(target: MobileNameInput, value: string): boolean {
+  const echo = mobileMagnifier.submittedEcho
+  if (!echo) return false
+  if (echo.target !== target) {
+    mobileMagnifier.submittedEcho = null
+    return false
+  }
+  mobileMagnifier.submittedEcho = null
+  return echo.value === value
+}
+
+function mobileMagnifierVisible(target: MobileNameInput): boolean {
+  return mobileMagnifier.target === target && mobileMagnifier.phase !== 'idle'
+}
+
+function mobileMagnifierProgress(): number {
+  const elapsed = Date.now() - mobileMagnifier.startedAt
   const linear = Math.max(0, Math.min(1, elapsed / MOBILE_NAME_OVERLAY_MS))
-  // Smoothstep: gradual start/end, without a visible snap at either point.
-  return linear * linear * (3 - 2 * linear)
+  const eased = linear * linear * (3 - 2 * linear)
+  return mobileMagnifier.phase === 'closing' ? 1 - eased : eased
+}
+
+function syncMobileMagnifierSystem(): void {
+  if (mobileMagnifier.phase === 'closing' && Date.now() - mobileMagnifier.startedAt >= MOBILE_NAME_OVERLAY_MS) {
+    resetMobileMagnifier()
+  }
 }
 
 export const ui = {
@@ -122,10 +153,7 @@ export const ui = {
     }
     uiState.panel = 'adopt'
     uiState.adoptStep = 'pick'
-    uiState.mobileNameTyping = false
-    uiState.mobileNameMinimizing = false
-    uiState.mobileNameSubmitPending = false
-    mobileNameOverlayStartedAt = 0
+    resetMobileMagnifier()
   },
   openShop(): void {
     uiState.panel = 'shop'
@@ -183,10 +211,7 @@ export const ui = {
   close(): void {
     uiState.panel = 'none'
     uiState.adoptName = '' // don't carry a half-typed name into the next adoption
-    uiState.mobileNameTyping = false
-    uiState.mobileNameMinimizing = false
-    uiState.mobileNameSubmitPending = false
-    mobileNameOverlayStartedAt = 0
+    resetMobileMagnifier()
   }
 }
 
@@ -982,30 +1007,22 @@ function AdoptPanel() {
           uiTransform={{ width: S(360), height: S(56), margin: { top: S(14), bottom: S(10) } }}
           uiBackground={{ color: LOC.tile }}
           onMouseDown={() => {
-            if (mobile()) {
-              uiState.mobileNameSubmitPending = false
-              showMobileNameOverlay()
-            }
+            if (mobile()) showMobileMagnifier('adopt')
           }}
           onChange={(v) => {
             uiState.adoptName = v
-            const submittedThisEvent = uiState.mobileNameSubmitPending
-            uiState.mobileNameSubmitPending = false
-            // Native mobile inputs consume their opening tap, but reliably send
-            // a change for the first key pressed. Use it as the focus signal.
-            if (mobile() && !submittedThisEvent) showMobileNameOverlay()
+            if (mobile() && !isMobileMagnifierSubmitEcho('adopt', v)) showMobileMagnifier('adopt')
           }}
           onSubmit={(v) => {
             uiState.adoptName = v
-            hideMobileNameOverlay()
-            uiState.mobileNameSubmitPending = true
+            if (mobile()) hideMobileMagnifier('adopt', v)
           }}
         />
         {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(16)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
         {slotsFree && !named && <Label value="Give your pet a name to continue." fontSize={S(16)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(10) } }}>
-        <TactileButton id="adopt_back" label="Back" width={S(130)} height={S(56)} bg={LOC.neutral} textColor={PET_UI.ink} fontSize={S(18)} radius={S(18)} margin={{ right: S(10) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; uiState.mobileNameTyping = false; uiState.mobileNameMinimizing = false; uiState.mobileNameSubmitPending = false; mobileNameOverlayStartedAt = 0 }} />
+        <TactileButton id="adopt_back" label="Back" width={S(130)} height={S(56)} bg={LOC.neutral} textColor={PET_UI.ink} fontSize={S(18)} radius={S(18)} margin={{ right: S(10) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; resetMobileMagnifier() }} />
         {slotsFree ? (
           <TactileButton
             id="adopt_confirm"
@@ -1047,35 +1064,36 @@ function AdoptPanel() {
       </UiEntity>
       </UiEntity>
     </PetHudModal>
-    {mobile() && (uiState.mobileNameTyping || uiState.mobileNameMinimizing) && <MobileAdoptNameMagnifier />}
+    {mobile() && mobileMagnifierVisible('adopt') && <MobileNameMagnifier target="adopt" />}
     </UiEntity>
   )
 }
 
-/** A visual magnifier for the focused mobile input. The real Input remains in
- * the large modal underneath, preserving the keyboard's native focus. */
-function MobileAdoptNameMagnifier() {
-  const named = uiState.adoptName.trim().length > 0
-  const elapsed = Date.now() - mobileNameOverlayStartedAt
-  if (uiState.mobileNameMinimizing && elapsed >= MOBILE_NAME_OVERLAY_MS) {
-    uiState.mobileNameMinimizing = false
-    return <UiEntity />
-  }
-  const progress = mobileNameOverlayProgress()
-  const zoom = uiState.mobileNameMinimizing ? 1 - progress : progress
-  const startW = S(360)
-  const endW = S(540)
-  const width = Math.round(startW + (endW - startW) * zoom)
-  const height = Math.round(S(56) + (S(82) - S(56)) * zoom)
-  const top = Math.round(S(190) + (S(20) - S(190)) * zoom)
-  const fontSize = Math.round(S(20) + (S(30) - S(20)) * zoom)
+/** A visual magnifier for a focused mobile input. The real Input remains in its
+ * modal underneath, preserving native keyboard focus without intercepting taps. */
+function MobileNameMagnifier(props: { target: MobileNameInput }) {
+  const value = props.target === 'adopt' ? uiState.adoptName : uiState.breedName
+  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
+  // The mobile virtual canvas grows with DPR. Use canvas fractions so the lens
+  // starts on top of the actual input on any density, rather than at a fixed px.
+  const canvasW = canvas?.width ?? 1600
+  const canvasH = canvas?.height ?? 720
+  const startWidthRatio = props.target === 'adopt' ? 0.36 : 0.44
+  const startTopRatio = props.target === 'adopt' ? 0.45 : 0.3
+  const zoom = mobileMagnifierProgress()
+  const width = Math.round(canvasW * (startWidthRatio + (0.54 - startWidthRatio) * zoom))
+  const height = Math.round(canvasH * (0.125 + (0.182 - 0.125) * zoom))
+  const top = Math.round(canvasH * (startTopRatio + (0.045 - startTopRatio) * zoom))
+  const fontSize = Math.round((canvasH / 720) * (S(20) + (S(30) - S(20)) * zoom))
+  const padding = Math.round(canvasH * 0.04)
+  const border = Math.max(2, Math.round(canvasH * 0.006))
 
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', pointerFilter: 'block', zIndex: 100 }}
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', pointerFilter: 'none', zIndex: 100 }}
     >
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, alignItems: 'center', justifyContent: 'center', padding: { left: S(18), right: S(18) }, borderRadius: S(18), borderWidth: S(3), borderColor: LOC.violet, opacity: zoom }} uiBackground={{ color: LOC.white }}>
-        <Label value={named ? uiState.adoptName : 'Type a name...'} fontSize={fontSize} color={named ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
+        <Label value={value.trim() ? value : 'Type a name...'} fontSize={fontSize} color={value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
       </UiEntity>
     </UiEntity>
   )
@@ -1132,8 +1150,16 @@ function BreedNamePanel() {
               color={LOC.body}
               placeholderColor={LOC.dim}
               uiTransform={{ width: '100%', height: '100%' }}
+              onMouseDown={() => {
+                if (mobile()) showMobileMagnifier('breed')
+              }}
               onChange={(v) => {
                 uiState.breedName = v
+                if (mobile() && !isMobileMagnifierSubmitEcho('breed', v)) showMobileMagnifier('breed')
+              }}
+              onSubmit={(v) => {
+                uiState.breedName = v
+                if (mobile()) hideMobileMagnifier('breed', v)
               }}
             />
           </UiEntity>
@@ -1208,6 +1234,7 @@ function BreedNamePanel() {
       </UiEntity>
       {/* Standard red BACK (top-left, like the other flows) instead of an X. */}
       <BackButton onClick={() => ui.close()} />
+      {mobile() && mobileMagnifierVisible('breed') && <MobileNameMagnifier target="breed" />}
     </UiEntity>
   )
 }
@@ -3524,6 +3551,7 @@ export function setupUi(): void {
     uiRendererSyncRegistered = true
     engine.addSystem(syncUiRendererSystem)
     engine.addSystem(syncPetTouchControlsSystem)
+    engine.addSystem(syncMobileMagnifierSystem)
   }
 
   resolveRuntimePlatform()
