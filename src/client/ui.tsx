@@ -65,6 +65,13 @@ const uiState = {
   adoptStep: 'pick' as 'pick' | 'name',
   adoptSpecies: Cfg.SPECIES[0],
   adoptName: '',
+  // The full adoption card stays mounted while this compact mobile overlay is
+  // visible, so the native keyboard keeps focus on the original Input.
+  mobileNameTyping: false,
+  mobileNameMinimizing: false,
+  // UiInput emits onSubmit followed by onChange for the same native event.
+  // This prevents that trailing change from reopening the typing overlay.
+  mobileNameSubmitPending: false,
   // Breeding: partner pet chosen to cross with, and the name the player types for
   // the offspring (the server prefixes it "Gen-N ").
   breedPartnerId: '',
@@ -74,6 +81,30 @@ const uiState = {
   // Roster page being viewed. Pet slots are unlimited, so the grid can hold more
   // cards than the modal fits and has to page through them.
   rosterPage: 0
+}
+
+const MOBILE_NAME_OVERLAY_MS = 260
+let mobileNameOverlayStartedAt = 0
+
+function showMobileNameOverlay(): void {
+  uiState.mobileNameMinimizing = false
+  if (uiState.mobileNameTyping) return
+  uiState.mobileNameTyping = true
+  mobileNameOverlayStartedAt = Date.now()
+}
+
+function hideMobileNameOverlay(): void {
+  if (!uiState.mobileNameTyping) return
+  uiState.mobileNameTyping = false
+  uiState.mobileNameMinimizing = true
+  mobileNameOverlayStartedAt = Date.now()
+}
+
+function mobileNameOverlayProgress(): number {
+  const elapsed = Date.now() - mobileNameOverlayStartedAt
+  const linear = Math.max(0, Math.min(1, elapsed / MOBILE_NAME_OVERLAY_MS))
+  // Smoothstep: gradual start/end, without a visible snap at either point.
+  return linear * linear * (3 - 2 * linear)
 }
 
 export const ui = {
@@ -91,6 +122,10 @@ export const ui = {
     }
     uiState.panel = 'adopt'
     uiState.adoptStep = 'pick'
+    uiState.mobileNameTyping = false
+    uiState.mobileNameMinimizing = false
+    uiState.mobileNameSubmitPending = false
+    mobileNameOverlayStartedAt = 0
   },
   openShop(): void {
     uiState.panel = 'shop'
@@ -148,6 +183,10 @@ export const ui = {
   close(): void {
     uiState.panel = 'none'
     uiState.adoptName = '' // don't carry a half-typed name into the next adoption
+    uiState.mobileNameTyping = false
+    uiState.mobileNameMinimizing = false
+    uiState.mobileNameSubmitPending = false
+    mobileNameOverlayStartedAt = 0
   }
 }
 
@@ -929,6 +968,7 @@ function AdoptPanel() {
   // nothing happened).
   const named = uiState.adoptName.trim().length > 0
   return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
     <PetHudModal title="Name your Pet" subtitle="Pick a name before you carry the egg home." width={modalW} height={modalH} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
@@ -941,15 +981,31 @@ function AdoptPanel() {
           placeholderColor={PET_UI.muted}
           uiTransform={{ width: S(360), height: S(56), margin: { top: S(14), bottom: S(10) } }}
           uiBackground={{ color: LOC.tile }}
+          onMouseDown={() => {
+            if (mobile()) {
+              uiState.mobileNameSubmitPending = false
+              showMobileNameOverlay()
+            }
+          }}
           onChange={(v) => {
             uiState.adoptName = v
+            const submittedThisEvent = uiState.mobileNameSubmitPending
+            uiState.mobileNameSubmitPending = false
+            // Native mobile inputs consume their opening tap, but reliably send
+            // a change for the first key pressed. Use it as the focus signal.
+            if (mobile() && !submittedThisEvent) showMobileNameOverlay()
+          }}
+          onSubmit={(v) => {
+            uiState.adoptName = v
+            hideMobileNameOverlay()
+            uiState.mobileNameSubmitPending = true
           }}
         />
         {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(16)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
         {slotsFree && !named && <Label value="Give your pet a name to continue." fontSize={S(16)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(10) } }}>
-        <TactileButton id="adopt_back" label="Back" width={S(130)} height={S(56)} bg={LOC.neutral} textColor={PET_UI.ink} fontSize={S(18)} radius={S(18)} margin={{ right: S(10) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick' }} />
+        <TactileButton id="adopt_back" label="Back" width={S(130)} height={S(56)} bg={LOC.neutral} textColor={PET_UI.ink} fontSize={S(18)} radius={S(18)} margin={{ right: S(10) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; uiState.mobileNameTyping = false; uiState.mobileNameMinimizing = false; uiState.mobileNameSubmitPending = false; mobileNameOverlayStartedAt = 0 }} />
         {slotsFree ? (
           <TactileButton
             id="adopt_confirm"
@@ -991,6 +1047,37 @@ function AdoptPanel() {
       </UiEntity>
       </UiEntity>
     </PetHudModal>
+    {mobile() && (uiState.mobileNameTyping || uiState.mobileNameMinimizing) && <MobileAdoptNameMagnifier />}
+    </UiEntity>
+  )
+}
+
+/** A visual magnifier for the focused mobile input. The real Input remains in
+ * the large modal underneath, preserving the keyboard's native focus. */
+function MobileAdoptNameMagnifier() {
+  const named = uiState.adoptName.trim().length > 0
+  const elapsed = Date.now() - mobileNameOverlayStartedAt
+  if (uiState.mobileNameMinimizing && elapsed >= MOBILE_NAME_OVERLAY_MS) {
+    uiState.mobileNameMinimizing = false
+    return <UiEntity />
+  }
+  const progress = mobileNameOverlayProgress()
+  const zoom = uiState.mobileNameMinimizing ? 1 - progress : progress
+  const startW = S(360)
+  const endW = S(540)
+  const width = Math.round(startW + (endW - startW) * zoom)
+  const height = Math.round(S(56) + (S(82) - S(56)) * zoom)
+  const top = Math.round(S(190) + (S(20) - S(190)) * zoom)
+  const fontSize = Math.round(S(20) + (S(30) - S(20)) * zoom)
+
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', pointerFilter: 'block', zIndex: 100 }}
+    >
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, alignItems: 'center', justifyContent: 'center', padding: { left: S(18), right: S(18) }, borderRadius: S(18), borderWidth: S(3), borderColor: LOC.violet, opacity: zoom }} uiBackground={{ color: LOC.white }}>
+        <Label value={named ? uiState.adoptName : 'Type a name...'} fontSize={fontSize} color={named ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+      </UiEntity>
+    </UiEntity>
   )
 }
 
