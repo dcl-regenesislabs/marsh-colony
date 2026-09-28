@@ -2170,10 +2170,9 @@ function Toasts() {
   )
 }
 
-// Arrow icon (source art is 500x500; exported at 256x256 — plenty of headroom
-// over this button's ~90-unit logical size on the highest-density mobile
-// screens, at well under half the file size) for the shared BACK button below.
-const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
+// Artwork for the shared BACK button below.
+const BACK_ARROW_ICON = 'assets/images/backbutton2.png'
+const BACK_ARROW_ASPECT_RATIO = 341 / 256
 
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
 // game / Bath / Feed errand). It shares the toast's device-safe anchor on both
@@ -2181,12 +2180,13 @@ const BACK_ARROW_ICON = 'assets/images/revamp/backbutton256.png'
 function BackButton(props: { onClick: () => void; disabled?: boolean }) {
   const toastVisible = toastIsVisible(Date.now())
   const layout = actionHudLayout()
-  const d = S(90)
+  const height = S(90)
+  const width = Math.round(height * BACK_ARROW_ASPECT_RATIO)
   return (
     <ScreenInsetArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <UiEntity
-          uiTransform={{ positionType: 'absolute', position: layout.backPosition, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP) + layout.toastBackOffsetY : 0 }, width: d, height: d, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+          uiTransform={{ positionType: 'absolute', position: layout.backPosition, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP) + layout.toastBackOffsetY : 0 }, width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
           uiBackground={{
             texture: { src: BACK_ARROW_ICON },
             textureMode: 'stretch',
