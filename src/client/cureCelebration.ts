@@ -4,11 +4,27 @@
 // hovering over it and tipping, green drops landing on the pet (which turns it
 // from sad to dancing), then a heart. Visuals live in cureFx.ts.
 
-import { engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
+import { AudioSource, engine, Entity, InputModifier, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Quaternion } from '@dcl/sdk/math'
-import { startCureCinematic, endCureCinematic, setCureCinematicPose } from './pet'
+import { startCureCinematic, endCureCinematic, setCureCinematicPose, playPetVoice } from './pet'
 import { emitDrop, pourBoost, setBottle, startCureFx, stopCureFx, tickDrops } from './cureFx'
 import { actions, clientState, pushToast } from './state'
+
+const POUR_SOUND = 'assets/sounds/waterdrop.mp3'
+let pourSfx: Entity | null = null
+
+/** Looped water-drop sound for the pour beat — started/stopped around POUR_AT_S/POUR_END_S below. */
+function startPourSound(): void {
+  if (!pourSfx) {
+    pourSfx = engine.addEntity()
+    Transform.createOrReplace(pourSfx, {})
+  }
+  AudioSource.createOrReplace(pourSfx, { audioClipUrl: POUR_SOUND, playing: true, loop: true, global: true, volume: 0.5 })
+}
+
+function stopPourSound(): void {
+  if (pourSfx && AudioSource.has(pourSfx)) AudioSource.getMutable(pourSfx).playing = false
+}
 
 // Scene timeline, in seconds from the camera cut. Each beat starts where the
 // previous one ends; tweak the durations, not the derived times.
@@ -71,15 +87,18 @@ export function startCureCelebration(onDone: () => void): boolean {
     setCureCinematicPose('dance', null)
     actions.cureSickness()
     pushToast(`${clientState.activePet?.name ?? 'Your pet'} is healthy again!`, 'success')
+    if (clientState.activePet) playPetVoice(clientState.activePet.species)
   }
   let sceneT = 0
   let nextDropAt = POUR_AT_S
   let heartShown = false
   let firstLandingAt = -1
+  let pouring = false
 
   let stage: 'scene' | 'out' | 'hold' | 'in' = 'scene'
   let elapsedMs = 0
   const finish = (): void => {
+    stopPourSound() // safety net — the pour window always closes before SCENE_END_S, but never leave it looping
     stopCureFx()
     if (MainCamera.getOrNull(engine.CameraEntity)?.virtualCameraEntity === camera) {
       MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
@@ -97,6 +116,13 @@ export function startCureCelebration(onDone: () => void): boolean {
     const tipping = Math.min(1, Math.max(0, (sceneT - TILT_AT_S) / BOTTLE_TILT_S))
     // Tips over, then rights itself and shrinks away as it leaves.
     setBottle(appear, tipping * (1 - leave), leave, dt)
+    // Loop the water-drop sound for exactly as long as the bottle is actually spilling.
+    const wantPouring = sceneT >= POUR_AT_S && sceneT < POUR_END_S
+    if (wantPouring !== pouring) {
+      pouring = wantPouring
+      if (pouring) startPourSound()
+      else stopPourSound()
+    }
     while (sceneT >= nextDropAt && nextDropAt < POUR_END_S) {
       emitDrop()
       // Shaking the bottle knocks the drops out faster.

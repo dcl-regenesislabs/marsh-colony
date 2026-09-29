@@ -686,9 +686,13 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
   pointerEventsSystem.removeOnPointerDown(outEntity) // drop the "Open" click
   if (outIndex >= 0) {
     const outName = p.pets[outIndex].name
+    const outSpecies = p.pets[outIndex].species
     pointerEventsSystem.onPointerDown(
       { entity: outEntity, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${outName}`, maxDistance: 8 } },
-      () => switchActivePet(outId)
+      () => {
+        playPetVoice(outSpecies)
+        switchActivePet(outId)
+      }
     )
     // Un-hide the tag: it may have been hidden mid-speech-bubble while active,
     // and updateInactivePets' updateTag never un-hides it — the pet would roam
@@ -770,6 +774,7 @@ function registerPetOpenClick(entity: Entity): void {
       clientState.petPanelOpen = true
       // Point them at the Breed button until the pet grows up.
       const ap = clientState.activePet
+      if (ap) playPetVoice(ap.species)
       if (ap && petStage(ap.size) !== 'ADULT') {
         showHint('breed', 'Grow your pet to Adult in order to BREED amazing creatures!')
       }
@@ -1210,7 +1215,10 @@ function completePetting(): void {
   st.progress = 1
   st.celebrationUntil = Date.now() + C.PETTING_HAPPY_CINEMATIC_S * 1000
   const pet = clientState.activePet
-  if (pet) pet.happiness = Math.min(100, pet.happiness + C.PET_SELF_HAPPINESS)
+  if (pet) {
+    pet.happiness = Math.min(100, pet.happiness + C.PET_SELF_HAPPINESS)
+    playPetVoice(pet.species)
+  }
   actions.petSelf() // server is authoritative; this is the "happiness" action
   pushToast('Your pet loved that!  +Happy')
 }
@@ -1568,6 +1576,7 @@ export function finishBath(won: boolean): void {
   interactTimer = BATH_SPLASH_SECONDS
   bathSplashT = 0
   justBathed = true // splash in place, then hop out of the tub (see updateLocalPet)
+  if (clientState.activePet) playPetVoice(clientState.activePet.species)
 }
 
 // ---------------------------------------------------------------------------
@@ -1635,6 +1644,30 @@ export interface BreedFx {
 const BREED_FX_OFF: BreedFx = { active: false, orbFrame: 0, orbAlpha: 0, orbScale: 1, burstFrame: -1, flash: 0 }
 
 const BREED_SOUND = 'assets/sounds/breed.mp3' // "the magic happened" — fires at the burst as the egg appears
+const WHISTLE_SOUND = 'assets/sounds/Whistle01.mp3' // fires when the player calls the pet over via the Whistle button
+
+// One short "voice" clip per creature family — played whenever the player
+// interacts with a pet (open its panel, feed it, select it in the roster).
+// Pepito and Amebita have their own distinct calls; Sprout and Fluflito share
+// the two remaining clips (either works per family, so the pairing is arbitrary).
+const PET_VOICE_SOUND: Record<C.Family, string> = {
+  'sprout': 'assets/sounds/Animal02.mp3',
+  'pepito': 'assets/sounds/Animal04.mp3',
+  'amebita': 'assets/sounds/Animal03.mp3',
+  'fluflito': 'assets/sounds/Animal05.mp3'
+}
+let petVoiceSfx: Entity | null = null
+
+/** Play the given species' voice clip (interaction feedback: click, feed, select). */
+export function playPetVoice(species: string): void {
+  const src = PET_VOICE_SOUND[C.speciesParts(species).head]
+  if (!petVoiceSfx) {
+    petVoiceSfx = engine.addEntity()
+    Transform.create(petVoiceSfx, {})
+    AudioSource.create(petVoiceSfx, { audioClipUrl: src, playing: false, global: true, volume: 0.5 })
+  }
+  AudioSource.playSound(petVoiceSfx, src)
+}
 
 // The cinematic sprite sheets are ~14.7 MB decoded — too heavy for the boot
 // preload for a one-off 4 s cinematic. Warm them when the breed errand starts
@@ -1662,6 +1695,17 @@ function playBreedSound(): void {
     AudioSource.create(breedSfx, { audioClipUrl: BREED_SOUND, playing: false, global: true, volume: 0.7 })
   }
   AudioSource.playSound(breedSfx, BREED_SOUND)
+}
+
+let whistleSfx: Entity | null = null
+
+function playWhistleSound(): void {
+  if (!whistleSfx) {
+    whistleSfx = engine.addEntity()
+    Transform.create(whistleSfx, {})
+    AudioSource.create(whistleSfx, { audioClipUrl: WHISTLE_SOUND, playing: false, global: true, volume: 0.6 })
+  }
+  AudioSource.playSound(whistleSfx, WHISTLE_SOUND)
 }
 
 export function getBreedFx(): BreedFx {
@@ -1764,6 +1808,7 @@ export function placeParentA(): void {
     // Face the viewer (the breed camera sits at the avatar stand) and sit.
     t.rotation = yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
     setClip(localPet, 'sit')
+    if (clientState.activePet) playPetVoice(clientState.activePet.species)
   }
   clientState.breed.phase = 'pickB' // ui.tsx shows the partner picker off this phase
 }
@@ -1779,6 +1824,7 @@ export function chooseBreedPartner(id: string): void {
   }
   clientState.breed.partnerId = id
   clientState.breed.phase = 'ready'
+  playPetVoice(partner.species)
   // Park parent B's roamer entity in the right bowl (updateInactivePets skips it now).
   const roamer = inactivePets.get(id)
   if (roamer) {
@@ -2278,6 +2324,8 @@ function revealHatchedPet(): void {
   if (!carryIsBreed) adoptPet(hatchSpecies, hatchName)
   hatchPopT = HATCH_POP_SECONDS
   pushToast(`Your ${speciesLabel(hatchSpecies)} hatched!`)
+  playBreedSound()
+  playPetVoice(hatchSpecies)
 }
 
 /** Admire beat over: hand the camera + avatar control back to the player. */
@@ -2370,7 +2418,9 @@ function petTouchControlsInputSystem(): void {
     if (clientState.activePet?.sleeping) {
       pushToast('Your pet is asleep — wake it first.')
     } else {
-      setFollow(!clientState.followEnabled)
+      const calling = !clientState.followEnabled
+      if (calling) playWhistleSound()
+      setFollow(calling)
     }
   }
   if (inputSystem.isTriggered(PET_ACTIONS_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
@@ -2900,7 +2950,10 @@ function updateRemotePets(dt: number): void {
       pointerEventsSystem.onPointerDown(
         { entity: ent, opts: { button: InputAction.IA_POINTER, hoverText: 'View', maxDistance: 8 } },
         () => {
-          if (!hiddenRemotePets.has(addr)) clientState.viewingPetAddress = targetAddr
+          if (hiddenRemotePets.has(addr)) return
+          clientState.viewingPetAddress = targetAddr
+          const species = remoteSpecies.get(addr)
+          if (species) playPetVoice(species)
         }
       )
     }
@@ -3040,9 +3093,13 @@ function updateInactivePets(dt: number): void {
         }
         ensureAnimator(e, pet.species)
         const petId = pet.id
+        const petSpecies = pet.species
         pointerEventsSystem.onPointerDown(
           { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${pet.name}`, maxDistance: 8 } },
-          () => switchActivePet(petId)
+          () => {
+            playPetVoice(petSpecies)
+            switchActivePet(petId)
+          }
         )
         st = { entity: e, species: pet.species, tag: makeTag(false), home, target: null, pause: Math.random() * 2 } // owner's own pet — mood icons replaced by petEmotes.ts's floating emote
         inactivePets.set(pet.id, st)

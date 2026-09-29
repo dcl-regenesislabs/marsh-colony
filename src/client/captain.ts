@@ -2,10 +2,22 @@
 // dialog and swap its Idle/Talk clips while talking — mirrors caretaker.ts, but
 // with no intro lock (it's an optional, flavour NPC).
 
-import { engine, Entity, Transform, Animator, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, Animator, AudioSource, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState, openDialog, CAPTAIN_NPC_NAME } from './state'
 import { canStartPetInteraction } from './pet'
+
+const TALK_SOUND = 'assets/sounds/AlienNod.mp3'
+let talkSfx: Entity | null = null
+
+function playTalkSound(): void {
+  if (!talkSfx) {
+    talkSfx = engine.addEntity()
+    Transform.create(talkSfx, {})
+    AudioSource.create(talkSfx, { audioClipUrl: TALK_SOUND, playing: false, global: true, volume: 0.6 })
+  }
+  AudioSource.playSound(talkSfx, TALK_SOUND)
+}
 
 // Clip names as authored on Captain.glb (assets/scene/main.composite) — case-sensitive.
 const CLIP_IDLE = 'Idle'
@@ -36,6 +48,7 @@ function ensureClickHandler(captain: Entity): void {
       // there would hide that flow's own controls behind the dialog. Mirrors
       // caretakerPet.ts's guard.
       if (clientState.dialog.open || !canStartPetInteraction()) return
+      playTalkSound()
       openDialog(
         CAPTAIN_NPC_NAME,
         [
