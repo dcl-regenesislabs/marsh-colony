@@ -450,9 +450,10 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
-/** Bubbles to pop for a FULL bath (maps to the clean effect). Hygiene now scales
- *  with bubbles popped instead of being all-or-nothing: popping a third of the
- *  goal restores a third of the hygiene. */
+/** Bubbles to pop for a FULL bath. Hygiene scales LINEARLY with bubbles popped
+ *  (a third of the goal restores a third of the hygiene) instead of the old
+ *  all-or-nothing gate. Reaching the goal counts as a completed clean (growth +
+ *  XP + coins); a partial bath only cleans — see bathFromMinigame. */
 export const BATH_BUBBLE_GOAL = 25
 /** Hygiene restored per bubble popped in the bath minigame (bathGame.ts). A full
  *  goal's worth equals the clean action's hygiene; the server caps it there. */

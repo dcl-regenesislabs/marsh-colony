@@ -730,7 +730,16 @@ export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
     return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
   }
   const bubbles = Math.min(popped, C.BATH_BUBBLE_GOAL)
-  applyCompletedCare(p, pet, { hygiene: bubbles * C.BATH_HYGIENE_PER_BUBBLE }, 'cleanCount', notes)
+  const hygiene = bubbles * C.BATH_HYGIENE_PER_BUBBLE
+  if (bubbles >= C.BATH_BUBBLE_GOAL) {
+    // Full bath = a completed clean: full hygiene + growth tick + XP + coins.
+    applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes)
+  } else {
+    // Partial: proportional hygiene ONLY — no careCount/growth/reward, so a
+    // 1-bubble bath can't farm the careCount-driven ADULT breeding gate.
+    wake(pet)
+    pet.hygiene = clamp(pet.hygiene + hygiene)
+  }
   return notes
 }
 

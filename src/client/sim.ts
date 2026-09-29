@@ -345,7 +345,9 @@ export function applyFeedMinigameLocal(caught: number): void {
 }
 
 /** Optimistic mirror of the bath result: hygiene scales with bubbles popped
- *  (capped at a full clean). Mirrors server/state.ts bathFromMinigame. */
+ *  (capped at a full clean). A FULL bath also counts as a completed clean (growth
+ *  + XP + coins); a partial bath only cleans. Mirrors server/state.ts
+ *  bathFromMinigame. */
 export function applyBathMinigameLocal(popped: number): void {
   const p = clientState.player
   const pet = clientState.activePet
@@ -354,6 +356,7 @@ export function applyBathMinigameLocal(popped: number): void {
   wakeLocal(pet)
   const bubbles = Math.min(popped, Cfg.BATH_BUBBLE_GOAL)
   pet.hygiene = clamp(pet.hygiene + bubbles * Cfg.BATH_HYGIENE_PER_BUBBLE)
+  if (bubbles < Cfg.BATH_BUBBLE_GOAL) return // partial: hygiene only, no growth/reward
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
   grantXp(p)
