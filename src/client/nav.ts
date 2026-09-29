@@ -21,6 +21,7 @@ import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 import * as C from '../shared/config'
 import { objectPosition } from './objects'
+import { petMotionStep, stopPetMotion } from './petMotion'
 import { pushToast } from './state'
 
 // ---------------------------------------------------------------------------
@@ -236,16 +237,20 @@ export function navStepToward(entity: Entity, finalDest: Vector3, dt: number, ya
   const dest = flat(finalDest)
   const wp = nextWaypoint(cur, dest, updatePetZone(cur))
   const d = dist(cur, wp)
-  if (d <= C.PET_ARRIVE_DISTANCE) return 0
+  if (d <= C.PET_ARRIVE_DISTANCE) {
+    stopPetMotion(entity)
+    return 0
+  }
   const dir = Vector3.normalize(Vector3.subtract(wp, cur))
-  const stepLen = Math.min(d, C.PET_MOVE_SPEED * dt)
+  const stepLen = petMotionStep(entity, d, dt, C.PET_MOVE_SPEED)
   const np = wallSlide(cur, Vector3.add(cur, Vector3.scale(dir, stepLen)), wp)
   t.position = Vector3.create(np.x, C.PET_BASE_Y, np.z)
   // Face the direction actually travelled (so it looks right while rounding a wall).
   const mdx = np.x - cur.x
   const mdz = np.z - cur.z
   if (Math.abs(mdx) > 0.0001 || Math.abs(mdz) > 0.0001) {
-    t.rotation = Quaternion.fromEulerDegrees(0, Math.atan2(mdx, mdz) * DEG + yawOffset, 0)
+    const targetRotation = Quaternion.fromEulerDegrees(0, Math.atan2(mdx, mdz) * DEG + yawOffset, 0)
+    t.rotation = Quaternion.rotateTowards(t.rotation, targetRotation, C.PET_TURN_SPEED * dt)
   }
   return dist(cur, np)
 }
