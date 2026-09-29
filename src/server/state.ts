@@ -924,9 +924,10 @@ export function useItem(p: PlayerData, tier: number): Notify[] {
   const notes: Notify[] = []
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
+  const item = C.SHOP_ITEMS.find((i) => i.tier === tier)
+  if (!item) return [{ kind: 'error', message: 'No such item' }] // guard BEFORE decrementing (a bad tier used to crash the handler mid-use)
   const have = tier === 1 ? p.inventory.tier1 : p.inventory.tier2
-  if (have <= 0) return [{ kind: 'error', message: 'You have none of that food' }]
-  const item = C.SHOP_ITEMS.find((i) => i.tier === tier)!
+  if (have <= 0) return [{ kind: 'error', message: 'You have none of that item' }]
   if (tier === 1) p.inventory.tier1 -= 1
   else p.inventory.tier2 -= 1
   tickPlayer(p)

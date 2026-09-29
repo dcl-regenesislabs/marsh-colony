@@ -588,7 +588,10 @@ export interface ShopItem {
 //  • Feast — instantly restores energy and wakes the pet (skips the 3-min nap).
 export const SHOP_ITEMS: ShopItem[] = [
   { tier: 1, label: 'Magic Kibble', price: 15, hunger: 100, happiness: 0, energy: 0, wakes: false, desc: 'Fills hunger — skips the Feed game' },
-  { tier: 2, label: 'Feast', price: 40, hunger: 0, happiness: 0, energy: 100, wakes: true, desc: 'Restores energy — skips sleeping' }
+  // Priced above the coins a full energy bar can farm back through fetch (~63 +
+  // the 5-coin use payout) so buying it to skip the nap is a net coin SINK, not a
+  // profit loop — see careAction's same-farm refusal. (Economy still being tuned.)
+  { tier: 2, label: 'Feast', price: 90, hunger: 0, happiness: 0, energy: 100, wakes: true, desc: 'Restores energy — skips sleeping' }
 ]
 
 // ---------------------------------------------------------------------------

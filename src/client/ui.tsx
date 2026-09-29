@@ -1478,11 +1478,11 @@ function InventoryPanel() {
     <PetHudModal title="Inventory" subtitle="Tap an item to use it on your pet, or hit BUY to stock up." width={S(660)} height={S(520)} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
         <InvColumn width={colW} height={colH}>
-          <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { if (useItemLocal(1)) pushToast('Fed your pet!'); actions.useItem(1) }} />{/* Magic Kibble: skips the Feed game */}
+          <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { useItemLocal(1); actions.useItem(1) }} />
           <BuyButton id="buy_1" width={buyW} enabled={coins >= price1} onClick={buy(1)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
-          <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { if (useItemLocal(2)) pushToast('Energy restored!'); actions.useItem(2) }} />{/* Feast: skips the 3-min sleep */}
+          <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { useItemLocal(2); actions.useItem(2) }} />
           <BuyButton id="buy_2" width={buyW} enabled={coins >= price2} onClick={buy(2)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
