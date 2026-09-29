@@ -14,9 +14,9 @@ import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, 
 import { Vector3 } from '@dcl/sdk/math'
 import { room } from '../shared/messages'
 import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { DEV_SKIP_SERVER_GATE, type SpinReward } from '../shared/config'
-import { actions, applyPresence, applySnapshot, clientState, markServerAlive, pushToast, resolveMyAddress } from './state'
-import { evaluateStreak, seedLocalPlayer, simTick } from './sim'
+import { DEV_SKIP_SERVER_GATE, SICKNESS_CURE_COINS, SICKNESS_CURE_XP, type SpinReward } from '../shared/config'
+import { actions, applyPresence, applySnapshot, clientState, markServerAlive, pushToast, resolveMyAddress, showReward } from './state'
+import { evaluateStreak, petXpReward, seedLocalPlayer, simTick } from './sim'
 import { setupUi, ui } from './ui'
 import { applyDefaultTouchControls } from './touchControls'
 import { openCaretakerIntro } from './ui/dialog'
@@ -195,6 +195,11 @@ function registerHandlers(): void {
     if (data.kind === 'treated') {
       clientState.lastTreatedAt = Date.now()
       return
+    }
+    // Cure rewards are intentionally not applied optimistically. This server
+    // confirmation is therefore the moment to show their XP/coin feedback.
+    if (data.kind === 'success' && data.message.endsWith(' is cured!')) {
+      showReward(petXpReward(SICKNESS_CURE_XP), SICKNESS_CURE_COINS)
     }
     pushToast(data.message, data.kind)
   })

@@ -5,7 +5,7 @@
 
 import * as Cfg from '../shared/config'
 import type { CareAction, PetData, PlayerData, StatKey } from '../shared/types'
-import { clientState } from './state'
+import { clientState, showReward } from './state'
 
 const STAT_KEYS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
 
@@ -151,15 +151,23 @@ export function claimStreak(): { currency: number; spins: number; day: number } 
   return { currency: r.currency, spins: r.spins, day }
 }
 
+/** The amount displayed to the player for a care XP grant. The server uses the
+ * same happiness multiplier when it applies the authoritative reward. */
+export function petXpReward(base = Cfg.PET_XP_PER_ACTION): number {
+  const happiness = clientState.activePet?.happiness ?? 0
+  return Math.round(base * (0.5 + 0.5 * (happiness / 100)))
+}
+
 /** Grant care XP locally, mirroring the server's happiness multiplier. */
-function grantXp(p: PlayerData, base = Cfg.PET_XP_PER_ACTION): void {
+function grantXp(p: PlayerData, base = Cfg.PET_XP_PER_ACTION): number {
   const pet = clientState.activePet
-  if (!pet) return
+  if (!pet) return 0
   const gain = base * (0.5 + 0.5 * (pet.happiness / 100))
   pet.petXp += gain
   pet.petLevel = Cfg.levelForXp(pet.petXp)
   p.caretakerXp += Cfg.CARETAKER_XP_PER_ACTION
   p.caretakerLevel = Cfg.levelForXp(p.caretakerXp)
+  return Math.round(gain)
 }
 
 function bumpCounter(p: PlayerData, key: string): void {
@@ -216,8 +224,9 @@ export function useItemLocal(tier: number): boolean {
   // Using an item is a care action — grow, gain XP + coins.
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
-  grantXp(p)
+  const xp = grantXp(p)
   p.currency += Cfg.COINS_PER_ACTION
+  showReward(xp, Cfg.COINS_PER_ACTION)
   return true
 }
 
@@ -349,10 +358,11 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
   const coins = action === 'play' ? Cfg.PLAY_COINS_REWARD : Cfg.COINS_PER_ACTION
-  grantXp(p, action === 'play' ? Cfg.PLAY_XP_REWARD : Cfg.PET_XP_PER_ACTION)
+  const xp = grantXp(p, action === 'play' ? Cfg.PLAY_XP_REWARD : Cfg.PET_XP_PER_ACTION)
   p.currency += coins // instant coin reward (matches the server)
   bumpCounter(p, `${action}Count`)
   bumpCounter(p, 'careCount')
+  showReward(xp, coins)
   return true
 }
 
@@ -367,10 +377,11 @@ export function applyFeedMinigameLocal(caught: number): void {
   pet.hunger = clamp(pet.hunger + caught * Cfg.FEED_HUNGER_PER_FRUIT)
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
-  grantXp(p)
+  const xp = grantXp(p)
   p.currency += Cfg.COINS_PER_ACTION
   bumpCounter(p, 'feedCount')
   bumpCounter(p, 'careCount')
+  showReward(xp, Cfg.COINS_PER_ACTION)
 }
 
 /** Optimistic mirror of the bath result: hygiene scales with bubbles popped
@@ -388,8 +399,9 @@ export function applyBathMinigameLocal(popped: number): void {
   if (bubbles < Cfg.BATH_BUBBLE_GOAL) return // partial: hygiene only, no growth/reward
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
-  grantXp(p)
+  const xp = grantXp(p)
   p.currency += Cfg.COINS_PER_ACTION
   bumpCounter(p, 'cleanCount')
   bumpCounter(p, 'careCount')
+  showReward(xp, Cfg.COINS_PER_ACTION)
 }
