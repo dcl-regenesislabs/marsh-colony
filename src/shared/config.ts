@@ -450,6 +450,14 @@ export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>>
  *  ~6 catches matches the old flat feed effect; a strong run tops the pet off. */
 export const FEED_HUNGER_PER_FRUIT = 6
 
+/** Bubbles to pop for a FULL bath (maps to the clean effect). Hygiene now scales
+ *  with bubbles popped instead of being all-or-nothing: popping a third of the
+ *  goal restores a third of the hygiene. */
+export const BATH_BUBBLE_GOAL = 25
+/** Hygiene restored per bubble popped in the bath minigame (bathGame.ts). A full
+ *  goal's worth equals the clean action's hygiene; the server caps it there. */
+export const BATH_HYGIENE_PER_BUBBLE = (ACTION_EFFECT.clean.hygiene ?? 45) / BATH_BUBBLE_GOAL
+
 /** Poison fruit per Feed round. They are spaced by the minigame so the player
  * has to keep dodging them instead of surviving one isolated bad catch. */
 export const FEED_POISON_FRUITS_MIN = 3

@@ -11,12 +11,13 @@
 // bubble pool though, the bubbles live entirely in the screen-space overlay.
 
 import { engine } from '@dcl/sdk/ecs'
+import { BATH_BUBBLE_GOAL } from '../shared/config'
 import { actions, clientState, pushToast } from './state'
-import { applyCareLocal } from './sim'
+import { applyBathMinigameLocal } from './sim'
 import { finishBath, endBathCamera } from './pet'
 
 export const BATH_DURATION_S = 16 // seconds of the timed popping phase
-export const BUBBLE_GOAL = 25 // pops needed for the pet to count as clean
+export const BUBBLE_GOAL = BATH_BUBBLE_GOAL // pops for a FULL clean; hygiene scales below it
 export const BATH_COUNTDOWN_S = 3 // 3-2-1 before popping starts
 const MAX_BUBBLES = 9 // bubbles alive on screen at once
 const SPAWN_STAGGER_S = 0.22 // min gap between spawns so they don't appear in clumps
@@ -142,11 +143,13 @@ function applyBathResults(): void {
   clientState.bathGame.phase = 'results'
   clientState.bathGame.resultsAt = Date.now()
   bubbles = []
-  // Only a clean-enough scrub actually bathes the pet. Gate the server call on the
-  // optimistic mirror accepting it (energy/lock rules) so we never tell the server
-  // to clean when our own sim just refused — matches input.ts's care path.
-  if (clientState.bathGame.popped >= BUBBLE_GOAL && applyCareLocal('clean', false)) {
-    actions.care('clean', false) // server is authoritative
+  // Hygiene scales with bubbles popped (no all-or-nothing gate): apply the
+  // optimistic mirror, then let the authoritative server apply the proportional
+  // clean. Both no-op at 0 pops / when the pet is nap-locked.
+  const popped = clientState.bathGame.popped
+  if (popped > 0) {
+    applyBathMinigameLocal(popped)
+    actions.bathResult(popped) // server is authoritative
   }
 }
 
@@ -157,8 +160,8 @@ export function exitBathResults(): void {
   bubbles = []
   pops = []
   endBathCamera() // hand the camera + avatar control back before the splash/hop-out
-  // Play the win splash + hop-out only if the pet actually came out clean.
-  finishBath(clientState.bathGame.popped >= BUBBLE_GOAL)
+  // Play the splash + hop-out whenever the pet got any cleaner (popped > 0).
+  finishBath(clientState.bathGame.popped > 0)
 }
 
 /** BACK button — bail out mid-game (no clean applied). */

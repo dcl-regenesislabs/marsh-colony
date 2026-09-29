@@ -343,3 +343,21 @@ export function applyFeedMinigameLocal(caught: number): void {
   bumpCounter(p, 'feedCount')
   bumpCounter(p, 'careCount')
 }
+
+/** Optimistic mirror of the bath result: hygiene scales with bubbles popped
+ *  (capped at a full clean). Mirrors server/state.ts bathFromMinigame. */
+export function applyBathMinigameLocal(popped: number): void {
+  const p = clientState.player
+  const pet = clientState.activePet
+  if (!p || !pet || popped <= 0) return
+  if (sleepLocked()) return // the nap is uninterruptible — mirrors bathFromMinigame
+  wakeLocal(pet)
+  const bubbles = Math.min(popped, Cfg.BATH_BUBBLE_GOAL)
+  pet.hygiene = clamp(pet.hygiene + bubbles * Cfg.BATH_HYGIENE_PER_BUBBLE)
+  pet.careCount += 1
+  pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
+  grantXp(p)
+  p.currency += Cfg.COINS_PER_ACTION
+  bumpCounter(p, 'cleanCount')
+  bumpCounter(p, 'careCount')
+}
