@@ -196,9 +196,12 @@ export function useItemLocal(tier: number): boolean {
   if (have <= 0) return false
   if (tier === 1) p.inventory.tier1 -= 1
   else p.inventory.tier2 -= 1
+  // Mirror the server: items skip a minigame/timer. Feast also wakes the pet.
+  if (item.wakes) wakeLocal(pet)
   pet.hunger = clamp(pet.hunger + item.hunger)
   pet.happiness = clamp(pet.happiness + item.happiness)
-  // Mirror the server: feeding is a care action — grow, gain XP + coins, cheer it.
+  pet.energy = clamp(pet.energy + item.energy)
+  // Using an item is a care action — grow, gain XP + coins.
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
   grantXp(p)

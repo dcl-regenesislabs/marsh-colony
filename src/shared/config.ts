@@ -579,10 +579,19 @@ export interface ShopItem {
   price: number
   hunger: number
   happiness: number
+  energy: number
+  wakes: boolean // Feast: wakes the pet + clears the nap lock, so it skips the sleep timer
+  desc: string // what the item does, shown in the shop + inventory
 }
+// Inventory consumables SKIP a care minigame/timer:
+//  • Magic Kibble — instantly fills hunger (skips the Feed fruit minigame).
+//  • Feast — instantly restores energy and wakes the pet (skips the 3-min nap).
 export const SHOP_ITEMS: ShopItem[] = [
-  { tier: 1, label: 'Basic Kibble', price: 15, hunger: 35, happiness: 0 },
-  { tier: 2, label: 'Premium Feast', price: 40, hunger: 100, happiness: 10 }
+  { tier: 1, label: 'Magic Kibble', price: 15, hunger: 100, happiness: 0, energy: 0, wakes: false, desc: 'Fills hunger — skips the Feed game' },
+  // Priced above the coins a full energy bar can farm back through fetch (~63 +
+  // the 5-coin use payout) so buying it to skip the nap is a net coin SINK, not a
+  // profit loop — see careAction's same-farm refusal. (Economy still being tuned.)
+  { tier: 2, label: 'Feast', price: 90, hunger: 0, happiness: 0, energy: 100, wakes: true, desc: 'Restores energy — skips sleeping' }
 ]
 
 // ---------------------------------------------------------------------------
@@ -738,7 +747,7 @@ export interface LevelReward {
 export const CARETAKER_LEVEL_REWARDS: LevelReward[] = [
   { level: 2, kind: 'currency', amount: 50, label: '+50 coins' },
   { level: 3, kind: 'spinTicket', amount: 1, label: '+1 spin ticket' },
-  { level: 4, kind: 'foodTier2', amount: 2, label: '2x Premium Feast' },
+  { level: 4, kind: 'foodTier2', amount: 2, label: '2x Feast' },
   { level: 5, kind: 'slot', amount: 1, label: '+1 pet slot' },
   { level: 7, kind: 'currency', amount: 200, label: '+200 coins' },
   { level: 10, kind: 'slot', amount: 1, label: '+1 pet slot' }
@@ -813,7 +822,7 @@ export interface SpinReward {
 export const SPIN_REWARDS: SpinReward[] = [
   { kind: 'currency', amount: 20, weight: 40, rarity: 'common', label: '20 coins' },
   { kind: 'currency', amount: 50, weight: 25, rarity: 'common', label: '50 coins' },
-  { kind: 'foodTier2', amount: 1, weight: 15, rarity: 'common', label: 'Premium Feast' },
+  { kind: 'foodTier2', amount: 1, weight: 15, rarity: 'common', label: 'Feast' },
   { kind: 'spinTicket', amount: 1, weight: 10, rarity: 'rare', label: 'Free Spin' },
   { kind: 'currency', amount: 200, weight: 6, rarity: 'rare', label: '200 coins' },
   // cosmetics not built yet -> defaults to a currency-equivalent payout
