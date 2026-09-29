@@ -9,6 +9,7 @@ import { EntityNames } from '../../assets/scene/entity-names'
 import { SIZE_BASE, clipForSpecies, modelForSpecies, scaleForSpecies, stageScaleFor, yawOffsetForSpecies } from '../shared/config'
 import { applyCreatureSkin } from './creatureSkins'
 import { getPotionEntity, getPotionTableEntity } from './sicknessProps'
+import { playPetVoice } from './pet'
 import { mobile } from './ui/theme'
 
 const PEPITO_SPECIES = 'pepito-original'
@@ -481,7 +482,10 @@ function tickSteal(dt: number): void {
     return
   }
   if (flightElapsed < APPROACH_S + GRAB_HOLD_S) {
-    carried = true
+    if (!carried) {
+      carried = true
+      playPetVoice(PEPITO_SPECIES)
+    }
     if (!cried) {
       cried = true
       startCryEmote()

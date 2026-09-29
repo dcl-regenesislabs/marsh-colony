@@ -60,6 +60,7 @@ const NUM_FRUIT_SLOTS = 5
 const FRUIT_SCALE = 1.2
 
 const FRUIT_PICK_SOUND = 'assets/sounds/fruit_pick2.wav'
+const FRUIT_DROP_SOUND = 'assets/sounds/FruitDrop01.mp3' // fires when a fruit hits the ground uncaught
 // Invisible walls placed in the composite (assets/asset-packs/invisible_wall)
 // penning the player into the catch lane: lane_1/lane_2 are the long front/back
 // walls (block wandering toward/away from the camera), lane_3/lane_4 are the
@@ -1146,6 +1147,7 @@ function resolveFruit(f: FruitRuntime, caught: boolean): void {
     return
   }
   VisibilityComponent.createOrReplace(f.entity, { visible: false })
+  if (sfxEntity) AudioSource.playSound(sfxEntity, FRUIT_DROP_SOUND)
   dropGroundClutter(pos, GltfContainer.get(f.entity).src)
   spawnScorch(pos)
   f.phase = 'resolved'

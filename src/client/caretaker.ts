@@ -1,12 +1,24 @@
 // Sets up the Caretaker's click interaction and Idle/Talk animation clip
 // switching based on whether its dialog is currently open.
 
-import { engine, Entity, Transform, Animator, pointerEventsSystem, InputAction, InputModifier } from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, Animator, AudioSource, pointerEventsSystem, InputAction, InputModifier } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState } from './state'
 import { ui } from './ui'
+
+const TALK_SOUND = 'assets/sounds/AlienNod.mp3'
+let talkSfx: Entity | null = null
+
+function playTalkSound(): void {
+  if (!talkSfx) {
+    talkSfx = engine.addEntity()
+    Transform.create(talkSfx, {})
+    AudioSource.create(talkSfx, { audioClipUrl: TALK_SOUND, playing: false, global: true, volume: 0.6 })
+  }
+  AudioSource.playSound(talkSfx, TALK_SOUND)
+}
 
 // Clip names as authored on the Caretaker.glb / auto-populated by the Creator
 // Hub's Animator (assets/scene/main.composite) — case-sensitive.
@@ -31,7 +43,10 @@ function ensureClickHandler(caretaker: Entity): void {
   clickHandlerSet = true
   pointerEventsSystem.onPointerDown(
     { entity: caretaker, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to Caretaker', maxDistance: 16, showHighlight: true } },
-    () => ui.openCaretaker()
+    () => {
+      playTalkSound()
+      ui.openCaretaker()
+    }
   )
 }
 

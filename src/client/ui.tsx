@@ -30,7 +30,8 @@ import {
   startBreedCross,
   getBreedFx,
   BREED_ORB_FRAMES,
-  BREED_BURST_FRAMES
+  BREED_BURST_FRAMES,
+  playPetVoice
 } from './pet'
 import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, showPetTouchControls } from './touchControls'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
@@ -50,7 +51,7 @@ import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, ca
 import { dismissMeteorAfterClaim } from './meteor'
 import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible, getPress, triggerPress } from './ui/anim'
-import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
+import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, playUiClick, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
 import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './ui/dialog'
 import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
@@ -260,7 +261,10 @@ function NameLevelBar(props: { height: number }) {
     <UiEntity
       uiTransform={{ width: w, height: h, pointerFilter: 'block' }}
       uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_NAME_UVS }}
-      onMouseDown={() => ui.openGoals()}
+      onMouseDown={() => {
+        playUiClick()
+        ui.openGoals()
+      }}
     >
       <Label
         value={`${lvl}`}
@@ -533,6 +537,7 @@ function PetPanel() {
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Pick the pet up and carry it to the tub (place it there to bathe).
+            playPetVoice(pet.species)
             startCarryPet()
             clientState.petPanelOpen = false
           })}
@@ -560,6 +565,7 @@ function PetPanel() {
             if (pet.sleeping) {
               pet.sleeping = false
               pet.sleepLockUntil = 0
+              playPetVoice(pet.species)
               actions.care('sleep', true)
               return
             }
@@ -588,6 +594,7 @@ function PetPanel() {
               return
             }
             // Enter Fetch mode: hide the panel and show the centered Fetch button.
+            playPetVoice(pet.species)
             clientState.fetch.active = true
             clientState.petPanelOpen = false
           })}
@@ -699,6 +706,7 @@ function SwapOfferPanel() {
   const contentW = S(600) - S(30) * 2
   const p = offer.offeredPet
   const respond = (accept: boolean) => {
+    if (accept) playPetVoice(p.species)
     actions.respondSwap(accept)
     clientState.incomingSwap = null
   }
@@ -1173,13 +1181,17 @@ function BreedNamePanel() {
           uiBackground={{ texture: { src: BREED_HUD }, textureMode: 'stretch', uvs: pill.uvs }}
           onMouseDown={
             hasPotion
-              ? () => (uiState.breedUsePotion = !uiState.breedUsePotion)
+              ? () => {
+                  playUiClick()
+                  uiState.breedUsePotion = !uiState.breedUsePotion
+                }
               : () => {
                   // No potions: buy one on the spot with coins. buyPotionLocal is the
                   // optimistic mirror (deducts coins + adds the potion, false if broke);
                   // the server call confirms. Auto-apply it — you bought it for THIS roll.
                   // Feedback goes to an INLINE notice, not pushToast: toasts are
                   // suppressed while a modal (bigUiOpen) is on screen, so they'd be invisible.
+                  playUiClick()
                   if (buyPotionLocal()) {
                     uiState.breedUsePotion = true
                     actions.buyPotion()
@@ -1364,6 +1376,7 @@ function BuyButton(props: { key?: string; id: string; width: number; enabled: bo
           props.enabled
             ? () => {
                 triggerPress(props.id)
+                playUiClick()
                 props.onClick()
               }
             : undefined
@@ -1382,7 +1395,17 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
   const bowlH = Math.round(bowlW / props.bowlAspect)
   const bowlTop = Math.round(cardH * (props.bowlTop ?? 0.3))
   return (
-    <UiEntity uiTransform={{ width: cardW, height: cardH, margin: S(6), pointerFilter: props.enabled ? 'block' : 'none' }} onMouseDown={props.enabled ? props.onClick : undefined}>
+    <UiEntity
+      uiTransform={{ width: cardW, height: cardH, margin: S(6), pointerFilter: props.enabled ? 'block' : 'none' }}
+      onMouseDown={
+        props.enabled
+          ? () => {
+              playUiClick()
+              props.onClick()
+            }
+          : undefined
+      }
+    >
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: cardW, height: cardH }}
         uiBackground={{ texture: { src: INV_SHEET }, textureMode: 'stretch', uvs: props.enabled ? INV_CARD_ENABLED_UVS : INV_CARD_DISABLED_UVS }}
@@ -1547,7 +1570,15 @@ function RosterSlotCard(props: { key?: number; index: number }) {
   const isActive = pet.id === p.activePetId
   const img = Cfg.speciesImage(pet.species)
   return (
-    <PetGridCard selected={isActive} width={cardW} height={cardH} onClick={() => switchActivePet(pet.id)}>
+    <PetGridCard
+      selected={isActive}
+      width={cardW}
+      height={cardH}
+      onClick={() => {
+        if (!isActive) playPetVoice(pet.species)
+        switchActivePet(pet.id)
+      }}
+    >
       <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: S(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
       <Label value={pet.name} fontSize={S(17)} color={isActive ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
       <Label value={`Lv ${pet.petLevel}`} fontSize={S(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
@@ -1795,7 +1826,10 @@ function MeteorRewardPanel() {
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round(panelHeight * 0.035), right: Math.round(panelWidth * 0.035) }, width: closeSize, height: closeSize, pointerFilter: 'block' }}
           uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_CLOSE_UVS }}
-          onMouseDown={() => ui.close()}
+          onMouseDown={() => {
+            playUiClick()
+            ui.close()
+          }}
         />
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: cardsTop, left: cardsSidePad }, width: panelWidth - cardsSidePad * 2, height: cardHeight, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
@@ -1874,7 +1908,10 @@ function GoalsPanel() {
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: closeTop, left: closeLeft }, width: closeSz, height: closeSz, pointerFilter: 'block' }}
           uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => ui.close()}
+          onMouseDown={() => {
+            playUiClick()
+            ui.close()
+          }}
         />
       </UiEntity>
     </UiEntity>
@@ -1965,7 +2002,9 @@ function SongRow(props: { key?: string; id: SongId; label: string; playing: bool
       uiTransform={{ width: '100%', height: songRowH(), flexDirection: 'row', alignItems: 'center', padding: { left: S(12), right: S(12) }, margin: { bottom: songRowGap() }, borderRadius: S(12), pointerFilter: 'block' }}
       uiBackground={{ color: props.playing ? LOC.blue : LOC.tile }}
       onMouseDown={() => {
-        if (!props.playing) playSong(props.id)
+        if (props.playing) return
+        playUiClick()
+        playSong(props.id)
       }}
     >
       <UiEntity
@@ -1997,7 +2036,9 @@ function VolumeStep(props: { key?: string; pct: number; active: boolean; width: 
       uiTransform={{ width: props.width, height: S(44), margin: { left: S(3), right: S(3) }, alignItems: 'center', justifyContent: 'center', borderRadius: S(10), pointerFilter: 'block' }}
       uiBackground={{ color: props.active ? LOC.orange : LOC.tile }}
       onMouseDown={() => {
-        if (!props.active) setMusicVolume(props.pct / 100)
+        if (props.active) return
+        playUiClick()
+        setMusicVolume(props.pct / 100)
       }}
     >
       <Label value={`${props.pct}%`} fontSize={S(14)} color={props.active ? LOC.white : LOC.dim} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(20) }} />
@@ -2195,7 +2236,9 @@ function BackButton(props: { onClick: () => void; disabled?: boolean }) {
             color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
           }}
           onMouseDown={() => {
-            if (!props.disabled) props.onClick()
+            if (props.disabled) return
+            playUiClick()
+            props.onClick()
           }}
         />
       </UiEntity>
@@ -2544,7 +2587,10 @@ function FeedEatingPanel() {
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.69), left: Math.round(cardW * 0.18) }, width: Math.round(cardW * 0.64), height: Math.round(cardH * 0.2), pointerFilter: 'block' }}
           uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => exitFeedResults()}
+          onMouseDown={() => {
+            playUiClick()
+            exitFeedResults()
+          }}
         />
       ) : null}
     </UiEntity>
@@ -2916,7 +2962,10 @@ function BathResultsPanel() {
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.727), left: Math.round(cardW * 0.215) }, width: Math.round(cardW * 0.573), height: Math.round(cardH * 0.172), pointerFilter: 'block' }}
           uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => exitBathResults()}
+          onMouseDown={() => {
+            playUiClick()
+            exitBathResults()
+          }}
         />
       </UiEntity>
       <Label
@@ -3003,7 +3052,10 @@ function LightModal(props: { title: string; width: number; height: number; onClo
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: S(16), right: S(16) }, width: S(52), height: S(52), pointerFilter: 'block' }}
           uiBackground={{ texture: { src: LOC_CLOSE }, textureMode: 'stretch' }}
-          onMouseDown={props.onClose}
+          onMouseDown={() => {
+            playUiClick()
+            props.onClose()
+          }}
         />
         <OutlineLabel value={props.title} fontSize={S(42)} color={LOC.title} outlineColor={LOC.titleOutline} width={'100%'} height={S(58)} textAlign="middle-center" />
         {/* Explicit height (NOT flex:1): Unity collapses flex-grow fill, piling the
@@ -3131,7 +3183,10 @@ function PetHudModal(props: { title: string; subtitle?: string; width: number; h
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: S(14), right: S(26) }, width: S(42), height: S(42), pointerFilter: 'block' }}
           uiBackground={{ texture: { src: PET_HUD_SHEET }, textureMode: 'stretch', uvs: PET_CLOSE_PINK_UVS }}
-          onMouseDown={props.onClose}
+          onMouseDown={() => {
+            playUiClick()
+            props.onClose()
+          }}
         />
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: topPad, left: sidePad }, width: props.width - sidePad * 2, height: props.height - topPad - S(24), flexDirection: 'column', alignItems: 'center' }}>
           <Label value={props.title} fontSize={S(30)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: titleH }} />
@@ -3160,7 +3215,10 @@ function PetHudCard(props: { width: number; height: number; onClose: () => void;
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: S(14), right: S(26) }, width: S(42), height: S(42), pointerFilter: 'block' }}
           uiBackground={{ texture: { src: PET_HUD_SHEET }, textureMode: 'stretch', uvs: PET_CLOSE_PINK_UVS }}
-          onMouseDown={props.onClose}
+          onMouseDown={() => {
+            playUiClick()
+            props.onClose()
+          }}
         />
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: topPad, left: sidePad }, width: props.width - sidePad * 2, height: props.height - topPad * 2, flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
           {props.children}
@@ -3176,7 +3234,14 @@ function PetGridCard(props: { selected: boolean; width: number; height: number; 
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height, pointerFilter: props.onClick ? 'block' : 'none' }}
         uiBackground={{ texture: { src: PET_HUD_SHEET }, textureMode: 'stretch', uvs: props.selected ? PET_CARD_SELECTED_UVS : PET_CARD_PLAIN_UVS }}
-        onMouseDown={props.onClick}
+        onMouseDown={
+          props.onClick
+            ? () => {
+                playUiClick()
+                props.onClick!()
+              }
+            : undefined
+        }
       />
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(18), left: S(18) }, width: props.width - S(36), height: props.height - S(36), flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {props.children}

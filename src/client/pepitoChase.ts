@@ -4,6 +4,7 @@
 
 import {
   Animator,
+  AudioSource,
   AvatarAnchorPointType,
   AvatarAttach,
   AvatarMask,
@@ -32,6 +33,9 @@ import { ROCK_TOUCH_ACTION, hideRockTouchButton, showRockTouchButton } from './t
 import { openPepitoStoleDialog } from './ui/dialog'
 import { mobile } from './ui/theme'
 import { getPotionEntity, getPotionTableEntity } from './sicknessProps'
+import { playPetVoice } from './pet'
+
+const POTION_DROP_SOUND = 'assets/sounds/FruitDrop01.mp3' // fires when the potion hits the floor after a hit
 
 const PEPITO_SPECIES = 'pepito-original'
 const PEPITO_SCALE = stageScaleFor(SIZE_BASE) * scaleForSpecies(PEPITO_SPECIES)
@@ -491,6 +495,7 @@ function beginPotionDrop(): void {
   }
   const transform = Transform.get(potion)
   playPepitoHitFeedback()
+  playPetVoice(PEPITO_SPECIES)
   potionDrop = {
     position: Vector3.create(transform.position.x, transform.position.y, transform.position.z),
     velocity: Vector3.create(0, -0.25, 0)
@@ -554,6 +559,17 @@ function pepitoFleeTick(dt: number): void {
   preparePotionPickup()
 }
 
+let potionDropSfx: Entity | null = null
+
+function playPotionDropSound(): void {
+  if (!potionDropSfx) {
+    potionDropSfx = engine.addEntity()
+    Transform.create(potionDropSfx, {})
+    AudioSource.create(potionDropSfx, { audioClipUrl: POTION_DROP_SOUND, playing: false, global: true, volume: 0.5 })
+  }
+  AudioSource.playSound(potionDropSfx, POTION_DROP_SOUND)
+}
+
 function finishPotionDrop(): void {
   potionDrop = null
   preparePotionPickup()
@@ -601,6 +617,7 @@ function potionDropTick(dt: number): void {
   if (potionDrop.position.y <= groundY) {
     potionDrop.position = Vector3.create(potionDrop.position.x, groundY, potionDrop.position.z)
     Transform.getMutable(potion).position = potionDrop.position
+    playPotionDropSound()
     finishPotionDrop()
     return
   }

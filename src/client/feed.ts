@@ -13,7 +13,7 @@
 
 import { engine, Entity, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
-import { hideArrow, showArrowTo, canStartPetInteraction, getEggPending } from './pet'
+import { hideArrow, showArrowTo, canStartPetInteraction, getEggPending, playPetVoice } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState, pushToast, hasPendingHatchling } from './state'
 import { ui } from './ui'
@@ -66,6 +66,7 @@ export function startFeedTask(): void {
     console.log('[Client] feed task: tree not found in scene')
     return
   }
+  playPetVoice(clientState.activePet.species)
   clientState.feedTask = { active: true, petId: clientState.activePet.id }
   showArrowTo(Transform.get(tree).position, 'feed')
   clientState.petPanelOpen = false // the panel covers the screen; the errand is out in the world

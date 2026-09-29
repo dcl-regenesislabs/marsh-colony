@@ -7,9 +7,11 @@
 
 import {
   engine,
+  Entity,
   Transform,
   GltfContainer,
   Animator,
+  AudioSource,
   VisibilityComponent,
   ColliderLayer,
   pointerEventsSystem,
@@ -19,6 +21,18 @@ import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { dailyClaimable, meteorAvailable } from './sim'
 import { showHint } from './state'
 import { ui } from './ui'
+
+const METEOR_SOUND = 'assets/sounds/meteorland.mp3' // shared by the meteor's appearance AND its collection poof
+let meteorSfx: Entity | null = null
+
+function playMeteorSound(): void {
+  if (!meteorSfx) {
+    meteorSfx = engine.addEntity()
+    Transform.create(meteorSfx, {})
+    AudioSource.create(meteorSfx, { audioClipUrl: METEOR_SOUND, playing: false, global: true, volume: 0.7 })
+  }
+  AudioSource.playSound(meteorSfx, METEOR_SOUND)
+}
 
 const MODEL = 'assets/Models/newModels/meteor01.glb'
 const LANDING_CLIP = 'asteroid_land' // meteor01's fall clip; after it plays we HOLD its last frame
@@ -99,6 +113,7 @@ function spawnMeteor(): void {
       t = 0
       VisibilityComponent.getMutable(meteor).visible = true
       Animator.playSingleAnimation(meteor, LANDING_CLIP, true)
+      playMeteorSound()
     } else if (phase === 1 && t >= LANDING_DURATION) {
       // Now that it's actually settled at the same spot its collider has sat
       // the whole time, turn on physics so it blocks movement like a solid
@@ -118,6 +133,7 @@ function spawnMeteor(): void {
     disappearing = true
     engine.removeSystem(timeline)
     Animator.playSingleAnimation(meteor, DISAPPEAR_CLIP, true)
+    playMeteorSound()
     let poofT = 0
     const finishDisappear = (dt: number): void => {
       poofT += dt
