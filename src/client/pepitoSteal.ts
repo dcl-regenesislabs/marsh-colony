@@ -45,7 +45,8 @@ const REACH_EMOTE_FILE = 'models/button_front_left_emote.glb'
 const REACH_EMOTE_FALLBACK = 'buttonFront'
 // In the emote the hand is at full reach from ~0.2s to ~0.47s, then drops back
 // (it ends at 0.83s). The emote starts so Pepito's grab lands this far into it,
-// i.e. with the hand fully out; the cry then cuts it off.
+// i.e. with the hand fully out. Mobile skips this beat: its shared emote
+// cooldown/loading lock would otherwise discard the immediate cry reaction.
 const REACH_GRAB_AT_S = 0.35
 // The player's reaction to the theft: Decentraland's own looping base emote "cry"
 // (off-chain base-emotes collection, Cry_Particles.glb), triggered by bare name
@@ -465,12 +466,17 @@ function tickSteal(dt: number): void {
   }
   if (!reached && elapsed >= revealHold + APPROACH_S - REACH_GRAB_AT_S) {
     reached = true
-    const fallback = (): void => void triggerEmote({ predefinedEmote: REACH_EMOTE_FALLBACK }).catch(() => {})
-    triggerSceneEmote({ src: REACH_EMOTE_FILE, loop: false })
-      .then((result) => {
-        if (!result?.success) fallback()
-      })
-      .catch(fallback)
+    // Godot mobile throttles all emotes together and rejects a second emote
+    // while the first is loading. Keep the theft's visible reaction reliable:
+    // mobile goes directly to cry at the grab, while desktop retains the reach.
+    if (!mobile()) {
+      const fallback = (): void => void triggerEmote({ predefinedEmote: REACH_EMOTE_FALLBACK }).catch(() => {})
+      triggerSceneEmote({ src: REACH_EMOTE_FILE, loop: false })
+        .then((result) => {
+          if (!result?.success) fallback()
+        })
+        .catch(fallback)
+    }
   }
   if (elapsed < revealHold) return
   const flightElapsed = elapsed - revealHold
