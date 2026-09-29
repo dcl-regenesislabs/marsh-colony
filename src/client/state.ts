@@ -310,6 +310,8 @@ function makeLocalPet(species: string, name: string): PetData {
     generation: 0,
     sleeping: false,
     sleepOnBed: false,
+    sleepStartEnergy: 0,
+    sleepUntil: 0,
     sleepLockUntil: 0,
     sick: false,
     bornAt: t,

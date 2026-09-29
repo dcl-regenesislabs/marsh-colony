@@ -52,6 +52,13 @@ export function simTick(dt: number): void {
   const pet = clientState.activePet
   if (!pet) return
 
+  // Mirrors the server: a nap expires at its persisted end time. The server's
+  // next snapshot remains authoritative; this only keeps the local animation
+  // and HUD responsive in the meantime.
+  const timedNap = pet.sleeping && pet.sleepUntil > 0
+  const napLeftMs = timedNap ? Cfg.sleepRemaining(pet, Date.now()) : 0
+  if (timedNap && napLeftMs <= 0) wakeLocal(pet)
+
   // Mirrors the server: asleep -> energy refills, everything else slows down.
   const slow = pet.sleeping ? Cfg.SLEEP_DECAY_FACTOR : 1
   for (const k of STAT_KEYS) {
@@ -60,9 +67,14 @@ export function simTick(dt: number): void {
     pet[k] = clamp(pet[k] - Cfg.DECAY_PER_SEC[k] * dt * slow)
   }
   if (pet.sleeping) {
-    const fill = Cfg.SLEEP_FILL_PER_SEC * (pet.sleepOnBed ? 1 : Cfg.SLEEP_OFF_BED_FACTOR)
-    pet.energy = clamp(pet.energy + fill * dt)
-    if (pet.energy >= 100) wakeLocal(pet) // wakes up rested (the lock ends with it)
+    if (timedNap) {
+      const progress = 1 - napLeftMs / Cfg.SLEEP_DURATION_MS
+      pet.energy = clamp(Cfg.sleepEnergyAtNapProgress(pet, progress))
+    } else {
+      const fill = Cfg.SLEEP_FILL_PER_SEC * (pet.sleepOnBed ? 1 : Cfg.SLEEP_OFF_BED_FACTOR)
+      pet.energy = clamp(pet.energy + fill * dt)
+      if (pet.energy >= 100) wakeLocal(pet)
+    }
   }
   let happinessLoss = Cfg.DECAY_PER_SEC.happiness * dt * slow
   let neglected = 0
@@ -268,7 +280,16 @@ export function meteorAvailable(): boolean | null {
 // ---------------------------------------------------------------------------
 function wakeLocal(pet: PetData): void {
   pet.sleeping = false
+  pet.sleepStartEnergy = 0
+  pet.sleepUntil = 0
   pet.sleepLockUntil = 0
+}
+
+/** Milliseconds left in the active pet's timed exhaustion nap. */
+export function sleepTimerLeft(): number {
+  const pet = clientState.activePet
+  if (!pet) return 0
+  return Cfg.sleepRemaining(pet, Date.now())
 }
 
 /** Milliseconds left before the active pet may be woken (0 = free / awake). */
@@ -308,9 +329,14 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
     }
     pet.sleeping = true
     pet.sleepOnBed = onBed
+    pet.sleepStartEnergy = pet.energy
+    const startedAt = Date.now()
     // Only an exhaustion nap locks (mirrors the server) — a rested pet you sent
-    // to bed can be woken again immediately.
-    if (Cfg.isExhausted(pet)) pet.sleepLockUntil = Date.now() + Cfg.SLEEP_LOCK_MS
+    // to bed keeps the original slow-rest behavior and can wake immediately.
+    if (Cfg.isExhausted(pet)) {
+      pet.sleepUntil = startedAt + Cfg.SLEEP_DURATION_MS
+      pet.sleepLockUntil = startedAt + Cfg.SLEEP_LOCK_MS
+    }
     return true
   }
   // Play is energy-gated: a worn-out pet earns nothing until it has slept.
