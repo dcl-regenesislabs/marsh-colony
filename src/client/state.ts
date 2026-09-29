@@ -450,6 +450,9 @@ export const actions = {
   feedResult(caught: number, poisoned: boolean): void {
     room.send('feedResult', { caught, poisoned })
   },
+  bathResult(popped: number): void {
+    room.send('bathResult', { popped })
+  },
   beginSicknessCure(): void {
     room.send('beginSicknessCure', {})
   },

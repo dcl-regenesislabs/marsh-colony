@@ -712,6 +712,37 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   return notes
 }
 
+/** Bath bubble minigame result: hygiene restored scales with bubbles popped,
+ *  capped at a full clean (client-submitted, so `popped` isn't trusted beyond the
+ *  cap; clamp(0,100) already ceilings hygiene). Mirrors the 'clean' action's sleep
+ *  lock + cooldown so the minigame can't bypass either. */
+export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
+  const notes: Notify[] = []
+  const pet = activePet(p)
+  if (!pet) return [{ kind: 'error', message: 'No active pet' }]
+  tickPlayer(p)
+  if (popped <= 0) return notes // nothing popped -> no clean
+  const lockLeft = C.sleepLockRemaining(pet, now())
+  if (lockLeft > 0) {
+    return [{ kind: 'sleep', message: `${pet.name} is fast asleep — ${C.formatLockCountdown(lockLeft)} left.` }]
+  }
+  if (!cooldownOk(p.address, 'clean', C.ACTION_COOLDOWN_MS.clean)) {
+    return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
+  }
+  const bubbles = Math.min(popped, C.BATH_BUBBLE_GOAL)
+  const hygiene = bubbles * C.BATH_HYGIENE_PER_BUBBLE
+  if (bubbles >= C.BATH_BUBBLE_GOAL) {
+    // Full bath = a completed clean: full hygiene + growth tick + XP + coins.
+    applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes)
+  } else {
+    // Partial: proportional hygiene ONLY — no careCount/growth/reward, so a
+    // 1-bubble bath can't farm the careCount-driven ADULT breeding gate.
+    wake(pet)
+    pet.hygiene = clamp(pet.hygiene + hygiene)
+  }
+  return notes
+}
+
 /** Complete the Caretaker medicine flow. This state change is deliberately
  * server-side: clients may only request a cure after their local cinematic. */
 export function cureSickness(p: PlayerData): Notify[] {

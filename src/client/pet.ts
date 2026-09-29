@@ -1660,7 +1660,10 @@ let petVoiceSfx: Entity | null = null
 
 /** Play the given species' voice clip (interaction feedback: click, feed, select). */
 export function playPetVoice(species: string): void {
-  const src = PET_VOICE_SOUND[C.speciesParts(species).head]
+  // speciesParts() casts legacy ids (alienPet-* / PetPanda) to themselves, so the
+  // lookup can miss -> undefined audioClipUrl throws in the CRDT serializer and
+  // kills the tick, not just the sound. Fall back to a real clip.
+  const src = PET_VOICE_SOUND[C.speciesParts(species).head] ?? PET_VOICE_SOUND.sprout
   if (!petVoiceSfx) {
     petVoiceSfx = engine.addEntity()
     Transform.create(petVoiceSfx, {})

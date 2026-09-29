@@ -2941,10 +2941,15 @@ function BathResultsPanel() {
   const target = clean ? 1 : Math.min(1, st.popped / BUBBLE_GOAL)
   const barPct = Math.max(0, Math.min(100, target * eased * 100))
   // The illustrated card's text ("Bubbles popped! / Pet clean") is baked and fixed,
-  // so the win/lose outcome, the pop count and the retry nudge — all lost when the
-  // old code-drawn panel was replaced — ride on a caption below the card and the
-  // bar's colour (blue = clean, amber = fell short) instead of fighting the art.
-  const caption = clean ? `Squeaky clean!   ${st.popped} bubbles popped` : `Popped ${st.popped}/${BUBBLE_GOAL} — try again!`
+  // so the outcome rides on a caption below the card + the bar's colour (blue =
+  // full clean, amber = partial). Hygiene now scales with bubbles, so a partial
+  // round reports the hygiene it earned instead of a misleading "try again".
+  const gained = Math.round(Math.min(st.popped, BUBBLE_GOAL) * Cfg.BATH_HYGIENE_PER_BUBBLE)
+  const caption = clean
+    ? `Squeaky clean!   ${st.popped} bubbles popped`
+    : st.popped > 0
+      ? `${st.popped}/${BUBBLE_GOAL} popped — +${gained} hygiene`
+      : `Popped 0/${BUBBLE_GOAL} — try again!`
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}

@@ -16,6 +16,8 @@ export const Messages = {
   // round caught poisonous fruit (sent once, at game end).
   beginFeedMinigame: Schemas.Map({}),
   feedResult: Schemas.Map({ caught: Schemas.Int, poisoned: Schemas.Boolean }),
+  // Bath bubble minigame result: hygiene restored scales with bubbles popped.
+  bathResult: Schemas.Map({ popped: Schemas.Int }),
   // Marks that a sick pet reached the Care Center. The server verifies the
   // player's actual position and issues the short-lived cure authorization.
   beginSicknessCure: Schemas.Map({}),

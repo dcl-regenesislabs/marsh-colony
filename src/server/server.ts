@@ -182,6 +182,15 @@ export function server(): void {
     pushSnapshot(p)
   })
 
+  room.onMessage('bathResult', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    const notes = S.bathFromMinigame(p, data.popped)
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+  })
+
   room.onMessage('beginSicknessCure', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
