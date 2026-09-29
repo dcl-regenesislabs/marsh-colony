@@ -832,7 +832,18 @@ export const SPIN_REWARDS: SpinReward[] = [
 
 // Navigation / follow tuning (client-side).
 export const PET_FOLLOW_DISTANCE = 2.2
+// Tuned against the Junior model: it follows at a readable pace while the
+// baked walk cycle stays energetic and the idle/walk handoff remains subtle.
 export const PET_MOVE_SPEED = 4.0 // m/s
+export const PET_WALK_PLAYBACK_SPEED = 2.575
+export const PET_LOCOMOTION_CROSSFADE_S = 0 // clean idle/walk cut; avoids blend-pose flashes
+// Procedural locomotion: pets ease into motion and brake before reaching a
+// target instead of instantly jumping between 0 and PET_MOVE_SPEED.
+// Follow targets are usually close, so these need to be responsive enough for
+// the pet to reach its walking pace before it has to slow down again.
+export const PET_MOVE_ACCELERATION = 16 // m/s²
+export const PET_MOVE_BRAKING = 18 // m/s²
+export const PET_TURN_SPEED = 540 // degrees/s
 export const PET_ARRIVE_DISTANCE = 0.6
 export const PET_BASE_Y = 0
 

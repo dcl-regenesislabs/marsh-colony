@@ -37,6 +37,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
 import * as C from '../shared/config'
+import { petMotionStep, stopPetMotion } from './petMotion'
 import {
   clipForSpecies,
   clipsForSpecies,
@@ -104,6 +105,10 @@ let cureFade: { from: string; to: string; t: number; emote: 'sick' | 'heart' | n
 const curClip = new Map<Entity, string>() // entity -> the GLB clip name currently playing
 const entitySpecies = new Map<Entity, string>() // entity -> species, so setClip can resolve its clip names
 const lastLogicalClip = new Map<Entity, PetClip>() // entity -> the LOGICAL clip last requested via setClip (curClip stores the resolved GLB name instead)
+// A short blend prevents the baked walk cycle from popping in and out as a pet
+// starts or stops moving. Keep this separate from the cure blend below: every
+// pet (local, remote, and inactive) can change between idle and walk.
+const locomotionFades = new Map<Entity, { from: string; to: string; t: number }>()
 // See restartMoveClip() below.
 let moveClipRestartPending = false
 
@@ -459,7 +464,13 @@ function ensureAnimator(e: Entity, species: string): void {
   entitySpecies.set(e, species)
   const idle = clipForSpecies(species, 'idle')
   Animator.createOrReplace(e, {
-    states: clipsForSpecies(species).map((clip) => ({ clip, playing: clip === idle, loop: true, speed: 1, weight: 1 }))
+    states: clipsForSpecies(species).map((clip) => ({
+      clip,
+      playing: clip === idle,
+      loop: true,
+      speed: clip === clipForSpecies(species, 'walk') || clip === clipForSpecies(species, 'run') ? C.PET_WALK_PLAYBACK_SPEED : 1,
+      weight: 1
+    }))
   })
   curClip.set(e, idle)
   lastLogicalClip.set(e, 'idle')
@@ -469,16 +480,85 @@ function forgetAnimator(e: Entity): void {
   curClip.delete(e)
   entitySpecies.delete(e)
   lastLogicalClip.delete(e)
+  locomotionFades.delete(e)
+  stopPetMotion(e)
+}
+
+function isLocomotionClip(clip: PetClip | undefined): boolean {
+  return clip === 'walk' || clip === 'run'
 }
 
 /** Play a logical clip, resolved to whatever this entity's species calls it. */
 function setClip(e: Entity, clip: PetClip): void {
+  const previous = lastLogicalClip.get(e)
   lastLogicalClip.set(e, clip)
   const name = clipForSpecies(entitySpecies.get(e) ?? '', clip)
   if (curClip.get(e) === name) return
+  const previousName = curClip.get(e)
   curClip.set(e, name)
   const a = Animator.getMutable(e)
-  for (const s of a.states) s.playing = s.clip === name
+
+  // Animator weight blends leave a bad pose on mobile, so retain the stable
+  // single-clip switch there. A zero tuning duration explicitly requests that
+  // same clean cut on every platform.
+  const crossfade =
+    !mobile() &&
+    C.PET_LOCOMOTION_CROSSFADE_S > 0 &&
+    previousName !== undefined &&
+    ((previous === 'idle' && isLocomotionClip(clip)) || (isLocomotionClip(previous) && clip === 'idle'))
+  const from = crossfade ? a.states.find((state) => state.clip === previousName) : undefined
+  const to = crossfade ? a.states.find((state) => state.clip === name) : undefined
+  if (from && to && previousName !== undefined) {
+    for (const state of a.states) {
+      state.playing = state === from || state === to
+      state.speed = state === from && isLocomotionClip(previous) ? C.PET_WALK_PLAYBACK_SPEED : state === to && isLocomotionClip(clip) ? C.PET_WALK_PLAYBACK_SPEED : 1
+      // A non-playing clip can still bleed its bind pose into an Animator
+      // blend when it retains a non-zero weight. Only idle and walk may
+      // contribute during this handoff; every other clip must be weight 0.
+      state.weight = state === from ? 1 : state === to ? 0 : 0
+    }
+    locomotionFades.set(e, { from: previousName, to: name, t: 0 })
+    return
+  }
+
+  locomotionFades.delete(e)
+  for (const s of a.states) {
+    s.playing = s.clip === name
+    s.speed = s.clip === name && isLocomotionClip(clip) ? C.PET_WALK_PLAYBACK_SPEED : 1
+    // A new hard switch may interrupt a fade before tickLocomotionCrossfades
+    // settles it. Reset all weights so its target cannot stay invisible.
+    s.weight = 1
+  }
+}
+
+/** Advance all idle/walk blends after movement has picked this frame's clip. */
+function tickLocomotionCrossfades(dt: number): void {
+  for (const [entity, fade] of locomotionFades) {
+    if (!Animator.has(entity)) {
+      locomotionFades.delete(entity)
+      continue
+    }
+    const states = Animator.getMutable(entity).states
+    const from = states.find((state) => state.clip === fade.from)
+    const to = states.find((state) => state.clip === fade.to)
+    if (!from || !to) {
+      locomotionFades.delete(entity)
+      continue
+    }
+    fade.t += dt
+    const duration = C.PET_LOCOMOTION_CROSSFADE_S
+    const k = duration <= 0 ? 1 : Math.min(1, fade.t / duration)
+    const eased = 0.5 - 0.5 * Math.cos(Math.PI * k)
+    from.weight = 1 - eased
+    to.weight = eased
+    if (k >= 1) {
+      for (const state of states) {
+        state.playing = state === to
+        state.weight = 1
+      }
+      locomotionFades.delete(entity)
+    }
+  }
 }
 
 /** The last LOGICAL clip requested via setClip (not the resolved GLB name) —
@@ -529,16 +609,21 @@ function yawToward(from: Vector3, to: Vector3, offsetDeg = 0): Quaternion {
 }
 
 /** Move entity toward dest; returns the distance actually moved this frame.
+ *  `routeDistance` may include waypoints beyond `dest`, so a following pet
+ *  keeps its momentum through breadcrumbs and brakes only near the real end.
  *  `yawOffset` corrects models whose forward axis isn't the walk direction. */
-function stepToward(entity: Entity, dest: Vector3, dt: number, yawOffset = 0): number {
+function stepToward(entity: Entity, dest: Vector3, dt: number, yawOffset = 0, routeDistance?: number, preserveMomentum = false): number {
   const t = Transform.getMutable(entity)
   const cur = t.position
   const d = distFlat(cur, dest)
-  if (d <= C.PET_ARRIVE_DISTANCE) return 0
+  if (d <= C.PET_ARRIVE_DISTANCE) {
+    if (!preserveMomentum) stopPetMotion(entity)
+    return 0
+  }
   const dir = Vector3.normalize(Vector3.subtract(flat(dest), flat(cur)))
-  const step = Math.min(d, C.PET_MOVE_SPEED * dt)
+  const step = Math.min(d, petMotionStep(entity, routeDistance ?? d, dt, C.PET_MOVE_SPEED))
   t.position = Vector3.add(flat(cur), Vector3.scale(dir, step))
-  t.rotation = yawToward(cur, dest, yawOffset)
+  t.rotation = Quaternion.rotateTowards(t.rotation, yawToward(cur, dest, yawOffset), C.PET_TURN_SPEED * dt)
   return step
 }
 
@@ -853,7 +938,7 @@ function ensureLocalPet(): void {
   // Carry reparent recovery: re-assert the skin every frame over a short budget so
   // it re-lands the instant the reparent-triggered reload finishes, whenever that is.
   if (reskinTicks > 0) {
-    applyCreatureSkin(localPet, pet.species, pet.rarity)
+    applyCreatureSkin(localPet, renderSpecies, pet.rarity)
     reskinTicks--
   }
   // Keep visual scale synced to growth. This runs before updateLocalPet's
@@ -887,6 +972,7 @@ export function petReact(): void {
  * state update below prevents the clip from stopping after its first pass. */
 function restartEatAnimation(): boolean {
   if (!localPet || !Animator.has(localPet)) return false
+  locomotionFades.delete(localPet)
   const eatClip = clipForSpecies(clientState.activePet?.species ?? '', 'eat')
   curClip.set(localPet, eatClip)
   lastLogicalClip.set(localPet, 'eat')
@@ -1036,6 +1122,7 @@ function playCureClip(clip: PetClip, crossfade = false): void {
   const pet = clientState.activePet
   if (!localPet || !pet) return
   finishCureCrossfade()
+  locomotionFades.delete(localPet)
   const prev = curClip.get(localPet)
   interactClip = clip
   const name = clipForSpecies(pet.species, clip)
@@ -2713,7 +2800,14 @@ function updateLocalPet(dt: number): void {
         // breadcrumb's Y — otherwise the height keeps resetting to 0 each frame and
         // the pet only ever climbs a fraction of the way, sinking into raised bases.
         const prevY = petPos.y
-        moved = stepToward(localPet, wp, dt, yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+        moved = stepToward(
+          localPet,
+          wp,
+          dt,
+          yawOffsetForSpecies(clientState.activePet?.species ?? ''),
+          trailPathLength(petPos),
+          true
+        )
         const tp = Transform.getMutable(localPet)
         const y = prevY + (wp.y - prevY) * Math.min(1, dt * 8)
         tp.position = Vector3.create(tp.position.x, y, tp.position.z)
@@ -2817,6 +2911,11 @@ function updateLocalPet(dt: number): void {
 
   tickCureCrossfade(dt)
 
+  // Follow can be paused without calling stepToward (for example once the pet
+  // is close enough to the player). Drop any retained momentum in those cases
+  // so its next departure eases in from rest.
+  if (moved <= 0) stopPetMotion(localPet)
+
   // Decide animation: interaction clip > movement > sleeping > idle.
   // (sleep only while standing still — a pet dozing mid-walk would just slide.)
   // A pending restartMoveClip() wins this tick — drop whatever's playing and
@@ -2824,6 +2923,7 @@ function updateLocalPet(dt: number): void {
   // restartMoveClip's doc comment for why this can't happen in one tick).
   if (moveClipRestartPending && Animator.has(localPet)) {
     moveClipRestartPending = false
+    locomotionFades.delete(localPet)
     curClip.delete(localPet)
     const a = Animator.getMutable(localPet)
     for (const s of a.states) {
@@ -3003,6 +3103,7 @@ function updateRemotePets(dt: number): void {
       const dest = Vector3.create(ownerPos.x - 2, C.PET_BASE_Y, ownerPos.z - 2)
       moved = distFlat(t.position, dest) > 0.5 ? stepToward(ent, dest, dt, yawOffsetForSpecies(entry.species)) : 0
     }
+    if (moved <= 0) stopPetMotion(ent)
     setClip(ent, moved > 0.003 ? 'walk' : 'idle')
 
     // The owner test keeps a following companion synchronized with its hidden
@@ -3131,6 +3232,7 @@ function updateInactivePets(dt: number): void {
         // around walls instead of beelining through them.
         moved = navStepToward(st.entity, st.target, dt, yawOffsetForSpecies(pet.species))
       }
+      if (moved <= 0) stopPetMotion(st.entity)
       setClip(st.entity, moved > 0.003 ? 'walk' : 'idle')
 
       const t = Transform.getMutable(st.entity)
@@ -3206,5 +3308,6 @@ export function setupPetSystems(): void {
     updateSleepCountdown()
     updateInactivePets(dt)
     updateRemotePets(dt)
+    tickLocomotionCrossfades(dt)
   })
 }
