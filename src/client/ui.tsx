@@ -63,6 +63,10 @@ export type ShopTabId = 'food' | 'slots'
 type MobileNameInput = 'adopt' | 'breed'
 type MobileMagnifierPhase = 'idle' | 'opening' | 'closing'
 
+// The HUD group is intentionally offset from the canvas centre. Keep floating
+// feedback on the same visual axis rather than the raw screen midpoint.
+const TOP_HUD_CENTER_SHIFT = 40
+
 const uiState = {
   panel: 'none' as Panel,
   shopTab: 'food' as ShopTabId,
@@ -345,7 +349,7 @@ function TopBars() {
     !clientState.hatch.active
   const iconsW = gap + iconSize + gap + iconSize
   const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
-  const rightShift = S(40) // nudged off-center — plenty of clearance either side of this row
+  const rightShift = S(TOP_HUD_CENTER_SHIFT) // nudged off-center — plenty of clearance either side of this row
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: mobile() ? S(46) : S(10), left: '50%' }, margin: { left: -totalW / 2 + rightShift }, width: totalW, height: h, flexDirection: 'row', alignItems: 'center', pointerFilter: 'none' }}>
       <NameLevelBar height={h} />
@@ -2211,6 +2215,62 @@ function Toasts() {
   )
 }
 
+// Care rewards deliberately use just the game's existing coin and star art,
+// not the old illustrated chips. Each small token rises and fades quickly so it
+// reads as a moment of progress without competing with the HUD or a toast.
+const REWARD_COIN_ICON = 'assets/images/coin_icon.png'
+const REWARD_XP_ICON = 'assets/images/revamp/star_icon.png'
+
+function RewardPopup() {
+  const reward = clientState.reward
+  const now = Date.now()
+  if (!reward || reward.until <= now) {
+    if (reward) clientState.reward = null
+    return <UiEntity />
+  }
+
+  const progress = Math.max(0, Math.min(1, (now - reward.shownAt) / (reward.until - reward.shownAt)))
+  const rise = Math.round(S(68) * easeOutCubic(progress))
+  const alpha = 1 - progress * progress
+  const iconSize = S(42)
+  const tokenWidth = S(148)
+  const tokenHeight = iconSize
+  const visibleTokens = (reward.xp > 0 ? 1 : 0) + (reward.coins > 0 ? 1 : 0)
+  const totalWidth = visibleTokens * tokenWidth
+
+  const token = (kind: 'xp' | 'coins', amount: number) => {
+    if (amount <= 0) return null
+    const isXp = kind === 'xp'
+    return (
+      <UiEntity key={kind} uiTransform={{ width: tokenWidth, height: tokenHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
+        {isXp ? (
+          <UiEntity uiTransform={{ width: iconSize, height: iconSize, borderRadius: iconSize / 2, alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: withAlpha(C.potion, alpha) }}>
+            <UiEntity uiTransform={{ width: Math.round(iconSize * 0.62), height: Math.round(iconSize * 0.62) }} uiBackground={{ texture: { src: REWARD_XP_ICON }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }} />
+          </UiEntity>
+        ) : (
+          <UiEntity uiTransform={{ width: iconSize, height: iconSize }} uiBackground={{ texture: { src: REWARD_COIN_ICON }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }} />
+        )}
+        <OutlineLabel
+          value={isXp ? `+${amount} XP` : `+${amount}`}
+          fontSize={S(25)}
+          color={withAlpha(isXp ? PET_UI.white : C.gold, alpha)}
+          outlineColor={withAlpha(PET_UI.ink, alpha)}
+          textAlign="middle-left"
+          width={tokenWidth - iconSize - S(6)}
+          height={tokenHeight}
+        />
+      </UiEntity>
+    )
+  }
+
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '50%', left: '50%' }, margin: { left: -totalWidth / 2 + S(TOP_HUD_CENTER_SHIFT), top: -S(22) - rise }, width: totalWidth, height: tokenHeight, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+      {token('xp', reward.xp)}
+      {token('coins', reward.coins)}
+    </UiEntity>
+  )
+}
+
 // Artwork for the shared BACK button below.
 const BACK_ARROW_ICON = 'assets/images/backbutton2.png'
 const BACK_ARROW_ASPECT_RATIO = 341 / 256
@@ -3587,6 +3647,7 @@ const Root = () => {
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       {content}
+      <RewardPopup />
       {UI_DEBUG_MODE && <DebugBrowserBar />}
       <ScreenFadeOverlay />
     </UiEntity>

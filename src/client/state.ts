@@ -23,6 +23,14 @@ export type DialogState = {
   adoptCta: boolean
 }
 
+/** A brief, non-blocking visual acknowledgement for an earned care reward. */
+export type RewardFeedback = {
+  xp: number
+  coins: number
+  shownAt: number
+  until: number
+}
+
 export const clientState: {
   myAddress: string
   player: PlayerData | null
@@ -37,6 +45,9 @@ export const clientState: {
   // when the current toast started so the render can drive its slide/fade.
   toasts: { message: string; kind: string }[]
   currentToast: { message: string; kind: string; shownAt: number; until: number } | null
+  // Care rewards use their own lightweight floating treatment rather than the
+  // text-toast queue, so earning XP/coins is noticeable without blocking it.
+  reward: RewardFeedback | null
   // Full-screen black overlay alpha (0 = invisible, 1 = fully black). Used to
   // mask an unavoidable camera hand-off pop (see fruitGame.ts's fadeAndRelease)
   // instead of trying to predict exactly where a given client's native camera
@@ -167,6 +178,7 @@ export const clientState: {
   followEnabled: true,
   toasts: [],
   currentToast: null,
+  reward: null,
   screenFade: { alpha: 0 },
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
@@ -417,6 +429,18 @@ export function showHint(id: string, message: string, kind: string = 'info'): vo
   if (shownHints.has(id)) return
   shownHints.add(id)
   pushToast(message, kind)
+}
+
+const REWARD_FEEDBACK_MS = 1250
+
+/** Show the small floating icons for a care reward. The server still corrects
+ * the optimistic local simulation through its following snapshot. */
+export function showReward(xp: number, coins: number): void {
+  const roundedXp = Math.max(0, Math.round(xp))
+  const roundedCoins = Math.max(0, Math.floor(coins))
+  if (roundedXp === 0 && roundedCoins === 0) return
+  const shownAt = Date.now()
+  clientState.reward = { xp: roundedXp, coins: roundedCoins, shownAt, until: shownAt + REWARD_FEEDBACK_MS }
 }
 
 export function resolveMyAddress(): string {
