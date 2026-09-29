@@ -402,11 +402,11 @@ export const NEGLECT_THRESHOLD = 15 // a stat below this counts as "neglected"
 // PLAY_ENERGY_COST, so from a full tank you get ~6 rounds, and below
 // PLAY_MIN_ENERGY the pet is too tired and refuses to play at all.
 //
-// From there the only way back is sleep, which is deliberately slow
-// (SLEEP_FILL_PER_SEC: ~1h from empty on the Bed) and, for the first
-// SLEEP_LOCK_MS, uninterruptible — see the sleep lock below. Net effect: play
-// is bursty and generous, then the pet needs real downtime, which is exactly
-// the care loop this game is about.
+// From there the only way back is a short nap. Every nap lasts three minutes by
+// default; an exhausted pet must settle for its first 30 seconds before the
+// player may wake it — see the sleep section below. Net effect: play is bursty
+// and generous, then the pet needs real downtime, which is exactly the care
+// loop this game is about.
 // ---------------------------------------------------------------------------
 /** Energy spent per completed fetch. 100 -> below the gate in ~6 rounds. */
 export const PLAY_ENERGY_COST = 12
@@ -442,7 +442,7 @@ export function isExhausted(pet: { energy: number }): boolean {
 export const ACTION_EFFECT: Record<CareAction, Partial<Record<StatKey, number>>> = {
   feed: { hunger: 35 },
   clean: { hygiene: 45 },
-  sleep: {}, // sleep is a State, not an instant effect — see SLEEP_FILL_PER_SEC
+  sleep: {}, // sleep is a timed recovery state, not an instant effect
   play: { happiness: 30, energy: -PLAY_ENERGY_COST }
 }
 
@@ -491,31 +491,43 @@ export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {
 }
 
 // ---------------------------------------------------------------------------
-// Sleep — a duration state. The pet stays asleep and energy refills in real
-// time; you wake it (or it wakes itself once rested). Leaving it asleep before
-// you log off is the intended play: come back to a rested pet.
+// Sleep — a three-minute nap. The pet rests for that window, unless the player
+// wakes it after the short initial lock. The end timestamp is persisted, so a
+// reconnect cannot extend the nap.
 // ---------------------------------------------------------------------------
-/** Energy refilled per second while asleep on the Bed: 0 -> 100 in ~1 hour. */
-export const SLEEP_FILL_PER_SEC = 100 / 3600
-/** Sleeping somewhere other than the Bed refills at this fraction (~2h). */
-export const SLEEP_OFF_BED_FACTOR = 0.5
+/** Default duration of a nap, shown after the initial wake-lock countdown. */
+export const SLEEP_DURATION_MS = 3 * 60 * 1000
 /** Everything else decays at this fraction while the pet sleeps. */
 export const SLEEP_DECAY_FACTOR = 0.5
+
+/**
+ * Recovery for one part of a nap. It uses the energy still missing and the
+ * time still left, so three minutes reaches 100 and any shorter nap grants the
+ * matching fraction of that missing energy.
+ */
+export function sleepEnergyRecovery(energy: number, sleptSec: number, remainingNapSec: number): number {
+  if (energy >= 100 || sleptSec <= 0 || remainingNapSec <= 0) return 0
+  return Math.max(0, 100 - energy) * Math.min(1, sleptSec / remainingNapSec)
+}
 /**
  * Sleep LOCK: an EXHAUSTED pet sent to bed (energy under the play gate, see
  * isExhausted) cannot be woken for this long. A rested pet you send to bed is
  * NOT locked — it's a normal toggle you can undo right away. Without the lock on
  * the exhaustion nap the energy gate is trivially bypassed — sleep for a second,
- * tap Wake, keep fetching — so the lock is what turns "out of energy" into real
- * downtime. It is a hard lock, not reduced wake sensitivity: Wake is refused
- * outright (and the button + a floating countdown show the time left) until it
- * expires.
+ * tap Wake, keep fetching — so the lock is what makes the initial part of the
+ * nap meaningful. It is a hard lock, not reduced wake sensitivity: Wake is
+ * refused outright until it expires. The nap countdown continues separately.
  *
- * 3 minutes buys back ~5 energy on the Bed, i.e. not even one fetch — the lock
- * is a pacing beat, not the refill itself. The pet still auto-wakes the moment
- * energy hits 100, whether or not the lock has expired.
+ * The first 30 seconds recover one sixth of the energy that was missing: enough
+ * to feel responsive, but never an instant return to Fetch.
  */
-export const SLEEP_LOCK_MS = 3 * 60 * 1000
+export const SLEEP_LOCK_MS = 30 * 1000
+
+/** Milliseconds left in the pet's normal nap (0 once awake or complete). */
+export function sleepRemaining(pet: { sleeping: boolean; sleepUntil?: number }, atMs: number): number {
+  if (!pet.sleeping) return 0
+  return Math.max(0, (pet.sleepUntil ?? 0) - atMs)
+}
 
 /** Milliseconds left on a pet's sleep lock (0 once it can be woken). */
 export function sleepLockRemaining(pet: { sleeping: boolean; sleepLockUntil?: number }, atMs: number): number {
@@ -523,7 +535,7 @@ export function sleepLockRemaining(pet: { sleeping: boolean; sleepLockUntil?: nu
   return Math.max(0, (pet.sleepLockUntil ?? 0) - atMs)
 }
 
-/** "2:41" — a sleep-lock countdown for buttons/toasts. */
+/** "2:41" — a compact countdown for sleep timers, buttons and toasts. */
 export function formatLockCountdown(ms: number): string {
   const total = Math.ceil(ms / 1000)
   const m = Math.floor(total / 60)

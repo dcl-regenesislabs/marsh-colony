@@ -32,12 +32,15 @@ export interface PetData {
   size: number // visual scale multiplier (1.0 = base), grows with care milestones
   careCount: number // cumulative care actions, drives size growth
   generation: number // 0 = adopted; a bred offspring is max(parents)+1 (Gen-1, Gen-2, ...)
-  // Sleep — a state, not an instant top-up: energy refills over time while true.
+  // Sleep — a timed state, not an instant top-up: energy refills while true.
   sleeping: boolean
   sleepOnBed: boolean // resting on the Bed refills at full rate, elsewhere slower
+  // The normal nap finishes at this timestamp (0 while awake). It is separate
+  // from sleepLockUntil: the nap lasts 3 minutes, but may be ended manually
+  // after the first 30 seconds.
+  sleepUntil: number
   // Sleep lock: ms timestamp until which the pet CANNOT be woken (0 = free to
-  // wake). Set when it is sent to bed, cleared whenever it stops sleeping. This
-  // is what makes the play energy gate stick — see SLEEP_LOCK_MS.
+  // wake). Set when it is sent to bed, cleared whenever it stops sleeping.
   sleepLockUntil: number
   // Set by the authoritative Feed result after a poisonous catch. It persists
   // until the authoritative Caretaker cure flow clears it.

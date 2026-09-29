@@ -49,7 +49,7 @@ import {
 } from './fruitGame'
 import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
 import { dismissMeteorAfterClaim } from './meteor'
-import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
+import { buyItemLocal, buyPotionLocal, buySlotLocal, canPlayNow, claimStreak, dailyClaimable, dailyLadderDay, sleepLockLeft, sleepTimerLeft, spinLocal, streakClaimable, streakWeekDay, useItemLocal } from './sim'
 import { sway, startAnimSystem, attentionPulse, fetchHintAlpha, fetchHintVisible, getPress, triggerPress } from './ui/anim'
 import { C, Color, getUiRendererConfig, mobile, OutlineLabel, PanelShell, playUiClick, resolveRuntimePlatform, S, Sbtn, TactileButton } from './ui/theme'
 import { DialogBox, openCaretakerIntro, openCaretakerTips, playerName } from './ui/dialog'
@@ -484,9 +484,10 @@ function PetPanel() {
   // starting another, and being asleep blocks everything except waking up.
   const busy = !canStartPetInteraction() && !pet.sleeping
   const locked = pet.sleeping || busy
-  // Sleep lock: for the first few minutes of a nap the pet can't be woken at
-  // all (SLEEP_LOCK_MS) — the Wake button shows the countdown instead.
+  // The UI shows the 30-second wake lock first. Once it finishes, it switches
+  // to the remaining nap timer and becomes the Wake control.
   const lockLeft = sleepLockLeft()
+  const sleepLeft = sleepTimerLeft()
   // Energy gate: below PLAY_MIN_ENERGY the pet refuses to play until it sleeps.
   const tired = !canPlayNow()
   // Why the panel is locked, phrased as something the player can act on. The
@@ -494,7 +495,7 @@ function PetPanel() {
   // instead of leaving the player with a generic "busy" message.
   const busyMessage = () =>
     lockLeft > 0
-      ? `${pet.name} is fast asleep — ${Cfg.formatLockCountdown(lockLeft)} left.`
+      ? `${pet.name} is settling in — Wake is available in ${Cfg.formatLockCountdown(lockLeft)}.`
       : clientState.feedTask.active
         ? 'Finish the tree errand or tap BACK first!'
         : clientState.sicknessErrand.active
@@ -544,21 +545,20 @@ function PetPanel() {
         />
         <TactileButton
           id="care_sleep"
-          label={pet.sleeping ? (lockLeft > 0 ? Cfg.formatLockCountdown(lockLeft) : 'Wake') : 'Sleep'}
+          label={pet.sleeping ? (lockLeft > 0 ? `Wake in ${Cfg.formatLockCountdown(lockLeft)}` : `Wake · ${Cfg.formatLockCountdown(sleepLeft)}`) : 'Sleep'}
           width={chipW}
           height={chipH}
           bg={lockLeft > 0 ? LOC.neutral : C.energy}
           textColor={lockLeft > 0 ? LOC.dim : C.outline}
           fontSize={S(16)}
           radius={S(14)}
-          disabled={!pet.sleeping && busy}
+          disabled={lockLeft > 0 || (!pet.sleeping && busy)}
           pulse={!pet.sleeping && tired && !busy}
           margin={{ left: S(3), right: S(3) }}
           onClick={() => {
-            // A nap can't be interrupted for its first few minutes — that lock
-            // is what makes the play energy gate mean something.
+            // An exhausted pet needs 30 seconds to settle before it can wake.
             if (lockLeft > 0) {
-              pushToast(`${pet.name} is fast asleep — ${Cfg.formatLockCountdown(lockLeft)} left.`)
+              pushToast(`${pet.name} is settling in — Wake is available in ${Cfg.formatLockCountdown(lockLeft)}.`)
               return
             }
             // Waking is instant once the lock is up — no walk back to the bed.

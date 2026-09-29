@@ -3154,8 +3154,8 @@ function updateInactivePets(dt: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// Sleep-lock countdown — a floating "M:SS" over the pet while its exhaustion nap
-// is locked (SLEEP_LOCK_MS). Sits just above the name tag; hidden otherwise.
+// Sleep countdown — first show the 30-second wake lock, then the time left in
+// the three-minute nap. Sits just above the name tag.
 // ---------------------------------------------------------------------------
 let sleepLabel: Entity | null = null
 // Raised from 0.7 to clear petEmotes.ts's floating sleep-emote plane (sits
@@ -3178,8 +3178,10 @@ function updateSleepCountdown(): void {
   const t = Transform.getMutable(sleepLabel)
   const ts = TextShape.getMutable(sleepLabel)
   const pet = clientState.activePet
-  const left = pet ? C.sleepLockRemaining(pet, Date.now()) : 0
-  if (localPet === null || !pet || left <= 0 || !petIsPresent()) {
+  const atMs = Date.now()
+  const napLeft = pet ? C.sleepRemaining(pet, atMs) : 0
+  const lockLeft = pet ? C.sleepLockRemaining(pet, atMs) : 0
+  if (localPet === null || !pet || napLeft <= 0 || !petIsPresent()) {
     if (ts.text !== '') ts.text = ''
     if (t.scale.x !== 0) t.scale = Vector3.Zero()
     return
@@ -3188,7 +3190,7 @@ function updateSleepCountdown(): void {
   const tune = petOverheadTuning(pet.species, pet.size)
   t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(pet.size) + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
   t.scale = Vector3.One()
-  ts.text = C.formatLockCountdown(left)
+  ts.text = lockLeft > 0 ? `Wake in ${C.formatLockCountdown(lockLeft)}` : C.formatLockCountdown(napLeft)
 }
 
 export function setupPetSystems(): void {
