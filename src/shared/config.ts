@@ -402,10 +402,10 @@ export const NEGLECT_THRESHOLD = 15 // a stat below this counts as "neglected"
 // PLAY_ENERGY_COST, so from a full tank you get ~6 rounds, and below
 // PLAY_MIN_ENERGY the pet is too tired and refuses to play at all.
 //
-// From there the only way back is a short nap. Every nap lasts three minutes by
-// default; an exhausted pet must settle for its first 30 seconds before the
-// player may wake it — see the sleep section below. Net effect: play is bursty
-// and generous, then the pet needs real downtime, which is exactly the care
+// From there an exhausted pet takes a three-minute nap. It must settle for its
+// first 30 seconds before the player may wake it — see the sleep section below.
+// Net effect: play is bursty and generous, then the pet needs real downtime,
+// which is exactly the care
 // loop this game is about.
 // ---------------------------------------------------------------------------
 /** Energy spent per completed fetch. 100 -> below the gate in ~6 rounds. */
@@ -491,23 +491,29 @@ export const ACTION_COOLDOWN_MS: Record<CareAction, number> = {
 }
 
 // ---------------------------------------------------------------------------
-// Sleep — a three-minute nap. The pet rests for that window, unless the player
-// wakes it after the short initial lock. The end timestamp is persisted, so a
-// reconnect cannot extend the nap.
+// Sleep — exhaustion naps last three minutes; normal, non-exhausted sleep keeps
+// the original slow refill behavior. A timed nap's end timestamp is persisted,
+// so a reconnect cannot extend it.
 // ---------------------------------------------------------------------------
-/** Default duration of a nap, shown after the initial wake-lock countdown. */
+/** Default duration of an exhaustion nap, shown after its wake-lock countdown. */
 export const SLEEP_DURATION_MS = 3 * 60 * 1000
+/** Normal (non-exhausted) sleep still refills 0 -> 100 in about one hour. */
+export const SLEEP_FILL_PER_SEC = 100 / 3600
+/** Sleeping away from the Bed recovers only half as much energy. */
+export const SLEEP_OFF_BED_FACTOR = 0.5
 /** Everything else decays at this fraction while the pet sleeps. */
 export const SLEEP_DECAY_FACTOR = 0.5
 
 /**
- * Recovery for one part of a nap. It uses the energy still missing and the
- * time still left, so three minutes reaches 100 and any shorter nap grants the
- * matching fraction of that missing energy.
+ * Target energy at a point in a timed exhaustion nap. A full three-minute nap
+ * in the Bed reaches 100; off-bed naps recover half of the missing energy over
+ * the same duration. Persisting sleepStartEnergy keeps this exact across ticks
+ * and reconnects.
  */
-export function sleepEnergyRecovery(energy: number, sleptSec: number, remainingNapSec: number): number {
-  if (energy >= 100 || sleptSec <= 0 || remainingNapSec <= 0) return 0
-  return Math.max(0, 100 - energy) * Math.min(1, sleptSec / remainingNapSec)
+export function sleepEnergyAtNapProgress(pet: { sleepStartEnergy: number; sleepOnBed: boolean }, progress: number): number {
+  const start = Math.max(0, Math.min(100, pet.sleepStartEnergy))
+  const fraction = Math.max(0, Math.min(1, progress)) * (pet.sleepOnBed ? 1 : SLEEP_OFF_BED_FACTOR)
+  return start + (100 - start) * fraction
 }
 /**
  * Sleep LOCK: an EXHAUSTED pet sent to bed (energy under the play gate, see
@@ -523,7 +529,7 @@ export function sleepEnergyRecovery(energy: number, sleptSec: number, remainingN
  */
 export const SLEEP_LOCK_MS = 30 * 1000
 
-/** Milliseconds left in the pet's normal nap (0 once awake or complete). */
+/** Milliseconds left in a pet's timed exhaustion nap (0 otherwise). */
 export function sleepRemaining(pet: { sleeping: boolean; sleepUntil?: number }, atMs: number): number {
   if (!pet.sleeping) return 0
   return Math.max(0, (pet.sleepUntil ?? 0) - atMs)

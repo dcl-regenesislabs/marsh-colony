@@ -484,8 +484,8 @@ function PetPanel() {
   // starting another, and being asleep blocks everything except waking up.
   const busy = !canStartPetInteraction() && !pet.sleeping
   const locked = pet.sleeping || busy
-  // The UI shows the 30-second wake lock first. Once it finishes, it switches
-  // to the remaining nap timer and becomes the Wake control.
+  // Exhaustion naps show the 30-second wake lock first. Once it finishes, the
+  // control switches to the remaining nap timer and becomes Wake.
   const lockLeft = sleepLockLeft()
   const sleepLeft = sleepTimerLeft()
   // Energy gate: below PLAY_MIN_ENERGY the pet refuses to play until it sleeps.
@@ -545,14 +545,14 @@ function PetPanel() {
         />
         <TactileButton
           id="care_sleep"
-          label={pet.sleeping ? (lockLeft > 0 ? `Wake in ${Cfg.formatLockCountdown(lockLeft)}` : `Wake · ${Cfg.formatLockCountdown(sleepLeft)}`) : 'Sleep'}
+          label={pet.sleeping ? (lockLeft > 0 ? `Wake in ${Cfg.formatLockCountdown(lockLeft)}` : sleepLeft > 0 ? `Wake · ${Cfg.formatLockCountdown(sleepLeft)}` : 'Wake') : 'Sleep'}
           width={chipW}
           height={chipH}
           bg={lockLeft > 0 ? LOC.neutral : C.energy}
           textColor={lockLeft > 0 ? LOC.dim : C.outline}
           fontSize={S(16)}
           radius={S(14)}
-          disabled={lockLeft > 0 || (!pet.sleeping && busy)}
+          disabled={!pet.sleeping && busy}
           pulse={!pet.sleeping && tired && !busy}
           margin={{ left: S(3), right: S(3) }}
           onClick={() => {

@@ -205,6 +205,7 @@ function newPet(species: string, name: string): PetData {
     generation: 0,
     sleeping: false,
     sleepOnBed: false,
+    sleepStartEnergy: 0,
     sleepUntil: 0,
     sleepLockUntil: 0,
     sick: false,
@@ -254,6 +255,7 @@ function activePet(p: PlayerData): PetData | null {
  *  the sleep it belongs to (a stale lock would block the NEXT wake). */
 function wake(pet: PetData): void {
   pet.sleeping = false
+  pet.sleepStartEnergy = 0
   pet.sleepUntil = 0
   pet.sleepLockUntil = 0
 }
@@ -265,21 +267,22 @@ function decayPet(pet: PetData, atMs: number): void {
   // A tick can straddle the end of a nap (especially after a reconnect). Split
   // it so only the part before sleepUntil gets sleep's refill/slow decay.
   const sleepUntil = pet.sleeping ? pet.sleepUntil : 0
+  const timedNap = sleepUntil > 0
   const sleepSec = pet.sleeping
-    ? sleepUntil > 0
+    ? timedNap
       ? Math.max(0, Math.min(atMs, sleepUntil) - pet.lastUpdated) / 1000
       : elapsedSec
     : 0
-  const sleepRemainingSec = sleepUntil > 0 ? Math.max(0, sleepUntil - pet.lastUpdated) / 1000 : sleepSec
+  const napProgress = timedNap ? 1 - Math.max(0, sleepUntil - Math.min(atMs, sleepUntil)) / C.SLEEP_DURATION_MS : null
   const awakeSec = elapsedSec - sleepSec
 
-  decayPetSpan(pet, sleepSec, true, sleepRemainingSec)
-  if (pet.sleeping && sleepUntil > 0 && atMs >= sleepUntil) wake(pet)
+  decayPetSpan(pet, sleepSec, true, napProgress)
+  if (pet.sleeping && timedNap && atMs >= sleepUntil) wake(pet)
   decayPetSpan(pet, awakeSec, false)
   pet.lastUpdated = atMs
 }
 
-function decayPetSpan(pet: PetData, elapsedSec: number, sleeping: boolean, sleepRemainingSec = 0): void {
+function decayPetSpan(pet: PetData, elapsedSec: number, sleeping: boolean, napProgress: number | null = null): void {
   if (elapsedSec <= 0) return
   // While asleep the pet rests: energy refills instead of draining, and
   // everything else decays at a reduced rate.
@@ -290,7 +293,13 @@ function decayPetSpan(pet: PetData, elapsedSec: number, sleeping: boolean, sleep
     pet[k] = clamp(pet[k] - C.DECAY_PER_SEC[k] * elapsedSec * slow)
   }
   if (sleeping) {
-    pet.energy = clamp(pet.energy + C.sleepEnergyRecovery(pet.energy, elapsedSec, sleepRemainingSec))
+    if (napProgress !== null) {
+      pet.energy = clamp(C.sleepEnergyAtNapProgress(pet, napProgress))
+    } else {
+      const fill = C.SLEEP_FILL_PER_SEC * (pet.sleepOnBed ? 1 : C.SLEEP_OFF_BED_FACTOR)
+      pet.energy = clamp(pet.energy + fill * elapsedSec)
+      if (pet.energy >= 100) wake(pet)
+    }
   }
   // Happiness decays slowly, with extra penalty if other stats are neglected.
   let happinessLoss = C.DECAY_PER_SEC.happiness * elapsedSec * slow
@@ -381,8 +390,13 @@ function migratePet<T extends PetData>(pet: T): T {
   const parts = C.speciesParts(species)
   // Saves from before timed naps have no sleepUntil. A pet that was already
   // sleeping gets one fresh standard nap on migration instead of becoming stuck.
-  const sleepUntil = pet.sleeping && pet.sleepUntil <= 0 ? now() + C.SLEEP_DURATION_MS : pet.sleepUntil
-  return { ...pet, species, head: parts.head, body: parts.body, rarity: normalizeRarity(pet.rarity), sleepUntil }
+  // A current normal sleep intentionally keeps sleepUntil at 0; it is marked
+  // by a non-zero start energy. Only the old shape (which had no such value)
+  // is migrated into a timed nap.
+  const migratingNap = pet.sleeping && pet.sleepUntil <= 0 && pet.sleepStartEnergy <= 0
+  const sleepUntil = migratingNap ? now() + C.SLEEP_DURATION_MS : pet.sleepUntil
+  const sleepStartEnergy = migratingNap ? pet.energy : pet.sleepStartEnergy
+  return { ...pet, species, head: parts.head, body: parts.body, rarity: normalizeRarity(pet.rarity), sleepUntil, sleepStartEnergy }
 }
 
 function sanitize(address: string, d: PlayerData): PlayerData {
@@ -662,15 +676,18 @@ export function careAction(p: PlayerData, action: CareAction, onBed: boolean): N
     }
     pet.sleeping = true
     pet.sleepOnBed = onBed
+    pet.sleepStartEnergy = pet.energy
     const startedAt = now()
-    pet.sleepUntil = startedAt + C.SLEEP_DURATION_MS
     // Only an EXHAUSTION nap is locked (can't play -> must rest). A rested pet
-    // sent to bed is a normal toggle you can undo right away.
+    // sent to bed is the original slow rest state and can be undone right away.
     const locked = C.isExhausted(pet)
-    if (locked) pet.sleepLockUntil = startedAt + C.SLEEP_LOCK_MS
+    if (locked) {
+      pet.sleepUntil = startedAt + C.SLEEP_DURATION_MS
+      pet.sleepLockUntil = startedAt + C.SLEEP_LOCK_MS
+    }
     const where = onBed ? 'is asleep in bed' : 'dozed off — not in bed, so it rests slower'
-    const lockNote = locked ? ` It can be woken in ${C.formatLockCountdown(C.SLEEP_LOCK_MS)}.` : ''
-    return [{ kind: 'sleep', message: `${pet.name} ${where} for ${C.formatLockCountdown(C.SLEEP_DURATION_MS)}.${lockNote}` }]
+    const napNote = locked ? ` It will rest for ${C.formatLockCountdown(C.SLEEP_DURATION_MS)} and can be woken in ${C.formatLockCountdown(C.SLEEP_LOCK_MS)}.` : ''
+    return [{ kind: 'sleep', message: `${pet.name} ${where}.${napNote}` }]
   }
 
   // Play (Fetch) is energy-gated: too tired -> no play, no reward. The refusal

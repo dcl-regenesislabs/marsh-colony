@@ -35,9 +35,12 @@ export interface PetData {
   // Sleep — a timed state, not an instant top-up: energy refills while true.
   sleeping: boolean
   sleepOnBed: boolean // resting on the Bed refills at full rate, elsewhere slower
-  // The normal nap finishes at this timestamp (0 while awake). It is separate
-  // from sleepLockUntil: the nap lasts 3 minutes, but may be ended manually
-  // after the first 30 seconds.
+  // Energy at the start of sleep. Timed exhaustion naps use it to recover to
+  // the correct proportional target even after a reconnect or server tick.
+  sleepStartEnergy: number
+  // A timed exhaustion nap finishes at this timestamp (0 for awake or normal
+  // slow sleep). It is separate from sleepLockUntil: the nap lasts 3 minutes,
+  // but may be ended manually after the first 30 seconds.
   sleepUntil: number
   // Sleep lock: ms timestamp until which the pet CANNOT be woken (0 = free to
   // wake). Set when it is sent to bed, cleared whenever it stops sleeping.
