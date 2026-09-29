@@ -15,11 +15,11 @@
 // fresh ball reappears in the hand for the next throw. (The old play action —
 // pet walks to the ball — is suspended; see input.ts / ui.tsx.)
 
-import { engine, Entity, Transform, GltfContainer, Animator, AvatarMask, AvatarAttach, AvatarAnchorPointType, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, GltfContainer, Animator, AudioSource, AvatarMask, AvatarAttach, AvatarAnchorPointType, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { triggerSceneEmote } from '~system/RestrictedActions'
 import * as C from '../shared/config'
-import { getLocalPet, sendPetTo, getLogicalClip, restartMoveClip, petReact } from './pet'
+import { getLocalPet, sendPetTo, getLogicalClip, restartMoveClip, petReact, playPetVoice } from './pet'
 import { applyCareLocal, canPlayNow } from './sim'
 import { actions, clientState, pushToast } from './state'
 import { FETCH_TOUCH_ACTION, showFetchTouchButton, hideFetchTouchButton } from './touchControls'
@@ -29,6 +29,18 @@ import { triggerFetchHintFadeOut } from './ui/anim'
 // Native mobile Throw button (see touchControls.ts) icon — kept the same
 // (no "searching" swap) the whole time Fetch mode is open.
 const THROW_READY_ICON = 'assets/images/throwicon.png'
+
+const BALL_LAND_SOUND = 'assets/sounds/FruitDrop01.mp3' // fires the moment the thrown ball first touches the floor
+let ballLandSfx: Entity | null = null
+
+function playBallLandSound(): void {
+  if (!ballLandSfx) {
+    ballLandSfx = engine.addEntity()
+    Transform.create(ballLandSfx, {})
+    AudioSource.create(ballLandSfx, { audioClipUrl: BALL_LAND_SOUND, playing: false, global: true, volume: 0.5 })
+  }
+  AudioSource.playSound(ballLandSfx, BALL_LAND_SOUND)
+}
 
 const BALL_MODEL = 'assets/Models/Ball01.glb'
 // All 5 clips the GLB ships, declared as Animator states up front — which one
@@ -335,6 +347,7 @@ function dropFetch(): void {
   flight.phase = 'dropped'
   flight.t = 0
   clientState.fetch.busy = false // ready to throw again
+  if (clientState.activePet) playPetVoice(clientState.activePet.species)
   // +happiness / -energy plus the XP + coin payout (optimistic; the server
   // recomputes and the snapshot corrects). Only tell the server if the local
   // gate let it through — it applies the same rules and would just refuse.
@@ -367,6 +380,7 @@ function flightSystem(dt: number): void {
       flight.t = 0
       flight.from = flight.to
       flight.to = Vector3.create(flight.to.x + flight.dir.x * flight.bounceForward, flight.to.y, flight.to.z + flight.dir.z * flight.bounceForward)
+      playBallLandSound()
     }
   } else if (flight.phase === 'bounce') {
     flight.spin += SPIN_SPEED * dt // keep "rolling" through the bounces

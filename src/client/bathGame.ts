@@ -10,10 +10,22 @@
 // avatar for the round (pet.ts startBathCamera/endBathCamera) — there's no 3D
 // bubble pool though, the bubbles live entirely in the screen-space overlay.
 
-import { engine } from '@dcl/sdk/ecs'
+import { engine, Entity, Transform, AudioSource } from '@dcl/sdk/ecs'
 import { actions, clientState, pushToast } from './state'
 import { applyCareLocal } from './sim'
 import { finishBath, endBathCamera } from './pet'
+
+const POP_SOUND = 'assets/sounds/waterdrop.mp3'
+let popSfx: Entity | null = null
+
+function playPopSound(): void {
+  if (!popSfx) {
+    popSfx = engine.addEntity()
+    Transform.create(popSfx, {})
+    AudioSource.create(popSfx, { audioClipUrl: POP_SOUND, playing: false, global: true, volume: 0.4 })
+  }
+  AudioSource.playSound(popSfx, POP_SOUND)
+}
 
 export const BATH_DURATION_S = 16 // seconds of the timed popping phase
 export const BUBBLE_GOAL = 25 // pops needed for the pet to count as clean
@@ -131,6 +143,7 @@ export function popBubble(id: number): void {
   if (!b) return
   pops.push({ id: nextId++, x: b.x, y: b.y, r: b.r, startAt: Date.now() }) // splash where it burst
   resetBubble(b) // burst -> a new bubble rises in its place
+  playPopSound()
   clientState.bathGame.popped += 1
   clientState.bathGame.popFlashUntil = Date.now() + 300
   if (clientState.bathGame.popped >= BUBBLE_GOAL) applyBathResults() // clean early -> straight to results

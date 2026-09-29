@@ -9,7 +9,7 @@ import { EntityNames } from '../../assets/scene/entity-names'
 import { clipForSpecies, modelForSpecies } from '../shared/config'
 import { applyCreatureSkin } from './creatureSkins'
 import { clientState } from './state'
-import { canStartPetInteraction } from './pet'
+import { canStartPetInteraction, playPetVoice } from './pet'
 import { openLegendaryCreatureDialog } from './ui/dialog'
 
 // pepito_fluflito.glb = PepitoArmature body + Fluflito head (see creatureSkins
@@ -48,6 +48,7 @@ function spawnFamiliar(anchor: Vector3, baseRot: Quaternion): Entity {
       // dialog.open blocks that; canStartPetInteraction() also keeps it from
       // popping over feed/bath/petting/fetch/carry/sleep (mirrors world clicks).
       if (clientState.dialog.open || !canStartPetInteraction()) return
+      playPetVoice(SPECIES)
       openLegendaryCreatureDialog()
     }
   )

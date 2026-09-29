@@ -3,9 +3,24 @@
 // panel shell that blocks the mobile joystick. Inspired by the cozy-farm UI.
 
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
-import { engine, UiCanvasInformation } from '@dcl/sdk/ecs'
+import { AudioSource, engine, Entity, Transform, UiCanvasInformation } from '@dcl/sdk/ecs'
 import { getExplorerInformation } from '~system/Runtime'
 import { getPress, triggerPress, attentionPulse } from './anim'
+
+// Generic UI tap/click feedback — played from every shared button/close/nav
+// primitive below so it's heard across the whole HUD without wiring each
+// individual onClick by hand.
+const UI_CLICK_SOUND = 'assets/sounds/bong_001.ogg'
+let uiClickSfx: Entity | null = null
+
+export function playUiClick(): void {
+  if (!uiClickSfx) {
+    uiClickSfx = engine.addEntity()
+    Transform.create(uiClickSfx, {})
+    AudioSource.create(uiClickSfx, { audioClipUrl: UI_CLICK_SOUND, playing: false, global: true, volume: 0.45 })
+  }
+  AudioSource.playSound(uiClickSfx, UI_CLICK_SOUND)
+}
 
 export type Color = { r: number; g: number; b: number; a: number }
 
@@ -214,6 +229,7 @@ export function TactileButton(props: {
         onMouseDown={() => {
           if (props.disabled) return
           triggerPress(props.id)
+          playUiClick()
           props.onClick()
         }}
       >
@@ -253,6 +269,7 @@ export function CareButton(props: {
           onMouseDown={() => {
             if (props.disabled) return
             triggerPress(props.id)
+            playUiClick()
             props.onClick()
           }}
         >
