@@ -930,16 +930,21 @@ export function useItem(p: PlayerData, tier: number): Notify[] {
   if (tier === 1) p.inventory.tier1 -= 1
   else p.inventory.tier2 -= 1
   tickPlayer(p)
+  // Items SKIP a minigame/timer: apply their stat effects instantly. Feast also
+  // wakes the pet + clears the nap lock (that's how it skips the 3-min sleep).
+  if (item.wakes) wake(pet)
   pet.hunger = clamp(pet.hunger + item.hunger)
   pet.happiness = clamp(pet.happiness + item.happiness)
+  pet.energy = clamp(pet.energy + item.energy)
   pet.careCount += 1
   pet.size = C.growSize(pet.size)
   grantPetXp(pet, C.PET_XP_PER_ACTION)
   grantCaretakerXp(p, C.CARETAKER_XP_PER_ACTION, notes)
   p.currency += C.COINS_PER_ACTION
-  bump(p, 'feedCount')
+  if (item.hunger > 0) bump(p, 'feedCount') // only the food item counts toward Feed achievements
   checkAchievements(p, notes)
-  notes.push({ kind: 'feed', message: `Fed ${pet.name} ${item.label}` })
+  const msg = item.hunger > 0 ? `Fed ${pet.name} a ${item.label}` : `${pet.name} devoured a ${item.label} — fully rested!`
+  notes.push({ kind: 'feed', message: msg })
   return notes
 }
 

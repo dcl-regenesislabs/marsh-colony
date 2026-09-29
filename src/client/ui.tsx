@@ -1312,7 +1312,7 @@ function ShopPanel() {
               key={`shop-${item.tier}`}
               id={`buy_${item.tier}`}
               title={item.label}
-              desc={`+${item.hunger} hunger${item.happiness ? `, +${item.happiness} happy` : ''}`}
+              desc={item.desc}
               price={item.price}
               color={item.tier === 2 ? C.happy : C.hunger}
               onBuy={() => {
@@ -1475,14 +1475,14 @@ function InventoryPanel() {
     actions.buyItem(tier) // server is authoritative
   }
   return (
-    <PetHudModal title="Inventory" subtitle="Tap food to feed your pet, or hit BUY to stock up." width={S(660)} height={S(520)} onClose={() => ui.close()}>
+    <PetHudModal title="Inventory" subtitle="Tap an item to use it on your pet, or hit BUY to stock up." width={S(660)} height={S(520)} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
         <InvColumn width={colW} height={colH}>
-          <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { if (useItemLocal(1)) pushToast('Fed your pet!'); actions.useItem(1) }} />
+          <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { if (useItemLocal(1)) pushToast('Fed your pet!'); actions.useItem(1) }} />{/* Magic Kibble: skips the Feed game */}
           <BuyButton id="buy_1" width={buyW} enabled={coins >= price1} onClick={buy(1)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
-          <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { if (useItemLocal(2)) pushToast('Fed your pet!'); actions.useItem(2) }} />
+          <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { if (useItemLocal(2)) pushToast('Energy restored!'); actions.useItem(2) }} />{/* Feast: skips the 3-min sleep */}
           <BuyButton id="buy_2" width={buyW} enabled={coins >= price2} onClick={buy(2)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
