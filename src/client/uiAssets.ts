@@ -79,6 +79,14 @@ const STATIC_UI_ASSETS: readonly string[] = [
   'assets/images/new_bubble_flipped.png',
   'assets/images/starburst.png',
   'assets/images/starburst_glow.png',
+  // Album (collection book) — icon in the top HUD row + one sheet per rarity.
+  'assets/images/album/album_icon.png',
+  'assets/images/album/album_panel.png',
+  'assets/images/album/album_parts.png',
+  'assets/images/album/album_common.png',
+  'assets/images/album/album_rare.png',
+  'assets/images/album/album_legendary.png',
+  'assets/images/album/album_locked.png',
   // World-space, not screen UI, but the same AssetLoad pipeline below preloads
   // any texture path — petEmotes.ts's floating icon otherwise pops in blank
   // the first time each one is shown.

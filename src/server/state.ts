@@ -231,6 +231,7 @@ function newPlayer(address: string): PlayerData {
     activePetId: '',
     pets: [],
     hatchling: null,
+    collection: [],
     createdAt: t,
     lastUpdated: t
   }
@@ -374,14 +375,27 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     inventory: { ...base.inventory, ...(d.inventory ?? {}) },
     counters: d.counters ?? {},
     achievements: d.achievements ?? [],
+    collection: d.collection ?? [],
     pets: (d.pets ?? []).map((pet) => migratePet({ ...newPet(pet.species, pet.name), ...pet })),
     hatchling: d.hatchling ? migratePet({ ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling }) : null
+  }
+}
+
+/** Add every pet currently in the roster to the album. Idempotent and cheap, so
+ *  it runs on every save/snapshot instead of hooking each way a pet can arrive
+ *  (adopt, keep a hatchling, swap, rarity potion…). Also backfills old saves. */
+export function recordCollection(p: PlayerData): void {
+  if (!p.collection) p.collection = []
+  for (const pet of p.pets) {
+    const key = C.collectionKey(C.crossSpecies(C.petHead(pet), C.petBody(pet)), pet.rarity)
+    if (p.collection.indexOf(key) === -1) p.collection.push(key)
   }
 }
 
 export async function savePlayer(address: string): Promise<void> {
   const p = players.get(address)
   if (!p) return
+  recordCollection(p)
   try {
     await Storage.player.set<PlayerData>(address, STORAGE_KEY, p)
   } catch (e) {
@@ -1090,5 +1104,6 @@ export function presenceFor(p: PlayerData): PresenceEntry | null {
 }
 
 export function snapshotFor(p: PlayerData): { player: PlayerData; activePet: PetData | null } {
+  recordCollection(p)
   return { player: p, activePet: activePet(p) }
 }

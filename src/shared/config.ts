@@ -286,6 +286,22 @@ export function crossSpecies(head: Family, body: Family): string {
   return head === body ? `${head}-original` : `${head}_${body}`
 }
 
+// ---------------------------------------------------------------------------
+// Album (collection). 4 families x 4 heads = 16 creatures per rarity; one album
+// page per rarity. Keys are "<species>:<rarity>" with the render species id, so
+// originals are "<fam>-original" and crosses "<head>_<body>".
+// ---------------------------------------------------------------------------
+export const RARITIES: Rarity[] = ['common', 'rare', 'legendary']
+
+export function collectionKey(species: string, rarity: Rarity): string {
+  const { head, body } = speciesParts(species)
+  return `${crossSpecies(head, body)}:${rarity}`
+}
+
+/** The 16 album species in sprite-sheet order: row = head family, column = body
+ *  family (FAMILIES order), i.e. index = row * 4 + col. */
+export const ALBUM_SPECIES: string[] = FAMILIES.flatMap((head) => FAMILIES.map((body) => crossSpecies(head, body)))
+
 // Wire every cross (head !== body) into the render maps. The model path is derived
 // on the fly by modelForSpecies (creatureModelFile), so only the clip/scale/label
 // maps need filling here — for every one of the 12 crossings, so a bred/swapped
