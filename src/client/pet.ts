@@ -2647,7 +2647,9 @@ function updateLocalPet(dt: number): void {
     if (sit) {
       VisibilityComponent.createOrReplace(localPet, { visible: true })
       const transform = Transform.getMutable(localPet)
-      transform.position = Vector3.create(sit.x, C.PET_BASE_Y, sit.z)
+      // Mobile deliberately keeps its original ground height. Desktop's Feed
+      // calibration may use the stored Y offset along with X/Z.
+      transform.position = Vector3.create(sit.x, mobile() ? C.PET_BASE_Y : sit.y, sit.z)
       const look = clientState.feedGame.petSitLook ?? sit
       transform.rotation = yawToward(transform.position, Vector3.create(look.x, C.PET_BASE_Y, look.z), yawOffsetForSpecies(clientState.activePet?.species ?? ''))
       setClip(localPet, 'sit')

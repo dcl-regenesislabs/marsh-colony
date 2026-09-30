@@ -45,7 +45,12 @@ import {
   COUNTDOWN_S,
   FEED_RESULTS_CARD_FADE_S,
   FEED_RESULTS_FOCUS_S,
-  feedResultsCounterDurationMs
+  feedResultsCounterDurationMs,
+  FEED_PET_SIT_TUNER_ENABLED,
+  getFeedPetSitTuning,
+  nudgeFeedPetSit,
+  resetFeedPetSitTuning,
+  type FeedPetSitAxis
 } from './fruitGame'
 import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
 import { dismissMeteorAfterClaim } from './meteor'
@@ -2943,6 +2948,41 @@ function FeedRoundHud(props: { timeLeft: number; caught: number; flashing: boole
   )
 }
 
+const FEED_PET_SIT_TUNER_STEP = 0.1
+
+function FeedPetSitTunerAxis(props: { axis: FeedPetSitAxis; value: number }) {
+  const axis = props.axis.toUpperCase()
+  return (
+    <UiEntity uiTransform={{ width: '100%', height: S(38), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', margin: { bottom: S(4) } }}>
+      <TactileButton id={`feed_sit_${props.axis}_minus`} label={`- ${axis}`} width={S(70)} height={S(34)} bg={C.cardAlt} fontSize={S(13)} onClick={() => nudgeFeedPetSit(props.axis, -FEED_PET_SIT_TUNER_STEP)} />
+      <Label value={`${axis}: ${props.value.toFixed(2)}`} fontSize={S(15)} color={C.text} textAlign="middle-center" uiTransform={{ width: S(92), height: S(34) }} />
+      <TactileButton id={`feed_sit_${props.axis}_plus`} label={`+ ${axis}`} width={S(70)} height={S(34)} bg={C.cardAlt} fontSize={S(13)} onClick={() => nudgeFeedPetSit(props.axis, FEED_PET_SIT_TUNER_STEP)} />
+    </UiEntity>
+  )
+}
+
+/** Temporary live positioning controls for the pet sitting beside the lane.
+ * Kept on the left so it never covers the pet being calibrated on screen-right. */
+function FeedPetSitTuner() {
+  if (!FEED_PET_SIT_TUNER_ENABLED) return null
+  const tuning = getFeedPetSitTuning()
+  if (!tuning.position) return null
+  const width = S(270)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: S(104), left: S(16) }, width, flexDirection: 'column', alignItems: 'center', padding: S(10), borderRadius: S(12), pointerFilter: 'block' }}
+      uiBackground={{ color: { r: 0.05, g: 0.05, b: 0.08, a: 0.9 } }}
+    >
+      <Label value="DEBUG · PET SIT (world)" fontSize={S(14)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      <Label value={`Offset  X ${tuning.offset.x.toFixed(2)}  Y ${tuning.offset.y.toFixed(2)}  Z ${tuning.offset.z.toFixed(2)}`} fontSize={S(11)} color={C.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20) }} />
+      <FeedPetSitTunerAxis axis="x" value={tuning.position.x} />
+      <FeedPetSitTunerAxis axis="y" value={tuning.position.y} />
+      <FeedPetSitTunerAxis axis="z" value={tuning.position.z} />
+      <TactileButton id="feed_sit_reset" label="Reset" width={S(110)} height={S(32)} bg={C.pink} fontSize={S(13)} onClick={() => resetFeedPetSitTuning()} />
+    </UiEntity>
+  )
+}
+
 function FeedGameOverlay() {
   const st = clientState.feedGame
   if (!st.active) return <UiEntity />
@@ -3008,6 +3048,7 @@ function FeedGameOverlay() {
             )}
           </UiEntity>
           {introPhase ? <FeedStartCard /> : null}
+          <FeedPetSitTuner />
           {mobile() ? <MoveArrowButton side="left" /> : null}
           {mobile() ? <MoveArrowButton side="right" /> : null}
         </UiEntity>
