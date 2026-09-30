@@ -889,7 +889,20 @@ export function proposeSwap(
     return { notes: [{ kind: 'error', message: "You can't swap with yourself" }], offeredPet: null, wantedPet: null }
   }
   const mine = slottedActivePet(from)
-  if (!mine) return { notes: [{ kind: 'error', message: 'Select one of your pets to offer first' }], offeredPet: null, wantedPet: null }
+  if (!mine) {
+    // You're mid Keep/Discard on a freshly hatched/bred pet — it isn't in a slot yet.
+    const msg = from.hatchling ? 'Finish with your new pet before offering a swap.' : 'Select one of your pets to offer first'
+    return { notes: [{ kind: 'error', message: msg }], offeredPet: null, wantedPet: null }
+  }
+  // The target may be busy: mid Keep/Discard on a hatchling (presence still shows a
+  // pet), or carrying their pet through an activity (bath/breed) where it isn't
+  // tappable. Either way surface a clear "busy" toast instead of "has no pet".
+  const targetCarried = carriedState.get(target.address.toLowerCase()) ?? false
+  if (target.hatchling || targetCarried) {
+    const name = playerNames.get(target.address.toLowerCase()) ?? shortAddress(target.address)
+    const why = target.hatchling ? 'busy with a new pet' : 'busy with their pet right now'
+    return { notes: [{ kind: 'swap', message: `${name} is ${why} — try again in a moment.` }], offeredPet: null, wantedPet: null }
+  }
   const theirs = slottedActivePet(target)
   if (!theirs) return { notes: [{ kind: 'error', message: 'That player has no pet to swap' }], offeredPet: null, wantedPet: null }
   const key = target.address.toLowerCase()
