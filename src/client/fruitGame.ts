@@ -235,6 +235,13 @@ const LANE_END_MARGIN = 1.0 // metres inset from each end-cap wall, so fruit don
 const CANOPY_DEPTH = 0.6 // half-depth, narrow so it reads as one lane
 const PET_SIT_MARGIN = 1.5
 
+// Desktop/Unity calibration for the pet waiting beside the Feed lane. Mobile
+// deliberately keeps its original placement and ignores this offset.
+export const FEED_PET_SIT_TUNER_ENABLED = false
+export type FeedPetSitAxis = 'x' | 'y' | 'z'
+type FeedPetSitOffset = { x: number; y: number; z: number }
+const feedPetSitOffset: FeedPetSitOffset = { x: 1.4, y: 0, z: 0.7 }
+
 // Same "hold" pose/asset pet.ts uses for carrying the pet to the bath — a
 // two-handed cradling pose, better suited to holding the drawer than the
 // egg-carry emote.
@@ -485,6 +492,40 @@ let localRight = Vector3.create(1, 0, 0)
 let localForward = Vector3.create(0, 0, 1)
 let cinematicSpawnPos = Vector3.Zero()
 let feedingShotAnchor: Vector3 | null = null
+
+/** Current runtime offset for Unity/mobile positioning of the sitting pet. */
+export function getFeedPetSitTuning(): { offset: FeedPetSitOffset; position: FeedPetSitOffset | null } {
+  const position = clientState.feedGame.petSitPos
+  return {
+    offset: { ...feedPetSitOffset },
+    position: position ? { x: position.x, y: position.y, z: position.z } : null
+  }
+}
+
+/** Move the sitting pet in world-space axes while the Feed round is running. */
+export function nudgeFeedPetSit(axis: FeedPetSitAxis, amount: number): void {
+  const sit = clientState.feedGame.petSitPos
+  if (!sit || !clientState.feedGame.active) return
+  feedPetSitOffset[axis] += amount
+  sit[axis] += amount
+  console.log(
+    `[Feed pet sit tuner] offset = { x: ${feedPetSitOffset.x.toFixed(2)}, y: ${feedPetSitOffset.y.toFixed(2)}, z: ${feedPetSitOffset.z.toFixed(2)} }`
+  )
+}
+
+/** Put the live round and the next round back at the untouched composition. */
+export function resetFeedPetSitTuning(): void {
+  const sit = clientState.feedGame.petSitPos
+  if (sit) {
+    sit.x -= feedPetSitOffset.x
+    sit.y -= feedPetSitOffset.y
+    sit.z -= feedPetSitOffset.z
+  }
+  feedPetSitOffset.x = 0
+  feedPetSitOffset.y = 0
+  feedPetSitOffset.z = 0
+  console.log('[Feed pet sit tuner] offset reset to { x: 0.00, y: 0.00, z: 0.00 }')
+}
 
 type FeedPetCalibration = { right: number; up: number; forward: number }
 const MOBILE_FEED_PET: FeedPetCalibration = { right: 0.50, up: 0, forward: -0.42 }
@@ -1775,10 +1816,14 @@ export function startFruitGame(mascotaId: string): void {
   )
 
   const laneMid = Vector3.create(canopyCenter.x, groundY, canopyCenter.z)
+  // Both layouts seat the pet on screen-right. Only desktop/Unity receives the
+  // calibrated XYZ offset; mobile keeps that right-side placement unadjusted.
+  const usingMobileLayout = mobile()
+  const offset = usingMobileLayout ? { x: 0, y: 0, z: 0 } : feedPetSitOffset
   const petSitPos = Vector3.create(
-    laneMid.x + localRight.x * (laneWidth / 2 + PET_SIT_MARGIN),
-    groundY,
-    laneMid.z + localRight.z * (laneWidth / 2 + PET_SIT_MARGIN)
+    laneMid.x - localRight.x * (laneWidth / 2 + PET_SIT_MARGIN) + offset.x,
+    usingMobileLayout ? groundY : Cfg.PET_BASE_Y + offset.y,
+    laneMid.z - localRight.z * (laneWidth / 2 + PET_SIT_MARGIN) + offset.z
   )
 
   // Cached for arrivalTick's cut to the game camera.
