@@ -1775,19 +1775,19 @@ function AlbumPanel() {
   const collected = Cfg.ALBUM_SPECIES.map((sp) => owned.has(Cfg.collectionKey(sp, rarity)))
   const pageCount = collected.filter(Boolean).length
 
-  // Desktop is perfect at a fixed S(600). Mobile is a portrait panel on a wide +
-  // short canvas, so HEIGHT is the limiting dimension: size it off the canvas
-  // height (~90%) to fill the screen and get bigger, easier-to-tap buttons.
+  // Desktop is perfect at a fixed S(600) clamped to the canvas. On mobile,
+  // UiCanvasInformation under-reports the real screen height, so clamping to it was
+  // SHRINKING the album (it rendered at ~55% of the screen). Size it straight off
+  // S() there — which already scales up on mobile — and skip the height clamp so the
+  // portrait book fills the tall screen (the top bar is hidden while it's open).
   const aspect = ALBUM_PANEL_W / ALBUM_PANEL_H
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
   const isM = mobile()
   let w: number
   let h: number
-  if (isM && canvas) {
-    h = Math.round(canvas.height * 0.9)
-    w = Math.round(h * aspect)
-    const maxW = canvas.width * 0.95 // guard the (unlikely) narrow-canvas case
-    if (w > maxW) { w = Math.round(maxW); h = Math.round(w / aspect) }
+  if (isM) {
+    w = S(500) // S(560) filled the screen edge-to-edge; back off a bit to leave a top/bottom margin like the top bar's
+    h = Math.round(w / aspect)
   } else {
     w = S(600)
     h = Math.round(w / aspect)
@@ -3737,7 +3737,8 @@ const Root = () => {
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         {!hideHudForPepitoTheft && (
           <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-            <TopBars />
+            {/* Hide the top bar while the Album is open on mobile so it can use the full height. */}
+            {!(mobile() && uiState.panel === 'album') && <TopBars />}
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />
