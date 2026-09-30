@@ -71,6 +71,7 @@ function fakePlayer(overrides: Partial<PlayerData> = {}): PlayerData {
     activePetId: 'debug_pet',
     pets: [fakePet()],
     hatchling: null,
+    collection: ['sprout-original:common', 'sprout_pepito:common', 'pepito-original:common', 'amebita_fluflito:common', 'pepito-original:rare', 'fluflito_sprout:legendary'],
     createdAt: t,
     lastUpdated: t,
     ...overrides
@@ -313,6 +314,16 @@ const DEBUG_SCREENS: DebugScreen[] = [
       setMuted(v === 2)
       setMusicVolume(v === 2 ? 0.2 : 0.42)
       debugForcePanel('jukebox')
+    }
+  },
+  {
+    id: 'album',
+    label: 'Album Panel',
+    variants: ['Common page', 'Rare page', 'Legendary page', 'Empty album'],
+    activate: (v) => {
+      applyFixturePlayer(v === 3 ? fakePlayer({ collection: [] }) : fakePlayer(), fakePet())
+      debugForcePanel('album')
+      debugSetUiState({ albumPage: v === 3 ? 0 : v })
     }
   },
   {

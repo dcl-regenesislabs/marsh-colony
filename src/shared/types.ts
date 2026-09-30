@@ -77,6 +77,10 @@ export interface PlayerData {
   pets: PetData[]
   // A just-hatched pet not yet placed in a slot: keep it (-> pets) or discard it.
   hatchling: PetData | null
+  // Album: every species+rarity this player has ever kept, as collectionKey()
+  // strings ("sprout_pepito:rare"). Only grows — releasing/swapping a pet away
+  // doesn't un-collect it. Backfilled from the current roster on load.
+  collection: string[]
   // Bookkeeping
   createdAt: number
   lastUpdated: number

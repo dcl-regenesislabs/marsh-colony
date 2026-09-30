@@ -58,7 +58,7 @@ import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 import { pepitoStealHidesHud } from './pepitoSteal'
 import { areCriticalUiAssetsReady } from './uiAssets'
 
-export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard'
+export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard' | 'album'
 export type ShopTabId = 'food' | 'slots'
 type MobileNameInput = 'adopt' | 'breed'
 type MobileMagnifierPhase = 'idle' | 'opening' | 'closing'
@@ -81,7 +81,9 @@ const uiState = {
   breedUsePotion: false,
   // Roster page being viewed. Pet slots are unlimited, so the grid can hold more
   // cards than the modal fits and has to page through them.
-  rosterPage: 0
+  rosterPage: 0,
+  // Album page = rarity tier being viewed (0 common, 1 rare, 2 legendary).
+  albumPage: 0
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
@@ -186,6 +188,10 @@ export const ui = {
   openJukebox(): void {
     uiState.panel = 'jukebox'
   },
+  openAlbum(): void {
+    uiState.panel = 'album'
+    uiState.albumPage = 0
+  },
   openLeaderboard(): void {
     uiState.panel = 'leaderboard'
     actions.requestLeaderboard() // fetch fresh standings each time it opens
@@ -227,7 +233,7 @@ export const ui = {
 export function debugForcePanel(panel: Panel): void {
   uiState.panel = panel
 }
-export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 'pick' | 'name'; breedUsePotion: boolean; rosterPage: number }>): void {
+export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 'pick' | 'name'; breedUsePotion: boolean; rosterPage: number; albumPage: number }>): void {
   Object.assign(uiState, patch)
 }
 
@@ -347,7 +353,7 @@ function TopBars() {
     !clientState.carryPet.active &&
     !clientState.breed.active &&
     !clientState.hatch.active
-  const iconsW = gap + iconSize + gap + iconSize
+  const iconsW = gap + iconSize + gap + iconSize // music + album (leaderboard is now the physical in-world board)
   const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
   const rightShift = S(TOP_HUD_CENTER_SHIFT) // nudged off-center — plenty of clearance either side of this row
   return (
@@ -362,7 +368,8 @@ function TopBars() {
           <UiEntity uiTransform={{ width: gap, height: h }} />
           <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
           <UiEntity uiTransform={{ width: gap, height: h }} />
-          <TactileButton id="hud_leaderboard" label="" texture={HUD_SHEET} uvs={HUD_TROPHY_UVS} width={iconSize} height={iconSize} onClick={() => ui.openLeaderboard()} />
+          {/* Album takes the leaderboard's old slot — the leaderboard now lives on the physical in-world board. */}
+          <TactileButton id="hud_album" label="" texture={ALBUM_ICON} width={iconSize} height={iconSize} onClick={() => ui.openAlbum()} />
         </UiEntity>
       ) : null}
     </UiEntity>
@@ -1644,6 +1651,191 @@ function RosterPanel() {
         </UiEntity>
       )}
     </PetHudModal>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Album — collection book. One page per rarity, 4x4 grid of the 16 creatures
+// (row = head family, column = body family, same order as Cfg.ALBUM_SPECIES).
+// Art (assets/images/album/): the panel with its title + close X baked in (same
+// frame as Goals), a parts sheet (rarity cards, locked card, check badge,
+// arrows, rarity pills), one 4x4 creature sheet per rarity and a shared
+// silhouette sheet for the ones not collected yet. Every position below is in
+// panel-texture pixels and scaled by the panel's on-screen width, so the
+// runtime pieces stay locked to the baked art.
+// ---------------------------------------------------------------------------
+const ALBUM_ICON = 'assets/images/album/album_icon.png'
+const ALBUM_PANEL = 'assets/images/album/album_panel.png'
+const ALBUM_PARTS = 'assets/images/album/album_parts.png'
+const ALBUM_SHEETS: Record<Rarity, string> = {
+  common: 'assets/images/album/album_common.png',
+  rare: 'assets/images/album/album_rare.png',
+  legendary: 'assets/images/album/album_legendary.png'
+}
+const ALBUM_LOCKED_SHEET = 'assets/images/album/album_locked.png'
+const ALBUM_COLS = 4
+
+type Box = { x0: number; y0: number; x1: number; y1: number }
+function albumUvs(b: Box, texW: number, texH: number): number[] {
+  const uL = b.x0 / texW
+  const uR = b.x1 / texW
+  const vTop = 1 - b.y0 / texH
+  const vBottom = 1 - b.y1 / texH
+  return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
+}
+const partUvs = (b: Box) => albumUvs(b, 1024, 512)
+
+const ALBUM_PANEL_W = 998
+const ALBUM_PANEL_H = 1290
+const ALBUM_CARD_BOX: Record<Rarity | 'locked', Box> = {
+  common: { x0: 8, y0: 8, x1: 208, y1: 218 },
+  rare: { x0: 220, y0: 8, x1: 420, y1: 218 },
+  legendary: { x0: 432, y0: 8, x1: 632, y1: 218 },
+  locked: { x0: 644, y0: 8, x1: 844, y1: 218 }
+}
+const ALBUM_CHECK_BOX: Box = { x0: 860, y0: 8, x1: 924, y1: 72 }
+const ALBUM_ARROW_BOX = {
+  left: { x0: 8, y0: 236, x1: 112, y1: 340 },
+  right: { x0: 124, y0: 236, x1: 228, y1: 340 },
+  leftOff: { x0: 240, y0: 236, x1: 344, y1: 340 },
+  rightOff: { x0: 356, y0: 236, x1: 460, y1: 340 }
+}
+const ALBUM_PILL_BOX: Record<Rarity, Box> = {
+  common: { x0: 8, y0: 360, x1: 308, y1: 440 },
+  rare: { x0: 320, y0: 360, x1: 620, y1: 440 },
+  legendary: { x0: 632, y0: 360, x1: 932, y1: 440 }
+}
+// Layout inside the panel texture.
+const AL = {
+  closeX: 865, closeY: 20, closeSize: 104, // baked close button
+  gridTop: 196, cardW: 200, cardH: 210, gapX: 22, gapY: 16, art: 170,
+  checkSize: 64, checkDx: 148, checkDy: -10,
+  pagerTop: 1110, arrow: 84, pillW: 300, pillH: 80, arrowGap: 26,
+  countTop: 1200, countH: 36, countFont: 26
+}
+const ALBUM_INK: Color = { r: 0.6, g: 0.48, b: 0.39, a: 1 }
+
+function albumCellUvs(index: number): number[] {
+  const col = index % ALBUM_COLS
+  const row = Math.floor(index / ALBUM_COLS)
+  return albumUvs({ x0: col * 256, y0: row * 256, x1: (col + 1) * 256, y1: (row + 1) * 256 }, 1024, 1024)
+}
+
+function AlbumCard(props: { key?: string; index: number; rarity: Rarity; collected: boolean; k: number }) {
+  const k = props.k
+  const col = props.index % ALBUM_COLS
+  const row = Math.floor(props.index / ALBUM_COLS)
+  const gridW = ALBUM_COLS * AL.cardW + (ALBUM_COLS - 1) * AL.gapX
+  const left = Math.round(((ALBUM_PANEL_W - gridW) / 2 + col * (AL.cardW + AL.gapX)) * k)
+  const top = Math.round((AL.gridTop + row * (AL.cardH + AL.gapY)) * k)
+  const w = Math.round(AL.cardW * k)
+  const h = Math.round(AL.cardH * k)
+  const art = Math.round(AL.art * k)
+  const inset = Math.round(((AL.cardW - AL.art) / 2) * k)
+  const check = Math.round(AL.checkSize * k)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left }, width: w, height: h, pointerFilter: 'none' }}>
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: w, height: h }}
+        uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_CARD_BOX[props.collected ? props.rarity : 'locked']) }}
+      />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: inset, left: inset }, width: art, height: art }}
+        uiBackground={{ texture: { src: props.collected ? ALBUM_SHEETS[props.rarity] : ALBUM_LOCKED_SHEET }, textureMode: 'stretch', uvs: albumCellUvs(props.index) }}
+      />
+      {props.collected ? (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.checkDy * k), left: Math.round(AL.checkDx * k) }, width: check, height: check }}
+          uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_CHECK_BOX) }}
+        />
+      ) : null}
+    </UiEntity>
+  )
+}
+
+function AlbumArrow(props: { side: 'left' | 'right'; enabled: boolean; k: number; onClick: () => void }) {
+  const size = Math.round(AL.arrow * props.k)
+  const offset = Math.round((AL.pillW / 2 + AL.arrowGap + AL.arrow) * props.k)
+  const left = Math.round((ALBUM_PANEL_W / 2) * props.k) + (props.side === 'left' ? -offset : offset - size)
+  const top = Math.round(AL.pagerTop * props.k)
+  const box = props.side === 'left' ? (props.enabled ? ALBUM_ARROW_BOX.left : ALBUM_ARROW_BOX.leftOff) : props.enabled ? ALBUM_ARROW_BOX.right : ALBUM_ARROW_BOX.rightOff
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left }, width: size, height: size }}>
+      {props.enabled ? (
+        <TactileButton id={`album_${props.side}`} label="" texture={ALBUM_PARTS} uvs={partUvs(box)} width={size} height={size} onClick={props.onClick} />
+      ) : (
+        <UiEntity uiTransform={{ width: size, height: size }} uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(box) }} />
+      )}
+    </UiEntity>
+  )
+}
+
+function AlbumPanel() {
+  const p = clientState.player
+  const owned = new Set(p?.collection ?? [])
+  const page = Math.min(Math.max(0, uiState.albumPage), Cfg.RARITIES.length - 1)
+  uiState.albumPage = page
+  const rarity = Cfg.RARITIES[page]
+  const collected = Cfg.ALBUM_SPECIES.map((sp) => owned.has(Cfg.collectionKey(sp, rarity)))
+  const pageCount = collected.filter(Boolean).length
+
+  // Desktop is perfect at a fixed S(600) clamped to the canvas. On mobile,
+  // UiCanvasInformation under-reports the real screen height, so clamping to it was
+  // SHRINKING the album (it rendered at ~55% of the screen). Size it straight off
+  // S() there — which already scales up on mobile — and skip the height clamp so the
+  // portrait book fills the tall screen (the top bar is hidden while it's open).
+  const aspect = ALBUM_PANEL_W / ALBUM_PANEL_H
+  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const isM = mobile()
+  let w: number
+  let h: number
+  if (isM) {
+    w = S(500) // S(560) filled the screen edge-to-edge; back off a bit to leave a top/bottom margin like the top bar's
+    h = Math.round(w / aspect)
+  } else {
+    w = S(600)
+    h = Math.round(w / aspect)
+    if (canvas) {
+      const maxW = canvas.width * 0.92
+      const maxH = canvas.height * 0.92
+      if (w > maxW) { w = maxW; h = Math.round(w / aspect) }
+      if (h > maxH) { h = maxH; w = Math.round(h * aspect) }
+    }
+  }
+  const k = w / ALBUM_PANEL_W
+  const pillW = Math.round(AL.pillW * k)
+  const pillH = Math.round(AL.pillH * k)
+
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: ALBUM_PANEL }, textureMode: 'stretch' }}>
+        {/* Invisible hit area over the close X baked into the art (transparent bg so the tap registers). */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.closeY * k), left: Math.round(AL.closeX * k) }, width: Math.round(AL.closeSize * k), height: Math.round(AL.closeSize * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => {
+            playUiClick()
+            ui.close()
+          }}
+        />
+        {Cfg.ALBUM_SPECIES.map((sp, i) => (
+          <AlbumCard key={`${rarity}-${sp}`} index={i} rarity={rarity} collected={collected[i]} k={k} />
+        ))}
+        <AlbumArrow side="left" enabled={page > 0} k={k} onClick={() => (uiState.albumPage = page - 1)} />
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round((AL.pagerTop + (AL.arrow - AL.pillH) / 2) * k), left: Math.round((w - pillW) / 2) }, width: pillW, height: pillH }}
+          uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_PILL_BOX[rarity]) }}
+        />
+        <AlbumArrow side="right" enabled={page < Cfg.RARITIES.length - 1} k={k} onClick={() => (uiState.albumPage = page + 1)} />
+        <Label
+          value={`${pageCount} / ${Cfg.ALBUM_SPECIES.length} collected`}
+          fontSize={Math.round(AL.countFont * k)}
+          color={ALBUM_INK}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.countTop * k), left: 0 }, width: w, height: Math.round(AL.countH * k) }}
+        />
+      </UiEntity>
+    </UiEntity>
   )
 }
 
@@ -3605,7 +3797,8 @@ const Root = () => {
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         {!hideHudForPepitoTheft && (
           <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-            <TopBars />
+            {/* Hide the top bar while the Album is open on mobile so it can use the full height. */}
+            {!(mobile() && uiState.panel === 'album') && <TopBars />}
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />
@@ -3633,6 +3826,7 @@ const Root = () => {
             {uiState.panel === 'goals' && <GoalsPanel />}
             {uiState.panel === 'daily' && <DailyRewardPanel />}
             {uiState.panel === 'jukebox' && <JukeboxPanel />}
+            {uiState.panel === 'album' && <AlbumPanel />}
             {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
           </UiEntity>
         )}

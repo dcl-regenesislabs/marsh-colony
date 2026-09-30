@@ -1,0 +1,31 @@
+<!doctype html><html><body style="margin:0;background:transparent">
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+const TEX={sprout:'sprout',pepito:'Pepito',amebita:'Amebita',fluflito:'Fluflito'};
+const S=1024;
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
+renderer.setSize(S,S);renderer.setClearColor(0,0);renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const texCache={};
+const VARIANT={common:'basecolor',rare:'basecolor2',legendary:'basecolorGold'};
+function tex(fam,rar){const k=fam+rar; if(!texCache[k]){const t=new THREE.TextureLoader().load(`/assets/textures/creatures/${TEX[fam]}_${VARIANT[rar]}.png`);t.flipY=false;t.colorSpace=THREE.SRGBColorSpace;texCache[k]=t;} return texCache[k]; }
+window.renderCreature=async(file,body,yaw,anim,t,rar='common')=>{
+  const g=await new GLTFLoader().loadAsync(file);
+  const scene=new THREE.Scene(); scene.add(g.scene);
+  g.scene.traverse(o=>{ if(o.isMesh){ const m=o.name.match(/^[A-Za-z]+_([A-Za-z]+)_[Hh]ead/); const fam=m?m[1].toLowerCase():body;
+     const mat=new THREE.MeshBasicMaterial({map:tex(fam,rar)}); o.material=mat; o.frustumCulled=false;}});
+  await new Promise(r=>{const i=setInterval(()=>{if(Object.values(texCache).every(t=>t.image&&t.image.complete)){clearInterval(i);r()}},50)});
+  if(anim){const clip=g.animations.find(a=>a.name.endsWith('_'+anim)); if(clip){const mx=new THREE.AnimationMixer(g.scene);mx.clipAction(clip).play();mx.update(t);}}
+  g.scene.rotation.y=yaw; g.scene.updateMatrixWorld(true);
+  const box=new THREE.Box3(); g.scene.traverse(o=>{if(o.isSkinnedMesh){o.computeBoundingBox?.(); const b=new THREE.Box3().setFromObject(o,true); box.union(b);} else if(o.isMesh) box.expandByObject(o)});
+  const c=box.getCenter(new THREE.Vector3()), sz=box.getSize(new THREE.Vector3()); const r=Math.max(sz.x,sz.y,sz.z);
+  const cam=new THREE.PerspectiveCamera(25,1,r/100,r*100);
+  const d=r/ (2*Math.tan(THREE.MathUtils.degToRad(12.5)))*1.25;
+  cam.position.set(c.x, c.y+r*0.25, c.z+d); cam.lookAt(c);
+  renderer.render(scene,cam);
+  return renderer.domElement.toDataURL('image/png');
+};
+window.ready=true;
+</script></body></html>
