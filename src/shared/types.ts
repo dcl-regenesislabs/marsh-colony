@@ -81,6 +81,10 @@ export interface PlayerData {
   // strings ("sprout_pepito:rare"). Only grows — releasing/swapping a pet away
   // doesn't un-collect it. Backfilled from the current roster on load.
   collection: string[]
+  // Album rewards already paid ("entry:<key>", "set:<rarity>:<head>",
+  // "page:<rarity>"). Seeded WITHOUT paying on the first load after the feature
+  // ships, so existing collections don't get a retroactive windfall.
+  albumClaims?: string[]
   // Bookkeeping
   createdAt: number
   lastUpdated: number

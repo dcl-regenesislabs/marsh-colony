@@ -199,6 +199,21 @@ const DEBUG_SCREENS: DebugScreen[] = [
     }
   },
   {
+    id: 'choosePartner',
+    label: 'Choose a Partner (breeding)',
+    variants: ['3 partners (2 Adult)', '6 partners · paged', 'No partner'],
+    activate: (v) => {
+      const adult = Cfg.PET_STAGE_ADULT_SIZE
+      const names = ['Pepi', 'Ame', 'Flu', 'Sprouty', 'Mochi', 'Kiwi']
+      const species = ['pepito-original', 'amebita-original', 'fluflito-original', 'sprout_pepito', 'amebita_fluflito', 'pepito_sprout']
+      const count = v === 2 ? 0 : v === 1 ? 6 : 3
+      const partners = Array.from({ length: count }, (_, i) => fakePet({ id: `partner_${i}`, name: names[i], species: species[i], size: i === 1 ? Cfg.SIZE_BASE : adult }))
+      const me = fakePet({ size: adult })
+      applyFixturePlayer(fakePlayer({ pets: [me, ...partners], petSlots: 8 }), me)
+      clientState.breed = { active: true, phase: 'pickB', partnerId: '', atNest: true, name: '', usePotion: false }
+    }
+  },
+  {
     id: 'breedName',
     label: 'Breed Name Panel',
     variants: ['Has a rarity potion', 'No potions'],
@@ -417,6 +432,7 @@ function resetAllDebugFlags(): void {
   clientState.carryEgg = { active: false, species: '', name: '', atHome: false }
   clientState.carryPet = { active: false, atStation: false }
   clientState.incomingSwap = null
+  clientState.breed = { active: false, phase: 'toNest', partnerId: '', atNest: false, name: '', usePotion: false }
   clientState.viewingPetAddress = null
   clientState.petPanelOpen = false
   clientState.lastSpin = null

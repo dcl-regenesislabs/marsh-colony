@@ -8,7 +8,7 @@
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
-import type { CareAction, Rarity } from '../shared/types'
+import type { CareAction, PetData, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
   startPetting,
@@ -88,7 +88,9 @@ const uiState = {
   // cards than the modal fits and has to page through them.
   rosterPage: 0,
   // Album page = rarity tier being viewed (0 common, 1 rare, 2 legendary).
-  albumPage: 0
+  albumPage: 0,
+  // Choose a Partner (breeding) page — same 4-per-row paging as My Pets.
+  breedPickerPage: 0
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
@@ -247,7 +249,14 @@ export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 
 // (#186) and to hide the bottom nav so its icons don't poke through under/over
 // whatever's open.
 function bigUiOpen(): boolean {
-  return uiState.panel !== 'none' || clientState.dialog.open || clientState.petPanelOpen || clientState.viewingPetAddress !== null || clientState.incomingSwap !== null
+  return (
+    uiState.panel !== 'none' ||
+    clientState.dialog.open ||
+    clientState.petPanelOpen ||
+    clientState.viewingPetAddress !== null ||
+    clientState.incomingSwap !== null ||
+    (clientState.breed.active && clientState.breed.phase === 'pickB') // Choose a Partner
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -497,7 +506,7 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
 // ---------------------------------------------------------------------------
 const PILL_SHEET = 'assets/images/revamp/pet_action_buttons.png'
 const PILL_SHEET_W = 2048
-const PILL_SHEET_H = 384
+const PILL_SHEET_H = 512
 type PillColor = 'orange' | 'blue' | 'yellow' | 'pink' | 'purple' | 'green' | 'gray'
 const PILL_BOX: Record<string, { x0: number; y0: number; x1: number; y1: number }> = {
   chip_orange: { x0: 0, y0: 0, x1: 304, y1: 120 },
@@ -511,7 +520,11 @@ const PILL_BOX: Record<string, { x0: number; y0: number; x1: number; y1: number 
   // Passport (another player's pet): full-width buttons
   pass_green: { x0: 0, y0: 256, x1: 656, y1: 336 },
   pass_purple: { x0: 664, y0: 256, x1: 1320, y1: 336 },
-  pass_gray: { x0: 1328, y0: 256, x1: 1984, y1: 336 }
+  pass_gray: { x0: 1328, y0: 256, x1: 1984, y1: 336 },
+  // Half-width buttons (two side by side): Swap Offer Accept / Decline
+  half_green: { x0: 0, y0: 392, x1: 360, y1: 482 },
+  half_pink: { x0: 368, y0: 392, x1: 728, y1: 482 },
+  half_gray: { x0: 736, y0: 392, x1: 1096, y1: 482 }
 }
 // Dark outline tone of each pill, reused as the label's outline.
 const PILL_INK: Record<PillColor, Color> = {
@@ -528,7 +541,7 @@ const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
 function PillButton(props: {
   id: string
   label: string
-  shape: 'chip' | 'wide' | 'pass'
+  shape: 'chip' | 'wide' | 'pass' | 'half'
   color: PillColor
   width: number
   height: number
@@ -839,38 +852,73 @@ function RemotePetPanel() {
 
 // Incoming pet-swap offer — another player wants to trade their pet for yours.
 // Shows the offered pet's full profile; Accept swaps both rosters, Decline drops it.
+// Same art direction + frame as the Passport (passport_panel.png: dark outline,
+// paw ornament, baked close X = Decline) and the same pill buttons.
+function SwapStatRow(props: { key?: string; label: string; value: number; color: Color; width: number }) {
+  const labelW = S(84)
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: S(28), flexDirection: 'row', alignItems: 'center', margin: { bottom: S(6) } }}>
+      <Label value={props.label} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ width: labelW, height: S(24) }} />
+      <PassportBar value={props.value} color={props.color} width={props.width - labelW} height={S(20)} />
+    </UiEntity>
+  )
+}
+
 function SwapOfferPanel() {
   const offer = clientState.incomingSwap
   if (!offer) return <UiEntity />
-  const contentW = S(600) - S(30) * 2
   const p = offer.offeredPet
   const respond = (accept: boolean) => {
     if (accept) playPetVoice(p.species)
     actions.respondSwap(accept)
     clientState.incomingSwap = null
   }
+  const w = navPanelWidth()
+  const k = w / PASSPORT_TEX.w
+  const h = Math.round(PASSPORT_TEX.h * k)
+  const pad = Math.round(64 * k)
+  const contentW = w - pad * 2
+  const halfW = Math.round((contentW - S(16)) / 2)
   return (
-    <PetHudModal title="Swap Offer!" width={S(600)} height={S(560)} onClose={() => respond(false)}>
-      <Label
-        value={`${offer.fromName} offers their pet for your ${offer.wantedPetName}`}
-        fontSize={S(17)}
-        color={LOC.dim}
-        textAlign="middle-center"
-        uiTransform={{ width: contentW, height: S(44), margin: { bottom: S(6) } }}
-      />
-      <OutlineLabel value={p.name} fontSize={S(24)} color={LOC.title} outlineColor={LOC.titleOutline} width={contentW} height={S(32)} textAlign="middle-center" />
-      <PetIdentityRow species={p.species} rarity={p.rarity} size={p.size} width={contentW} />
-      <UiEntity uiTransform={{ width: contentW, flexDirection: 'column' }}>
-        <StatRow label="Hunger" value={p.hunger} color={C.hunger} width={contentW} />
-        <StatRow label="Hygiene" value={p.hygiene} color={C.hygiene} width={contentW} />
-        <StatRow label="Energy" value={p.energy} color={C.energy} width={contentW} />
-        <StatRow label="Happy" value={p.happiness} color={C.happy} width={contentW} />
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: PET_UI.scrim }}
+      onMouseDown={() => {}}
+    >
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: PASSPORT_PANEL }, textureMode: 'stretch' }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round((PASSPORT_TEX.top + 52) * k), left: pad }, width: contentW, flexDirection: 'column', alignItems: 'center' }}>
+          <Label value="Swap Offer!" fontSize={S(28)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(38) }} />
+          <Label
+            value={`${offer.fromName} offers ${p.name} for your ${offer.wantedPetName}`}
+            fontSize={S(16)}
+            color={ALBUM_INK}
+            textAlign="middle-center"
+            textWrap="wrap"
+            uiTransform={{ width: contentW, height: S(26), margin: { bottom: S(10) } }}
+          />
+          <PetIdentityRow species={p.species} rarity={p.rarity} size={p.size} width={contentW} name={p.name} level={p.petLevel} ring />
+          <UiEntity uiTransform={{ width: contentW, flexDirection: 'column', margin: { top: S(2) } }}>
+            <SwapStatRow label="Hunger" value={p.hunger} color={C.hunger} width={contentW} />
+            <SwapStatRow label="Hygiene" value={p.hygiene} color={C.hygiene} width={contentW} />
+            <SwapStatRow label="Energy" value={p.energy} color={C.energy} width={contentW} />
+            <SwapStatRow label="Happy" value={p.happiness} color={C.happy} width={contentW} />
+          </UiEntity>
+          <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(10) } }}>
+            <PillButton id="swap_decline" label="Decline" shape="half" color="pink" width={halfW} height={S(60)} fontSize={S(20)} margin={{ right: S(8) }} onClick={() => respond(false)} />
+            <PillButton id="swap_accept" label="Accept" shape="half" color="green" width={halfW} height={S(60)} fontSize={S(20)} pulse margin={{ left: S(8) }} onClick={() => respond(true)} />
+          </UiEntity>
+        </UiEntity>
+        {/* Invisible hit area over the baked close X — closing declines, like before. */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(PASSPORT_CLOSE.y * k), left: Math.round(PASSPORT_CLOSE.x * k) }, width: Math.round(PASSPORT_CLOSE.size * k), height: Math.round(PASSPORT_CLOSE.size * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => {
+            playUiClick()
+            respond(false)
+          }}
+        />
       </UiEntity>
-      <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(14) } }}>
-        <TactileButton id="swap_decline" label="Decline" width={S(200)} height={S(64)} bg={LOC.rose} textColor={LOC.white} fontSize={S(22)} radius={S(18)} margin={{ right: S(10) }} onClick={() => respond(false)} />
-        <TactileButton id="swap_accept" label="Accept" width={S(200)} height={S(64)} bg={LOC.green} textColor={LOC.white} fontSize={S(22)} radius={S(18)} pulse margin={{ left: S(10) }} onClick={() => respond(true)} />
-      </UiEntity>
-    </PetHudModal>
+    </UiEntity>
   )
 }
 
@@ -1265,9 +1313,24 @@ const BH_POTION_EMPTY = { uvs: breedHudUv(18, 762, 702, 895), aspect: (702 - 18)
 const BH_CLOSE = { uvs: breedHudUv(590, 614, 718, 742), aspect: 1 }
 const BH_BREED = { uvs: breedHudUv(18, 896, 500, 1014), aspect: (500 - 18) / (1014 - 896) }
 
-// Inline notice for the breed modal — toasts are hidden while a modal is open
-// (bigUiOpen), so buy-potion feedback shows here instead. Auto-expires.
+// Inline notice for the breed flow (name modal and partner picker) — toasts are
+// hidden while a big panel is open (bigUiOpen), so feedback inside the flow shows
+// here instead. Auto-expires.
 let breedNotice = { text: '', until: 0 }
+function showBreedNotice(text: string) {
+  breedNotice = { text, until: Date.now() + 2500 }
+}
+function BreedNoticePill(props: { marginTop: number }) {
+  if (Date.now() >= breedNotice.until) return <UiEntity />
+  return (
+    <UiEntity
+      uiTransform={{ margin: { top: props.marginTop }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
+      uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
+    >
+      <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
+    </UiEntity>
+  )
+}
 
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
@@ -1334,9 +1397,9 @@ function BreedNamePanel() {
                   if (buyPotionLocal()) {
                     uiState.breedUsePotion = true
                     actions.buyPotion()
-                    breedNotice = { text: 'Bought a Rarity Potion!', until: Date.now() + 2500 }
+                    showBreedNotice('Bought a Rarity Potion!')
                   } else {
-                    breedNotice = { text: `Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`, until: Date.now() + 2500 }
+                    showBreedNotice(`Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`)
                   }
                 }
           }
@@ -1352,18 +1415,19 @@ function BreedNamePanel() {
           />
         </UiEntity>
 
-        {/* Inline notice (buy feedback) — toasts are suppressed under a modal. */}
-        {Date.now() < breedNotice.until && (
-          <UiEntity
-            uiTransform={{ margin: { top: S(8) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
-            uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
-          >
-            <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
-          </UiEntity>
-        )}
+        {/* Inline notice (buy / fee feedback) — toasts are suppressed under a modal. */}
+        <BreedNoticePill marginTop={S(8)} />
+
+        {/* Breeding fee (economy rebalance) */}
+        <UiEntity
+          uiTransform={{ margin: { top: S(10) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
+          uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
+        >
+          <Label value={`Breeding costs ${Cfg.BREED_COST} coins`} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(22) }} />
+        </UiEntity>
 
         {/* Breed! */}
-        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(18) } }}>
+        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(8) } }}>
           <TactileButton
             id="breed_confirm"
             label=""
@@ -1376,6 +1440,11 @@ function BreedNamePanel() {
               // Nest flow: the partner is already placed; run the egg cinematic
               // (which sends the breed). If the flow was cancelled (world BACK) while
               // this modal was still open, just close — no stale actions.breed('').
+              // Check the fee here too: once the egg cinematic starts it can't be taken back.
+              if ((clientState.player?.currency ?? 0) < Cfg.BREED_COST) {
+                showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
+                return
+              }
               if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
               uiState.breedName = ''
               uiState.breedUsePotion = false
@@ -1801,6 +1870,41 @@ function RosterSlotCard(props: { key?: number; index: number }) {
 // They're unlimited now, so it pages: one row of 4 fits the Inventory-sized panel.
 const ROSTER_PAGE_SIZE = 4
 
+/** `< 1 / N >` pager shared by the 4-per-row card panels (My Pets, Choose a
+ *  Partner). Renders nothing when everything fits on one page. */
+function CardPager(props: { idPrefix: string; page: number; pageCount: number; onPage: (page: number) => void }) {
+  if (props.pageCount <= 1) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ width: '100%', height: S(48), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+      <TactileButton
+        id={`${props.idPrefix}_prev`}
+        label="<"
+        width={S(60)}
+        height={S(40)}
+        bg={LOC.neutral}
+        textColor={PET_UI.ink}
+        fontSize={S(20)}
+        radius={S(12)}
+        disabled={props.page === 0}
+        onClick={() => props.onPage(props.page - 1)}
+      />
+      <Label value={`${props.page + 1} / ${props.pageCount}`} fontSize={S(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: S(90), height: S(40) }} />
+      <TactileButton
+        id={`${props.idPrefix}_next`}
+        label=">"
+        width={S(60)}
+        height={S(40)}
+        bg={LOC.neutral}
+        textColor={PET_UI.ink}
+        fontSize={S(20)}
+        radius={S(12)}
+        disabled={props.page >= props.pageCount - 1}
+        onClick={() => props.onPage(props.page + 1)}
+      />
+    </UiEntity>
+  )
+}
+
 function RosterPanel() {
   const p = clientState.player
   // Every unlocked slot, plus ONE trailing card to buy the next one.
@@ -1821,35 +1925,7 @@ function RosterPanel() {
           <RosterSlotCard key={i} index={i} />
         ))}
       </UiEntity>
-      {pageCount > 1 && (
-        <UiEntity uiTransform={{ width: '100%', height: S(48), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-          <TactileButton
-            id="roster_prev"
-            label="<"
-            width={S(60)}
-            height={S(40)}
-            bg={LOC.neutral}
-            textColor={PET_UI.ink}
-            fontSize={S(20)}
-            radius={S(12)}
-            disabled={page === 0}
-            onClick={() => (uiState.rosterPage = page - 1)}
-          />
-          <Label value={`${page + 1} / ${pageCount}`} fontSize={S(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: S(90), height: S(40) }} />
-          <TactileButton
-            id="roster_next"
-            label=">"
-            width={S(60)}
-            height={S(40)}
-            bg={LOC.neutral}
-            textColor={PET_UI.ink}
-            fontSize={S(20)}
-            radius={S(12)}
-            disabled={page >= pageCount - 1}
-            onClick={() => (uiState.rosterPage = page + 1)}
-          />
-        </UiEntity>
-      )}
+      <CardPager idPrefix="roster" page={page} pageCount={pageCount} onPage={(n) => (uiState.rosterPage = n)} />
     </RevampPanel>
   )
 }
@@ -2274,21 +2350,7 @@ const JOURNEY_STEPS: JourneyStep[] = [
 ]
 function journeyStepDone(id: JourneyStep['id']): boolean {
   const p = clientState.player
-  if (!p) return false
-  const c = p.counters ?? {}
-  switch (id) {
-    case 'adopt':
-      return p.pets.length > 0
-    case 'feed':
-      return (c['feedCount'] ?? 0) > 0
-    case 'bath':
-      return (c['bathCount'] ?? 0) > 0 || (c['cleanCount'] ?? 0) > 0
-    case 'breed':
-      return (c['breedCount'] ?? 0) > 0
-    case 'ark':
-      // TODO(Ark): hook to the Ark redemption counter once that feature lands.
-      return (c['arkCount'] ?? 0) > 0
-  }
+  return !!p && Cfg.journeyStepDone(id, p) // same rule the server pays the Journey rewards on
 }
 
 function GoalsPanel() {
@@ -3854,34 +3916,63 @@ function BreedButtons() {
 
 // Partner picker (breed phase 'pickB'): tap a second Adult to place it in the
 // right bowl. Non-Adults are shown but rejected with a toast. Close/BACK cancels.
+// Same shell, card size and paging as My Pets (Inventory-sized revamp panel,
+// one row of 4 roster-style cards).
+const CHOOSE_PARTNER_PANEL = 'assets/images/revamp/choose_partner_panel.png'
+
+function PartnerCard(props: { key?: string; pet: PetData }) {
+  const pet = props.pet
+  const adult = Cfg.petStage(pet.size) === 'ADULT'
+  const img = Cfg.speciesImage(pet.species)
+  const cardW = S(ROSTER_CARD_W)
+  const cardH = Math.round(cardW / PET_CARD_ASPECT)
+  const disc = rosterPx(78)
+  return (
+    <PetGridCard
+      pad={rosterPx(13)}
+      selected={false}
+      width={cardW}
+      height={cardH}
+      onClick={() => (adult ? chooseBreedPartner(pet.id) : showBreedNotice('That pet must be an Adult to breed.'))}
+    >
+      <UiEntity
+        uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
+        uiBackground={img ? { texture: { src: img }, textureMode: 'stretch', color: adult ? undefined : { r: 1, g: 1, b: 1, a: 0.5 } } : { color: speciesColor(pet.species) }}
+      />
+      <Label value={pet.name} fontSize={rosterPx(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
+      <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+    </PetGridCard>
+  )
+}
+
 function BreedPickerPanel() {
   const p = clientState.player
   const activeId = clientState.activePet?.id
+  // Adults first, so the pets you can actually pick lead the list.
   const others = (p?.pets ?? []).filter((x) => x.id !== activeId)
-  const cardW = S(180)
-  const cardH = Math.round(cardW / PET_CARD_ASPECT)
-  const disc = S(78)
+  others.sort((a, b) => Number(Cfg.petStage(b.size) === 'ADULT') - Number(Cfg.petStage(a.size) === 'ADULT'))
+  const pageCount = Math.max(1, Math.ceil(others.length / ROSTER_PAGE_SIZE))
+  const page = Math.min(Math.max(0, uiState.breedPickerPage), pageCount - 1)
+  uiState.breedPickerPage = page
+  const shown = others.slice(page * ROSTER_PAGE_SIZE, (page + 1) * ROSTER_PAGE_SIZE)
   return (
-    <PetHudModal title="Choose a Partner" subtitle="Pick a second Adult pet to breed with." width={S(620)} height={Math.round(S(620) / PET_MODAL_ASPECT)} onClose={() => cancelBreed()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'flex-start' }}>
-        {others.map((pet) => {
-          const adult = Cfg.petStage(pet.size) === 'ADULT'
-          const img = Cfg.speciesImage(pet.species)
-          return (
-            <PetGridCard
-              selected={false}
-              width={cardW}
-              height={cardH}
-              onClick={() => (adult ? chooseBreedPartner(pet.id) : pushToast('That pet must be an Adult to breed.'))}
-            >
-              <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: S(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
-              <Label value={pet.name} fontSize={S(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
-              <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
-            </PetGridCard>
-          )
-        })}
+    <RevampPanel src={CHOOSE_PARTNER_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => cancelBreed()}>
+      {shown.length === 0 ? (
+        <Label value="You need a second pet to breed with." fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
+      ) : (
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
+          {shown.map((pet) => (
+            <PartnerCard key={pet.id} pet={pet} />
+          ))}
+        </UiEntity>
+      )}
+      <CardPager idPrefix="partner" page={page} pageCount={pageCount} onPage={(n) => (uiState.breedPickerPage = n)} />
+      {/* Rejections (non-Adult) show here: toasts are suppressed while the picker
+          is open. Absolute, in the gap above the cards, so nothing shifts. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(4), left: 0 }, width: '100%', justifyContent: 'center', flexDirection: 'row', pointerFilter: 'none' }}>
+        <BreedNoticePill marginTop={0} />
       </UiEntity>
-    </PetHudModal>
+    </RevampPanel>
   )
 }
 

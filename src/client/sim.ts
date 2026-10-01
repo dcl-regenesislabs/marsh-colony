@@ -160,13 +160,13 @@ export function petXpReward(base = Cfg.PET_XP_PER_ACTION): number {
 }
 
 /** Grant care XP locally, mirroring the server's happiness multiplier. */
-function grantXp(p: PlayerData, base = Cfg.PET_XP_PER_ACTION): number {
+function grantXp(p: PlayerData, base = Cfg.PET_XP_PER_ACTION, caretakerXp = Cfg.CARETAKER_XP_PER_ACTION): number {
   const pet = clientState.activePet
   if (!pet) return 0
   const gain = base * (0.5 + 0.5 * (pet.happiness / 100))
   pet.petXp += gain
   pet.petLevel = Cfg.levelForXp(pet.petXp)
-  p.caretakerXp += Cfg.CARETAKER_XP_PER_ACTION
+  p.caretakerXp += caretakerXp
   p.caretakerLevel = Cfg.levelForXp(p.caretakerXp)
   return Math.round(gain)
 }
@@ -226,8 +226,8 @@ export function useItemLocal(tier: number): boolean {
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
   const xp = grantXp(p)
-  p.currency += Cfg.COINS_PER_ACTION
-  showReward(xp, Cfg.COINS_PER_ACTION)
+  p.currency += Cfg.ITEM_USE_COINS // items are a sink now (mirrors the server)
+  showReward(xp, Cfg.ITEM_USE_COINS)
   return true
 }
 
@@ -351,6 +351,10 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
   }
   // Play is energy-gated: a worn-out pet earns nothing until it has slept.
   if (action === 'play' && !Cfg.canPlay(pet)) return false
+  // Coins only when the care was needed — same rule as the server
+  // (Cfg.careCoins), so the popup matches.
+  const statBefore = action === 'feed' ? pet.hunger : action === 'clean' ? pet.hygiene : null
+  const coins = Cfg.careCoins(action === 'play' ? Cfg.PLAY_COINS_REWARD : Cfg.COINS_PER_ACTION, statBefore)
   wakeLocal(pet)
   const effects = Cfg.ACTION_EFFECT[action]
   for (const key of Object.keys(effects) as StatKey[]) {
@@ -358,8 +362,7 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
   }
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size)
-  const coins = action === 'play' ? Cfg.PLAY_COINS_REWARD : Cfg.COINS_PER_ACTION
-  const xp = grantXp(p, action === 'play' ? Cfg.PLAY_XP_REWARD : Cfg.PET_XP_PER_ACTION)
+  const xp = grantXp(p, action === 'play' ? Cfg.PLAY_XP_REWARD : Cfg.PET_XP_PER_ACTION, action === 'play' ? Cfg.CARETAKER_XP_PLAY : Cfg.CARETAKER_XP_PER_ACTION)
   p.currency += coins // instant coin reward (matches the server)
   bumpCounter(p, `${action}Count`)
   bumpCounter(p, 'careCount')
@@ -374,15 +377,19 @@ export function applyFeedMinigameLocal(caught: number): void {
   const pet = clientState.activePet
   if (!p || !pet || caught <= 0) return
   if (sleepLocked()) return // the nap is uninterruptible — mirrors feedFromMinigame
+  bumpCounter(p, 'feedAnyCount') // any feed counts for the Journey "Feed" step
+  const hungerBefore = pet.hunger
   wakeLocal(pet)
   pet.hunger = clamp(pet.hunger + caught * Cfg.FEED_HUNGER_PER_FRUIT)
+  if (caught < Cfg.FEED_MIN_FRUITS) return // a snack: hunger only, no growth/reward (mirrors the server)
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
+  const coins = Cfg.careCoins(Cfg.feedCoins(caught), hungerBefore)
   const xp = grantXp(p)
-  p.currency += Cfg.COINS_PER_ACTION
+  p.currency += coins
   bumpCounter(p, 'feedCount')
   bumpCounter(p, 'careCount')
-  showReward(xp, Cfg.COINS_PER_ACTION)
+  showReward(xp, coins)
 }
 
 /** Optimistic mirror of the bath result: hygiene scales with bubbles popped
@@ -394,6 +401,7 @@ export function applyBathMinigameLocal(popped: number): void {
   const pet = clientState.activePet
   if (!p || !pet || popped <= 0) return
   if (sleepLocked()) return // the nap is uninterruptible — mirrors bathFromMinigame
+  const hygieneBefore = pet.hygiene
   wakeLocal(pet)
   const bubbles = Math.min(popped, Cfg.BATH_BUBBLE_GOAL)
   pet.hygiene = clamp(pet.hygiene + bubbles * Cfg.BATH_HYGIENE_PER_BUBBLE)
@@ -401,9 +409,10 @@ export function applyBathMinigameLocal(popped: number): void {
   if (bubbles < Cfg.BATH_BUBBLE_GOAL) return // partial: hygiene only, no growth/reward
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
+  const coins = Cfg.careCoins(Cfg.BATH_FULL_COINS, hygieneBefore)
   const xp = grantXp(p)
-  p.currency += Cfg.COINS_PER_ACTION
+  p.currency += coins
   bumpCounter(p, 'cleanCount')
   bumpCounter(p, 'careCount')
-  showReward(xp, Cfg.COINS_PER_ACTION)
+  showReward(xp, coins)
 }
