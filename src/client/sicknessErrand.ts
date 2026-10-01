@@ -259,7 +259,7 @@ export function setupSicknessErrand(): void {
       pepitoStealHidesHud() ||
       sicknessCinematicOwnsFlow()
     // Sickness persists on the server, so its route must resume after reloads,
-    // cancelled BACK presses, transient entity-load misses, and interrupted
+    // transient entity-load misses and interrupted
     // Pepito stages. `startSicknessErrand` safely retries until the Caretaker
     // entity itself is ready.
     if (!task.active && !cureRunning && !replayPending && pet?.sick && !anotherFlowOwnsPlayer) startSicknessErrand()
