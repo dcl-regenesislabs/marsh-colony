@@ -1362,8 +1362,16 @@ function BreedNamePanel() {
           </UiEntity>
         )}
 
+        {/* Breeding fee (economy rebalance) */}
+        <UiEntity
+          uiTransform={{ margin: { top: S(10) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
+          uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
+        >
+          <Label value={`Breeding costs ${Cfg.BREED_COST} coins`} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(22) }} />
+        </UiEntity>
+
         {/* Breed! */}
-        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(18) } }}>
+        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(8) } }}>
           <TactileButton
             id="breed_confirm"
             label=""
@@ -1376,6 +1384,11 @@ function BreedNamePanel() {
               // Nest flow: the partner is already placed; run the egg cinematic
               // (which sends the breed). If the flow was cancelled (world BACK) while
               // this modal was still open, just close — no stale actions.breed('').
+              // Check the fee here too: once the egg cinematic starts it can't be taken back.
+              if ((clientState.player?.currency ?? 0) < Cfg.BREED_COST) {
+                pushToast(`Breeding costs ${Cfg.BREED_COST} coins`)
+                return
+              }
               if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
               uiState.breedName = ''
               uiState.breedUsePotion = false
@@ -2274,21 +2287,7 @@ const JOURNEY_STEPS: JourneyStep[] = [
 ]
 function journeyStepDone(id: JourneyStep['id']): boolean {
   const p = clientState.player
-  if (!p) return false
-  const c = p.counters ?? {}
-  switch (id) {
-    case 'adopt':
-      return p.pets.length > 0
-    case 'feed':
-      return (c['feedCount'] ?? 0) > 0
-    case 'bath':
-      return (c['bathCount'] ?? 0) > 0 || (c['cleanCount'] ?? 0) > 0
-    case 'breed':
-      return (c['breedCount'] ?? 0) > 0
-    case 'ark':
-      // TODO(Ark): hook to the Ark redemption counter once that feature lands.
-      return (c['arkCount'] ?? 0) > 0
-  }
+  return !!p && Cfg.journeyStepDone(id, p) // same rule the server pays the Journey rewards on
 }
 
 function GoalsPanel() {

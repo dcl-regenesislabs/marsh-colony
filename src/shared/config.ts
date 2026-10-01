@@ -656,10 +656,68 @@ export function slotPrice(slots: number): number {
 // XP & leveling — data-driven so unlock rewards can grow post-MVP.
 // ---------------------------------------------------------------------------
 export const PET_XP_PER_ACTION = 8
-export const PET_XP_PASSIVE_PER_SEC = 0.007 // scaled by happiness/100; ~2-3 days to reach the breeding unlock level
+// Economy rebalance: passive pet XP cut from 0.007 (~25/h) to 0.002 (~7/h) so a
+// pet's XP comes mostly from being cared for — that XP is what the Ark will later
+// turn into Caretaker XP, so idle time alone must not inflate the player's level.
+export const PET_XP_PASSIVE_PER_SEC = 0.002 // scaled by happiness/100
 // Flat coin reward for each care action (feed/bath/sleep/play), on top of the
 // passive happiness income. Instant, gamified payout so activities feel rewarding.
 export const COINS_PER_ACTION = 5
+
+// ---------------------------------------------------------------------------
+// Care payouts (economy rebalance). Coins are only paid when the care was
+// actually NEEDED and, per pet, only for the first CARE_PAID_ACTIONS_PER_DAY
+// paid actions of the day — past that, care still grows the pet and gives XP,
+// it just stops minting coins. Shared by the server (authoritative) and the
+// client's optimistic sim (client/sim.ts) so the "+coins" popup matches.
+// ---------------------------------------------------------------------------
+/** A Feed/Bath only pays coins if hunger/hygiene was below this BEFORE the care. */
+export const CARE_PAY_STAT_THRESHOLD = 70
+/** Paid care actions (feed / bath / play) per pet per day. */
+export const CARE_PAID_ACTIONS_PER_DAY = 15
+/** Feed minigame: fewer fruits than this is a snack — hunger only, no growth/reward. */
+export const FEED_MIN_FRUITS = 3
+/** Feed minigame coins: 1 per 2 fruits caught, capped. */
+export const FEED_COINS_MAX = 8
+export function feedCoins(caught: number): number {
+  return Math.min(FEED_COINS_MAX, Math.floor(Math.max(0, caught) / 2))
+}
+/** A FULL bath (all bubbles) pays this. */
+export const BATH_FULL_COINS = 8
+/** Using a shop item (Kibble / Feast) skips a minigame: XP + growth, but no coins. */
+export const ITEM_USE_COINS = 0
+
+/** Day index a pet's paid-care counter belongs to. */
+export function careDay(atMs: number): number {
+  return Math.floor(atMs / DAY_MS)
+}
+/** Paid care actions this pet already used today. */
+export function paidCareToday(pet: { paidCareDay?: number; paidCareCount?: number }, atMs: number): number {
+  return pet.paidCareDay === careDay(atMs) ? pet.paidCareCount ?? 0 : 0
+}
+/**
+ * Coins a care action actually pays: 0 if the stat it restores was already at or
+ * above CARE_PAY_STAT_THRESHOLD (pass `statBefore` null for actions with no such
+ * stat, like Play), or if the pet hit today's paid-care cap.
+ */
+export function careCoins(base: number, statBefore: number | null, pet: { paidCareDay?: number; paidCareCount?: number }, atMs: number): number {
+  if (base <= 0) return 0
+  if (statBefore !== null && statBefore >= CARE_PAY_STAT_THRESHOLD) return 0
+  if (paidCareToday(pet, atMs) >= CARE_PAID_ACTIONS_PER_DAY) return 0
+  return base
+}
+/** Record one paid care action against the pet's daily cap. */
+export function notePaidCare(pet: { paidCareDay?: number; paidCareCount?: number }, atMs: number): void {
+  const day = careDay(atMs)
+  if (pet.paidCareDay !== day) {
+    pet.paidCareDay = day
+    pet.paidCareCount = 0
+  }
+  pet.paidCareCount = (pet.paidCareCount ?? 0) + 1
+}
+
+/** Coins to breed (both parents Adult + a free slot still required). */
+export const BREED_COST = 30
 
 // ---------------------------------------------------------------------------
 // Breeding rarity — the offspring's tier is a random d10 (the "surprise") plus a
@@ -672,8 +730,11 @@ export const BREEDING_CARE_BONUS_MAX = 3
 /** Min (dice + care bonus) score for each tier, highest first. Below the last
  *  entry falls through to 'common'. Tunable. */
 export const BREEDING_RARITY_THRESHOLDS: [Rarity, number][] = [
-  ['legendary', 10],
-  ['rare', 6]
+  // Economy rebalance: were legendary 10 / rare 6 (30-50% legendary). Now, with
+  // both parents at full condition: 20% legendary (30% with a potion), and
+  // neglected parents almost never roll one.
+  ['legendary', 12],
+  ['rare', 8]
 ]
 
 // ---------------------------------------------------------------------------
@@ -704,6 +765,57 @@ export const RARITY_COLOR: Record<Rarity, { r: number; g: number; b: number }> =
   legendary: { r: 1, g: 0.8, b: 0.2 } // gold
 }
 export const CARETAKER_XP_PER_ACTION = 5
+// Caretaker XP rewards milestones more than repetition (economy rebalance).
+export const CARETAKER_XP_PLAY = 8
+export const CARETAKER_XP_CURE = 15
+export const CARETAKER_XP_BREED = 25
+export const CARETAKER_XP_HATCH = 15 // keeping a BRED offspring (not a plain adoption)
+export const CARETAKER_XP_ALBUM_ENTRY = 20 // first time a species+rarity enters the album
+
+// ---------------------------------------------------------------------------
+// Journey ("Your Journey" / Goals panel) — one-time rewards for each step the art
+// promises. Paid once, server-side, the first time the step's condition is met.
+// The Ark step (wearable) lands with the Ark feature.
+// ---------------------------------------------------------------------------
+export type JourneyStepId = 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'
+export const JOURNEY_REWARDS: { id: JourneyStepId; coins: number; spins: number }[] = [
+  { id: 'adopt', coins: 20, spins: 0 },
+  { id: 'feed', coins: 15, spins: 0 },
+  { id: 'bath', coins: 20, spins: 0 },
+  { id: 'breed', coins: 50, spins: 1 }
+]
+/** Whether a Journey step is done — the ONE rule shared by the server (rewards)
+ *  and the Goals panel (ticks). */
+export function journeyStepDone(id: JourneyStepId, p: { pets: unknown[]; counters?: Record<string, number> }): boolean {
+  const c = p.counters ?? {}
+  switch (id) {
+    case 'adopt':
+      return p.pets.length > 0 || (c['adoptCount'] ?? 0) > 0
+    case 'feed':
+      return (c['feedAnyCount'] ?? 0) > 0 || (c['feedCount'] ?? 0) > 0
+    case 'bath':
+      return (c['bathCount'] ?? 0) > 0 || (c['cleanCount'] ?? 0) > 0
+    case 'breed':
+      return (c['breedCount'] ?? 0) > 0
+    case 'ark':
+      // TODO(Ark): hook to the Ark redemption counter once that feature lands.
+      return (c['arkCount'] ?? 0) > 0
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Album rewards — paid once per milestone (tracked in PlayerData.albumClaims).
+// A "set" is the 4 creatures sharing a head family in one rarity (one row of the
+// 4x4 sprite sheet); a "page" is all 16 of a rarity.
+// ---------------------------------------------------------------------------
+export const ALBUM_ENTRY_COINS = 10
+export const ALBUM_SET_COINS = 50
+export const ALBUM_PAGE_REWARD: Record<Rarity, { coins: number; spins: number }> = {
+  common: { coins: 200, spins: 0 },
+  rare: { coins: 400, spins: 1 },
+  // Placeholder until a legendary cosmetic / wearable exists.
+  legendary: { coins: 600, spins: 3 }
+}
 export const CARETAKER_XP_PER_GIVING = 3
 
 /** XP needed to reach level n (1-indexed). Quadratic-ish idle curve. */
@@ -817,12 +929,13 @@ export interface StreakMilestone {
   spins: number
 }
 export const STREAK_MILESTONES: StreakMilestone[] = [
-  { day: 3, currency: 30, spins: 1 },
-  { day: 7, currency: 100, spins: 2 },
-  { day: 14, currency: 250, spins: 3 },
-  { day: 30, currency: 600, spins: 5 }
+  // Economy rebalance: were 30 / 100 / 250 / 600.
+  { day: 3, currency: 20, spins: 1 },
+  { day: 7, currency: 60, spins: 2 },
+  { day: 14, currency: 150, spins: 3 },
+  { day: 30, currency: 400, spins: 5 }
 ]
-export const STREAK_DAILY_BONUS = 10 // currency just for logging in
+export const STREAK_DAILY_BONUS = 5 // currency just for logging in (was 10)
 
 // 7-day login reward calendar. The streak cycles every 7 days; day 7 is the
 // jackpot. Logging in on a new consecutive day advances it; missing a day
@@ -834,13 +947,15 @@ export interface StreakDayReward {
   label: string
 }
 export const STREAK_WEEK_REWARDS: StreakDayReward[] = [
-  { day: 1, currency: 20, spins: 0, label: '20' },
-  { day: 2, currency: 35, spins: 0, label: '35' },
-  { day: 3, currency: 50, spins: 1, label: '50 +1 spin' },
-  { day: 4, currency: 75, spins: 0, label: '75' },
-  { day: 5, currency: 110, spins: 1, label: '110 +1 spin' },
-  { day: 6, currency: 150, spins: 1, label: '150 +1 spin' },
-  { day: 7, currency: 300, spins: 2, label: '300 +2 spins' }
+  // Economy rebalance: was 20 -> 300 (740/week); now ~325/week, same spins, so
+  // logging in supports playing instead of replacing it.
+  { day: 1, currency: 10, spins: 0, label: '10' },
+  { day: 2, currency: 15, spins: 0, label: '15' },
+  { day: 3, currency: 25, spins: 1, label: '25 +1 spin' },
+  { day: 4, currency: 35, spins: 0, label: '35' },
+  { day: 5, currency: 50, spins: 1, label: '50 +1 spin' },
+  { day: 6, currency: 70, spins: 1, label: '70 +1 spin' },
+  { day: 7, currency: 120, spins: 2, label: '120 +2 spins' }
 ]
 
 // ---------------------------------------------------------------------------

@@ -234,6 +234,7 @@ function newPlayer(address: string): PlayerData {
     pets: [],
     hatchling: null,
     collection: [],
+    albumClaims: [],
     createdAt: t,
     lastUpdated: t
   }
@@ -402,7 +403,7 @@ function migratePet<T extends PetData>(pet: T): T {
 
 function sanitize(address: string, d: PlayerData): PlayerData {
   const base = newPlayer(address)
-  return {
+  const out: PlayerData = {
     ...base,
     ...d,
     address,
@@ -413,16 +414,82 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     pets: (d.pets ?? []).map((pet) => migratePet({ ...newPet(pet.species, pet.name), ...pet })),
     hatchling: d.hatchling ? migratePet({ ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling }) : null
   }
+  // First load since album rewards shipped: mark everything the player ALREADY
+  // has as claimed, without paying, so only new progress is rewarded.
+  if (!d.albumClaims) {
+    addRosterToCollection(out)
+    out.albumClaims = satisfiedAlbumClaims(out)
+  }
+  return out
 }
 
 /** Add every pet currently in the roster to the album. Idempotent and cheap, so
  *  it runs on every save/snapshot instead of hooking each way a pet can arrive
  *  (adopt, keep a hatchling, swap, rarity potion…). Also backfills old saves. */
-export function recordCollection(p: PlayerData): void {
+function addRosterToCollection(p: PlayerData): void {
   if (!p.collection) p.collection = []
   for (const pet of p.pets) {
     const key = C.collectionKey(C.crossSpecies(C.petHead(pet), C.petBody(pet)), pet.rarity)
     if (p.collection.indexOf(key) === -1) p.collection.push(key)
+  }
+}
+
+/** Every album reward claim the player's collection currently satisfies. */
+function satisfiedAlbumClaims(p: PlayerData): string[] {
+  const owned = new Set(p.collection ?? [])
+  const claims: string[] = []
+  for (const key of owned) claims.push(`entry:${key}`)
+  for (const rarity of C.RARITIES) {
+    let page = 0
+    for (const head of C.FAMILIES) {
+      let set = 0
+      for (const body of C.FAMILIES) if (owned.has(C.collectionKey(C.crossSpecies(head, body), rarity))) set++
+      if (set === C.FAMILIES.length) claims.push(`set:${rarity}:${head}`)
+      page += set
+    }
+    if (page === C.ALBUM_SPECIES.length) claims.push(`page:${rarity}`)
+  }
+  return claims
+}
+
+/** Add the roster to the album and pay any album milestone reached for the first
+ *  time (new creature, a full head-family set, a full rarity page). `notes` gets
+ *  the toasts when the caller can forward them; save/snapshot calls pass none. */
+export function recordCollection(p: PlayerData, notes: Notify[] = []): void {
+  addRosterToCollection(p)
+  if (!p.albumClaims) p.albumClaims = []
+  const claimed = new Set(p.albumClaims)
+  for (const claim of satisfiedAlbumClaims(p)) {
+    if (claimed.has(claim)) continue
+    p.albumClaims.push(claim)
+    if (claim.startsWith('entry:')) {
+      p.currency += C.ALBUM_ENTRY_COINS
+      grantCaretakerXp(p, C.CARETAKER_XP_ALBUM_ENTRY, notes)
+      notes.push({ kind: 'reward', message: `New in your Album! +${C.ALBUM_ENTRY_COINS} coins` })
+    } else if (claim.startsWith('set:')) {
+      p.currency += C.ALBUM_SET_COINS
+      notes.push({ kind: 'reward', message: `Album set complete! +${C.ALBUM_SET_COINS} coins` })
+    } else if (claim.startsWith('page:')) {
+      const rarity = claim.slice('page:'.length) as Rarity
+      const r = C.ALBUM_PAGE_REWARD[rarity]
+      p.currency += r.coins
+      p.spinTickets += r.spins
+      notes.push({ kind: 'reward', message: `${C.rarityLabel(rarity)} Album page complete! +${r.coins} coins${r.spins ? ` +${r.spins} spins` : ''}` })
+    }
+  }
+}
+
+/** Pay each Journey step's one-time reward the first time its condition holds.
+ *  Claims live in `achievements` as "journey_<step>". */
+function checkJourney(p: PlayerData, notes: Notify[]): void {
+  for (const r of C.JOURNEY_REWARDS) {
+    const id = `journey_${r.id}`
+    if (p.achievements.indexOf(id) !== -1) continue
+    if (!C.journeyStepDone(r.id, p)) continue
+    p.achievements.push(id)
+    p.currency += r.coins
+    p.spinTickets += r.spins
+    notes.push({ kind: 'achievement', message: `Journey step done! +${r.coins} coins${r.spins ? ` +${r.spins} spin` : ''}` })
   }
 }
 
@@ -568,7 +635,11 @@ export function keepPet(p: PlayerData): Notify[] {
   p.pets.push(pet)
   p.activePetId = pet.id
   bump(p, 'adoptCount')
-  return [{ kind: 'adopt', message: `${pet.name} joined your colony!` }]
+  const notes: Notify[] = [{ kind: 'adopt', message: `${pet.name} joined your colony!` }]
+  if (pet.generation > 0) grantCaretakerXp(p, C.CARETAKER_XP_HATCH, notes) // hatched a BRED egg
+  recordCollection(p, notes)
+  checkJourney(p, notes)
+  return notes
 }
 
 /** Discard the hatchling: it goes back to the Care Center — you keep nothing. */
@@ -607,7 +678,12 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
     return { notes: [{ kind: 'error', message: `No ${C.RARITY_POTION_LABEL} in your inventory` }], rarity: null }
   }
 
+  if (p.currency < C.BREED_COST) {
+    return { notes: [{ kind: 'error', message: `Breeding costs ${C.BREED_COST} coins` }], rarity: null }
+  }
+
   // Consumed here, after every check passed, so a rejected breed never eats it.
+  p.currency -= C.BREED_COST
   if (usePotion) p.inventory.rarityPotions -= 1
   const rarity = rollRarity(a, b, usePotion)
   // Genetics: the offspring wears the ACTIVE pet's head and the PARTNER's body
@@ -624,7 +700,10 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   bump(p, 'breedCount')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
-  return { notes: [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!` }], rarity, species: child.species, name: child.name }
+  const notes: Notify[] = [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch! (-${C.BREED_COST} coins)` }]
+  grantCaretakerXp(p, C.CARETAKER_XP_BREED, notes)
+  checkJourney(p, notes)
+  return { notes, rarity, species: child.species, name: child.name }
 }
 
 /** Shared tail for a completed (non-sleep) care action: apply the stat effects,
@@ -639,8 +718,15 @@ function applyCompletedCare(
   // Play pays more than passive care because it costs energy and takes a whole
   // fetch round to earn — see the Play section in config.
   xp = C.PET_XP_PER_ACTION,
-  coins = C.COINS_PER_ACTION
+  coins = C.COINS_PER_ACTION,
+  // Economy rebalance: `payStat` = the stat this care restores (Feed: hunger,
+  // Bath: hygiene) — no coins if it was already >= CARE_PAY_STAT_THRESHOLD.
+  // `capped` = counts against the pet's daily paid-care cap.
+  opts: { payStat?: StatKey; capped?: boolean; caretakerXp?: number } = {}
 ): void {
+  const statBefore = opts.payStat ? pet[opts.payStat] : null
+  const paid = opts.capped ? C.careCoins(coins, statBefore, pet, now()) : coins
+  if (opts.capped && paid > 0) C.notePaidCare(pet, now())
   wake(pet)
   for (const key of Object.keys(effects) as StatKey[]) {
     pet[key] = clamp(pet[key] + effects[key]!)
@@ -652,11 +738,12 @@ function applyCompletedCare(
   // grow, migration). See growSize in config.
   pet.size = C.growSize(pet.size)
   grantPetXp(pet, xp)
-  grantCaretakerXp(p, C.CARETAKER_XP_PER_ACTION, notes)
-  p.currency += coins
+  grantCaretakerXp(p, opts.caretakerXp ?? C.CARETAKER_XP_PER_ACTION, notes)
+  p.currency += paid
   bump(p, counterKey)
   bump(p, 'careCount')
   checkAchievements(p, notes)
+  checkJourney(p, notes)
 }
 
 export function careAction(p: PlayerData, action: CareAction, onBed: boolean): Notify[] {
@@ -716,7 +803,12 @@ export function careAction(p: PlayerData, action: CareAction, onBed: boolean): N
   // server toast on top of them would just double up.
   const xp = action === 'play' ? C.PLAY_XP_REWARD : C.PET_XP_PER_ACTION
   const coins = action === 'play' ? C.PLAY_COINS_REWARD : C.COINS_PER_ACTION
-  applyCompletedCare(p, pet, C.ACTION_EFFECT[action], `${action}Count`, notes, xp, coins)
+  const payStat: StatKey | undefined = action === 'feed' ? 'hunger' : action === 'clean' ? 'hygiene' : undefined
+  applyCompletedCare(p, pet, C.ACTION_EFFECT[action], `${action}Count`, notes, xp, coins, {
+    payStat,
+    capped: true,
+    caretakerXp: action === 'play' ? C.CARETAKER_XP_PLAY : C.CARETAKER_XP_PER_ACTION
+  })
   return notes
 }
 
@@ -754,7 +846,18 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   if (!cooldownOk(p.address, 'feed', C.ACTION_COOLDOWN_MS.feed)) {
     return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
   }
-  applyCompletedCare(p, pet, { hunger: caught * C.FEED_HUNGER_PER_FRUIT }, 'feedCount', notes)
+  if (caught > 0) bump(p, 'feedAnyCount') // any feed counts for the Journey "Feed" step
+  if (caught >= C.FEED_MIN_FRUITS) {
+    // A real meal: growth + XP, and coins scaled by fruit caught (only if the pet
+    // was actually hungry, and within the daily paid-care cap).
+    applyCompletedCare(p, pet, { hunger: caught * C.FEED_HUNGER_PER_FRUIT }, 'feedCount', notes, C.PET_XP_PER_ACTION, C.feedCoins(caught), { payStat: 'hunger', capped: true })
+  } else if (caught > 0) {
+    // A snack (fewer than FEED_MIN_FRUITS): hunger only — no growth / reward, so
+    // an empty round can't farm coins or the careCount-driven Adult gate.
+    wake(pet)
+    pet.hunger = clamp(pet.hunger + caught * C.FEED_HUNGER_PER_FRUIT)
+    checkJourney(p, notes)
+  }
   // Do not re-announce an existing sickness if another poisonous fruit is
   // caught before the cure flow has been completed.
   if (poisoned && !pet.sick) {
@@ -788,13 +891,15 @@ export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
   // stays full-bath-only since it feeds the Squeaky Clean achievement.
   bump(p, 'bathCount')
   if (bubbles >= C.BATH_BUBBLE_GOAL) {
-    // Full bath = a completed clean: full hygiene + growth tick + XP + coins.
-    applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes)
+    // Full bath = a completed clean: full hygiene + growth tick + XP + coins
+    // (coins only if the pet was actually dirty, within the daily cap).
+    applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes, C.PET_XP_PER_ACTION, C.BATH_FULL_COINS, { payStat: 'hygiene', capped: true })
   } else {
     // Partial: proportional hygiene ONLY — no careCount/growth/reward, so a
     // 1-bubble bath can't farm the careCount-driven ADULT breeding gate.
     wake(pet)
     pet.hygiene = clamp(pet.hygiene + hygiene)
+    checkJourney(p, notes)
   }
   return notes
 }
@@ -827,7 +932,7 @@ export function cureSickness(p: PlayerData): Notify[] {
   }
   sicknessCureAuthorizations.delete(p.address.toLowerCase())
   pet.sick = false
-  applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS)
+  applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS, { caretakerXp: C.CARETAKER_XP_CURE })
   notes.push({ kind: 'success', message: `${pet.name} is cured!` })
   return notes
 }
@@ -967,6 +1072,9 @@ export function respondSwap(
   target.activePetId = fromPet.id
   bump(proposer, 'swapCount')
   bump(target, 'swapCount')
+  // A swapped-in pet can be a new album entry for its receiver.
+  recordCollection(proposer)
+  recordCollection(target)
   return {
     notes: [{ kind: 'swap', message: `Swap complete — you got ${fromPet.name}!` }],
     proposerNote: { kind: 'swap', message: `Swap accepted — you got ${toPet.name}!` },
@@ -1010,9 +1118,10 @@ export function useItem(p: PlayerData, tier: number): Notify[] {
   pet.size = C.growSize(pet.size)
   grantPetXp(pet, C.PET_XP_PER_ACTION)
   grantCaretakerXp(p, C.CARETAKER_XP_PER_ACTION, notes)
-  p.currency += C.COINS_PER_ACTION
+  p.currency += C.ITEM_USE_COINS // economy rebalance: items are a sink, not a coin source
   if (item.hunger > 0) bump(p, 'feedCount') // only the food item counts toward Feed achievements
   checkAchievements(p, notes)
+  checkJourney(p, notes)
   const msg = item.hunger > 0 ? `Fed ${pet.name} a ${item.label}` : `${pet.name} devoured a ${item.label} — fully rested!`
   notes.push({ kind: 'feed', message: msg })
   return notes

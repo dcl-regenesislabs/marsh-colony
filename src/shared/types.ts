@@ -48,6 +48,11 @@ export interface PetData {
   // Set by the authoritative Feed result after a poisonous catch. It persists
   // until the authoritative Caretaker cure flow clears it.
   sick: boolean
+  // Daily cap on coin-paying care (economy rebalance): which day the counter
+  // belongs to and how many paid actions this pet used that day. Optional so
+  // older saves load (missing = none used yet).
+  paidCareDay?: number
+  paidCareCount?: number
   // Bookkeeping
   bornAt: number // ms timestamp
   lastUpdated: number // ms timestamp of last decay calculation
@@ -81,6 +86,10 @@ export interface PlayerData {
   // strings ("sprout_pepito:rare"). Only grows — releasing/swapping a pet away
   // doesn't un-collect it. Backfilled from the current roster on load.
   collection: string[]
+  // Album rewards already paid ("entry:<key>", "set:<rarity>:<head>",
+  // "page:<rarity>"). Seeded WITHOUT paying on the first load after the feature
+  // ships, so existing collections don't get a retroactive windfall.
+  albumClaims?: string[]
   // Bookkeeping
   createdAt: number
   lastUpdated: number
