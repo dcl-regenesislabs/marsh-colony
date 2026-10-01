@@ -37,7 +37,6 @@ import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTIO
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { cancelSicknessErrand } from './sicknessErrand'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -4067,17 +4066,6 @@ function FeedErrandOverlay() {
   )
 }
 
-// Sickness errand — exactly the same escape hatch as the Feed walk, but the
-// destination is the Caretaker who starts the medicine scene on arrival.
-function SicknessErrandOverlay() {
-  if (!clientState.sicknessErrand.active) return <UiEntity />
-  return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      <BackButton onClick={() => cancelSicknessErrand()} />
-    </UiEntity>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Loading gate — invisible for the normal case (the server usually answers in
 // well under a second), but if it's genuinely taking a while, a small message
@@ -4164,7 +4152,6 @@ const Root = () => {
             <BreedButtons />
             <FeedErrandOverlay />
             <GetEggOverlay />
-            <SicknessErrandOverlay />
             {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
                 on top of it instead of the nav icons poking through over them. Moot
                 now that bigUiOpen() hides the nav while these are open, but keeps
