@@ -506,7 +506,7 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
 // ---------------------------------------------------------------------------
 const PILL_SHEET = 'assets/images/revamp/pet_action_buttons.png'
 const PILL_SHEET_W = 2048
-const PILL_SHEET_H = 384
+const PILL_SHEET_H = 512
 type PillColor = 'orange' | 'blue' | 'yellow' | 'pink' | 'purple' | 'green' | 'gray'
 const PILL_BOX: Record<string, { x0: number; y0: number; x1: number; y1: number }> = {
   chip_orange: { x0: 0, y0: 0, x1: 304, y1: 120 },
@@ -520,7 +520,11 @@ const PILL_BOX: Record<string, { x0: number; y0: number; x1: number; y1: number 
   // Passport (another player's pet): full-width buttons
   pass_green: { x0: 0, y0: 256, x1: 656, y1: 336 },
   pass_purple: { x0: 664, y0: 256, x1: 1320, y1: 336 },
-  pass_gray: { x0: 1328, y0: 256, x1: 1984, y1: 336 }
+  pass_gray: { x0: 1328, y0: 256, x1: 1984, y1: 336 },
+  // Half-width buttons (two side by side): Swap Offer Accept / Decline
+  half_green: { x0: 0, y0: 392, x1: 360, y1: 482 },
+  half_pink: { x0: 368, y0: 392, x1: 728, y1: 482 },
+  half_gray: { x0: 736, y0: 392, x1: 1096, y1: 482 }
 }
 // Dark outline tone of each pill, reused as the label's outline.
 const PILL_INK: Record<PillColor, Color> = {
@@ -537,7 +541,7 @@ const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
 function PillButton(props: {
   id: string
   label: string
-  shape: 'chip' | 'wide' | 'pass'
+  shape: 'chip' | 'wide' | 'pass' | 'half'
   color: PillColor
   width: number
   height: number
@@ -848,38 +852,73 @@ function RemotePetPanel() {
 
 // Incoming pet-swap offer — another player wants to trade their pet for yours.
 // Shows the offered pet's full profile; Accept swaps both rosters, Decline drops it.
+// Same art direction + frame as the Passport (passport_panel.png: dark outline,
+// paw ornament, baked close X = Decline) and the same pill buttons.
+function SwapStatRow(props: { key?: string; label: string; value: number; color: Color; width: number }) {
+  const labelW = S(84)
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: S(28), flexDirection: 'row', alignItems: 'center', margin: { bottom: S(6) } }}>
+      <Label value={props.label} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ width: labelW, height: S(24) }} />
+      <PassportBar value={props.value} color={props.color} width={props.width - labelW} height={S(20)} />
+    </UiEntity>
+  )
+}
+
 function SwapOfferPanel() {
   const offer = clientState.incomingSwap
   if (!offer) return <UiEntity />
-  const contentW = S(600) - S(30) * 2
   const p = offer.offeredPet
   const respond = (accept: boolean) => {
     if (accept) playPetVoice(p.species)
     actions.respondSwap(accept)
     clientState.incomingSwap = null
   }
+  const w = navPanelWidth()
+  const k = w / PASSPORT_TEX.w
+  const h = Math.round(PASSPORT_TEX.h * k)
+  const pad = Math.round(64 * k)
+  const contentW = w - pad * 2
+  const halfW = Math.round((contentW - S(16)) / 2)
   return (
-    <PetHudModal title="Swap Offer!" width={S(600)} height={S(560)} onClose={() => respond(false)}>
-      <Label
-        value={`${offer.fromName} offers their pet for your ${offer.wantedPetName}`}
-        fontSize={S(17)}
-        color={LOC.dim}
-        textAlign="middle-center"
-        uiTransform={{ width: contentW, height: S(44), margin: { bottom: S(6) } }}
-      />
-      <OutlineLabel value={p.name} fontSize={S(24)} color={LOC.title} outlineColor={LOC.titleOutline} width={contentW} height={S(32)} textAlign="middle-center" />
-      <PetIdentityRow species={p.species} rarity={p.rarity} size={p.size} width={contentW} />
-      <UiEntity uiTransform={{ width: contentW, flexDirection: 'column' }}>
-        <StatRow label="Hunger" value={p.hunger} color={C.hunger} width={contentW} />
-        <StatRow label="Hygiene" value={p.hygiene} color={C.hygiene} width={contentW} />
-        <StatRow label="Energy" value={p.energy} color={C.energy} width={contentW} />
-        <StatRow label="Happy" value={p.happiness} color={C.happy} width={contentW} />
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: PET_UI.scrim }}
+      onMouseDown={() => {}}
+    >
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: PASSPORT_PANEL }, textureMode: 'stretch' }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round((PASSPORT_TEX.top + 52) * k), left: pad }, width: contentW, flexDirection: 'column', alignItems: 'center' }}>
+          <Label value="Swap Offer!" fontSize={S(28)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(38) }} />
+          <Label
+            value={`${offer.fromName} offers ${p.name} for your ${offer.wantedPetName}`}
+            fontSize={S(16)}
+            color={ALBUM_INK}
+            textAlign="middle-center"
+            textWrap="wrap"
+            uiTransform={{ width: contentW, height: S(26), margin: { bottom: S(10) } }}
+          />
+          <PetIdentityRow species={p.species} rarity={p.rarity} size={p.size} width={contentW} name={p.name} level={p.petLevel} ring />
+          <UiEntity uiTransform={{ width: contentW, flexDirection: 'column', margin: { top: S(2) } }}>
+            <SwapStatRow label="Hunger" value={p.hunger} color={C.hunger} width={contentW} />
+            <SwapStatRow label="Hygiene" value={p.hygiene} color={C.hygiene} width={contentW} />
+            <SwapStatRow label="Energy" value={p.energy} color={C.energy} width={contentW} />
+            <SwapStatRow label="Happy" value={p.happiness} color={C.happy} width={contentW} />
+          </UiEntity>
+          <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(10) } }}>
+            <PillButton id="swap_decline" label="Decline" shape="half" color="pink" width={halfW} height={S(60)} fontSize={S(20)} margin={{ right: S(8) }} onClick={() => respond(false)} />
+            <PillButton id="swap_accept" label="Accept" shape="half" color="green" width={halfW} height={S(60)} fontSize={S(20)} pulse margin={{ left: S(8) }} onClick={() => respond(true)} />
+          </UiEntity>
+        </UiEntity>
+        {/* Invisible hit area over the baked close X — closing declines, like before. */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(PASSPORT_CLOSE.y * k), left: Math.round(PASSPORT_CLOSE.x * k) }, width: Math.round(PASSPORT_CLOSE.size * k), height: Math.round(PASSPORT_CLOSE.size * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => {
+            playUiClick()
+            respond(false)
+          }}
+        />
       </UiEntity>
-      <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(14) } }}>
-        <TactileButton id="swap_decline" label="Decline" width={S(200)} height={S(64)} bg={LOC.rose} textColor={LOC.white} fontSize={S(22)} radius={S(18)} margin={{ right: S(10) }} onClick={() => respond(false)} />
-        <TactileButton id="swap_accept" label="Accept" width={S(200)} height={S(64)} bg={LOC.green} textColor={LOC.white} fontSize={S(22)} radius={S(18)} pulse margin={{ left: S(10) }} onClick={() => respond(true)} />
-      </UiEntity>
-    </PetHudModal>
+    </UiEntity>
   )
 }
 
