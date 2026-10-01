@@ -8,7 +8,7 @@
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
-import type { CareAction, Rarity } from '../shared/types'
+import type { CareAction, PetData, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
   startPetting,
@@ -88,7 +88,9 @@ const uiState = {
   // cards than the modal fits and has to page through them.
   rosterPage: 0,
   // Album page = rarity tier being viewed (0 common, 1 rare, 2 legendary).
-  albumPage: 0
+  albumPage: 0,
+  // Choose a Partner (breeding) page — same 4-per-row paging as My Pets.
+  breedPickerPage: 0
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
@@ -247,7 +249,14 @@ export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 
 // (#186) and to hide the bottom nav so its icons don't poke through under/over
 // whatever's open.
 function bigUiOpen(): boolean {
-  return uiState.panel !== 'none' || clientState.dialog.open || clientState.petPanelOpen || clientState.viewingPetAddress !== null || clientState.incomingSwap !== null
+  return (
+    uiState.panel !== 'none' ||
+    clientState.dialog.open ||
+    clientState.petPanelOpen ||
+    clientState.viewingPetAddress !== null ||
+    clientState.incomingSwap !== null ||
+    (clientState.breed.active && clientState.breed.phase === 'pickB') // Choose a Partner
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1814,6 +1823,41 @@ function RosterSlotCard(props: { key?: number; index: number }) {
 // They're unlimited now, so it pages: one row of 4 fits the Inventory-sized panel.
 const ROSTER_PAGE_SIZE = 4
 
+/** `< 1 / N >` pager shared by the 4-per-row card panels (My Pets, Choose a
+ *  Partner). Renders nothing when everything fits on one page. */
+function CardPager(props: { idPrefix: string; page: number; pageCount: number; onPage: (page: number) => void }) {
+  if (props.pageCount <= 1) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ width: '100%', height: S(48), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+      <TactileButton
+        id={`${props.idPrefix}_prev`}
+        label="<"
+        width={S(60)}
+        height={S(40)}
+        bg={LOC.neutral}
+        textColor={PET_UI.ink}
+        fontSize={S(20)}
+        radius={S(12)}
+        disabled={props.page === 0}
+        onClick={() => props.onPage(props.page - 1)}
+      />
+      <Label value={`${props.page + 1} / ${props.pageCount}`} fontSize={S(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: S(90), height: S(40) }} />
+      <TactileButton
+        id={`${props.idPrefix}_next`}
+        label=">"
+        width={S(60)}
+        height={S(40)}
+        bg={LOC.neutral}
+        textColor={PET_UI.ink}
+        fontSize={S(20)}
+        radius={S(12)}
+        disabled={props.page >= props.pageCount - 1}
+        onClick={() => props.onPage(props.page + 1)}
+      />
+    </UiEntity>
+  )
+}
+
 function RosterPanel() {
   const p = clientState.player
   // Every unlocked slot, plus ONE trailing card to buy the next one.
@@ -1834,35 +1878,7 @@ function RosterPanel() {
           <RosterSlotCard key={i} index={i} />
         ))}
       </UiEntity>
-      {pageCount > 1 && (
-        <UiEntity uiTransform={{ width: '100%', height: S(48), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-          <TactileButton
-            id="roster_prev"
-            label="<"
-            width={S(60)}
-            height={S(40)}
-            bg={LOC.neutral}
-            textColor={PET_UI.ink}
-            fontSize={S(20)}
-            radius={S(12)}
-            disabled={page === 0}
-            onClick={() => (uiState.rosterPage = page - 1)}
-          />
-          <Label value={`${page + 1} / ${pageCount}`} fontSize={S(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: S(90), height: S(40) }} />
-          <TactileButton
-            id="roster_next"
-            label=">"
-            width={S(60)}
-            height={S(40)}
-            bg={LOC.neutral}
-            textColor={PET_UI.ink}
-            fontSize={S(20)}
-            radius={S(12)}
-            disabled={page >= pageCount - 1}
-            onClick={() => (uiState.rosterPage = page + 1)}
-          />
-        </UiEntity>
-      )}
+      <CardPager idPrefix="roster" page={page} pageCount={pageCount} onPage={(n) => (uiState.rosterPage = n)} />
     </RevampPanel>
   )
 }
@@ -3853,34 +3869,58 @@ function BreedButtons() {
 
 // Partner picker (breed phase 'pickB'): tap a second Adult to place it in the
 // right bowl. Non-Adults are shown but rejected with a toast. Close/BACK cancels.
+// Same shell, card size and paging as My Pets (Inventory-sized revamp panel,
+// one row of 4 roster-style cards).
+const CHOOSE_PARTNER_PANEL = 'assets/images/revamp/choose_partner_panel.png'
+
+function PartnerCard(props: { key?: string; pet: PetData }) {
+  const pet = props.pet
+  const adult = Cfg.petStage(pet.size) === 'ADULT'
+  const img = Cfg.speciesImage(pet.species)
+  const cardW = S(ROSTER_CARD_W)
+  const cardH = Math.round(cardW / PET_CARD_ASPECT)
+  const disc = rosterPx(78)
+  return (
+    <PetGridCard
+      pad={rosterPx(13)}
+      selected={false}
+      width={cardW}
+      height={cardH}
+      onClick={() => (adult ? chooseBreedPartner(pet.id) : pushToast('That pet must be an Adult to breed.'))}
+    >
+      <UiEntity
+        uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
+        uiBackground={img ? { texture: { src: img }, textureMode: 'stretch', color: adult ? undefined : { r: 1, g: 1, b: 1, a: 0.5 } } : { color: speciesColor(pet.species) }}
+      />
+      <Label value={pet.name} fontSize={rosterPx(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
+      <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+    </PetGridCard>
+  )
+}
+
 function BreedPickerPanel() {
   const p = clientState.player
   const activeId = clientState.activePet?.id
+  // Adults first, so the pets you can actually pick lead the list.
   const others = (p?.pets ?? []).filter((x) => x.id !== activeId)
-  const cardW = S(180)
-  const cardH = Math.round(cardW / PET_CARD_ASPECT)
-  const disc = S(78)
+  others.sort((a, b) => Number(Cfg.petStage(b.size) === 'ADULT') - Number(Cfg.petStage(a.size) === 'ADULT'))
+  const pageCount = Math.max(1, Math.ceil(others.length / ROSTER_PAGE_SIZE))
+  const page = Math.min(Math.max(0, uiState.breedPickerPage), pageCount - 1)
+  uiState.breedPickerPage = page
+  const shown = others.slice(page * ROSTER_PAGE_SIZE, (page + 1) * ROSTER_PAGE_SIZE)
   return (
-    <PetHudModal title="Choose a Partner" subtitle="Pick a second Adult pet to breed with." width={S(620)} height={Math.round(S(620) / PET_MODAL_ASPECT)} onClose={() => cancelBreed()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'flex-start' }}>
-        {others.map((pet) => {
-          const adult = Cfg.petStage(pet.size) === 'ADULT'
-          const img = Cfg.speciesImage(pet.species)
-          return (
-            <PetGridCard
-              selected={false}
-              width={cardW}
-              height={cardH}
-              onClick={() => (adult ? chooseBreedPartner(pet.id) : pushToast('That pet must be an Adult to breed.'))}
-            >
-              <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: S(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
-              <Label value={pet.name} fontSize={S(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
-              <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
-            </PetGridCard>
-          )
-        })}
-      </UiEntity>
-    </PetHudModal>
+    <RevampPanel src={CHOOSE_PARTNER_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => cancelBreed()}>
+      {shown.length === 0 ? (
+        <Label value="You need a second pet to breed with." fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
+      ) : (
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
+          {shown.map((pet) => (
+            <PartnerCard key={pet.id} pet={pet} />
+          ))}
+        </UiEntity>
+      )}
+      <CardPager idPrefix="partner" page={page} pageCount={pageCount} onPage={(n) => (uiState.breedPickerPage = n)} />
+    </RevampPanel>
   )
 }
 
