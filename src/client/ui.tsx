@@ -537,6 +537,9 @@ const PILL_INK: Record<PillColor, Color> = {
   gray: { r: 0.41, g: 0.39, b: 0.37, a: 1 }
 }
 const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
+const PILL_HALF_ASPECT = (PILL_BOX.half_green.x1 - PILL_BOX.half_green.x0) / (PILL_BOX.half_green.y1 - PILL_BOX.half_green.y0)
+// Soft tan edge for the name field on the revamp panels' cream background.
+const ADOPT_INPUT_BORDER: Color = { r: 0.87, g: 0.8, b: 0.71, a: 1 }
 
 function PillButton(props: {
   id: string
@@ -1127,30 +1130,45 @@ function speciesColor(s: string): Color {
   return SPECIES_COLORS[(i < 0 ? 0 : i) % SPECIES_COLORS.length]
 }
 
+// Same card as My Pets / Choose a Partner (one row of 4 in the Inventory-sized
+// revamp panel); the chosen one gets the selected card plus the Goals tick.
 function SpeciesCard(props: { key?: string; species: string }) {
   const selected = uiState.adoptSpecies === props.species
-  const cardW = S(180)
+  const cardW = S(ROSTER_CARD_W)
   const cardH = Math.round(cardW / PET_CARD_ASPECT)
-  const disc = S(78)
+  const disc = rosterPx(78)
+  const tick = S(30)
   const img = Cfg.speciesImage(props.species)
   return (
-    <PetGridCard
-      selected={selected}
-      width={cardW}
-      height={cardH}
-      onClick={() => {
-        uiState.adoptSpecies = props.species
-      }}
-    >
-      <UiEntity
-        uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: S(10) } }}
-        uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(props.species) }}
-      />
-      <Label value={Cfg.speciesLabel(props.species)} fontSize={S(18)} color={selected ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-      <Label value={selected ? 'Selected' : 'Tap to choose'} fontSize={S(13)} color={selected ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
-    </PetGridCard>
+    <UiEntity uiTransform={{ width: cardW + S(12), height: cardH + S(12) }}>
+      <PetGridCard
+        pad={rosterPx(13)}
+        selected={selected}
+        width={cardW}
+        height={cardH}
+        onClick={() => {
+          uiState.adoptSpecies = props.species
+        }}
+      >
+        <UiEntity
+          uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
+          uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(props.species) }}
+        />
+        <Label value={Cfg.speciesLabel(props.species)} fontSize={rosterPx(17)} color={selected ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
+        <Label value={selected ? 'Selected' : 'Tap to choose'} fontSize={rosterPx(13)} color={selected ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+      </PetGridCard>
+      {selected && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: 0, left: S(6) + cardW - Math.round(tick * 0.8) }, width: tick, height: tick, pointerFilter: 'none' }}
+          uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }}
+        />
+      )}
+    </UiEntity>
   )
 }
+
+const ADOPT_CHOOSE_PANEL = 'assets/images/revamp/adopt_choose_panel.png'
+const ADOPT_NAME_PANEL = 'assets/images/revamp/adopt_name_panel.png'
 
 function AdoptPanel() {
   const p = clientState.player
@@ -1159,49 +1177,54 @@ function AdoptPanel() {
   const sp = uiState.adoptSpecies
 
   if (uiState.adoptStep === 'pick') {
-    const modalW = S(520)
-    const modalH = Math.round(S(620) / PET_MODAL_ASPECT)
+    // Same Next button as the tutorial, so "next" reads the same everywhere.
     const nextW = S(150)
     const nextH = Math.round(nextW / PET_NEXT_ASPECT)
     return (
-      <PetHudModal title="Choose a Pet" subtitle="Tap a friend to choose your next colony companion." width={modalW} height={modalH} onClose={() => ui.close()}>
-        <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
-          <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'flex-start' }}>
-            {Cfg.SPECIES.map((s) => (
-              <SpeciesCard key={s} species={s} />
-            ))}
-          </UiEntity>
-          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(6) } }}>
-            <TactileButton id="adopt_next" label="Next" texture={PET_NEXT_TEXTURE} width={nextW} height={nextH} pulse onClick={() => (uiState.adoptStep = 'name')} />
-          </UiEntity>
+      <RevampPanel src={ADOPT_CHOOSE_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(40) } }}>
+          {Cfg.SPECIES.map((s) => (
+            <SpeciesCard key={s} species={s} />
+          ))}
         </UiEntity>
-      </PetHudModal>
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(14) } }}>
+          <TactileButton id="adopt_next" label="Next" texture={PET_NEXT_TEXTURE} width={nextW} height={nextH} pulse onClick={() => (uiState.adoptStep = 'name')} />
+        </UiEntity>
+      </RevampPanel>
     )
   }
 
   // Name + confirm step
-  const disc = S(120)
-  const modalW = S(560)
-  const modalH = Math.round(modalW / PET_MODAL_ASPECT)
+  const disc = S(104)
   const img = Cfg.speciesImage(sp)
   // A name is REQUIRED — the Adopt button stays disabled until one is typed, so
   // players can't skip past the input (many missed it and got stuck wondering why
   // nothing happened).
   const named = uiState.adoptName.trim().length > 0
+  const halfW = S(165)
+  const halfH = Math.round(halfW / PILL_HALF_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
-    <PetHudModal title="Name your Pet" subtitle="Pick a name before you carry the egg home." width={modalW} height={modalH} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
-          <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { top: S(8), bottom: S(10) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(sp) }} />
-          <Label value={Cfg.speciesLabel(sp)} fontSize={S(24)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(32) }} />
+    <RevampPanel src={ADOPT_NAME_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+      {/* Species snapshot in the Passport's ringed disc */}
+      <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { top: S(10) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(sp) }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: -S(4), left: -S(4) }, width: disc + S(8), height: disc + S(8) }}
+          uiBackground={{ texture: { src: PASSPORT_PARTS }, textureMode: 'stretch', uvs: PASSPORT_RING_UVS }}
+        />
+      </UiEntity>
+      <Label value={Cfg.speciesLabel(sp)} fontSize={S(22)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) } }} />
+      <UiEntity
+        uiTransform={{ width: S(340), height: S(50), margin: { top: S(8) }, borderRadius: S(14), borderWidth: S(2), borderColor: ADOPT_INPUT_BORDER }}
+        uiBackground={{ color: LOC.white }}
+      >
         <Input
           placeholder="Type a name..."
-          fontSize={S(20)}
+          fontSize={S(19)}
           color={PET_UI.ink}
           placeholderColor={PET_UI.muted}
-          uiTransform={{ width: S(360), height: S(56), margin: { top: S(14), bottom: S(10) } }}
-          uiBackground={{ color: LOC.tile }}
+          uiTransform={{ width: '100%', height: '100%' }}
+          uiBackground={{ color: { r: 1, g: 1, b: 1, a: 0 } }}
           onMouseDown={() => {
             if (mobile()) showMobileMagnifier('adopt')
           }}
@@ -1214,21 +1237,22 @@ function AdoptPanel() {
             if (mobile()) hideMobileMagnifier('adopt', v)
           }}
         />
-        {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(16)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {slotsFree && !named && <Label value="Give your pet a name to continue." fontSize={S(16)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(10) } }}>
-        <TactileButton id="adopt_back" label="Back" width={S(130)} height={S(56)} bg={LOC.neutral} textColor={PET_UI.ink} fontSize={S(18)} radius={S(18)} margin={{ right: S(10) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; resetMobileMagnifier() }} />
+      <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(6) }, alignItems: 'center', justifyContent: 'center' }}>
+        {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {slotsFree && !named && <Label value="Give your pet a name to continue." fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+      </UiEntity>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(4) } }}>
+        <PillButton id="adopt_back" label="Back" shape="half" color="pink" width={halfW} height={halfH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; resetMobileMagnifier() }} />
         {slotsFree ? (
-          <TactileButton
+          <PillButton
             id="adopt_confirm"
             label="Adopt!"
-            width={S(200)}
-            height={S(56)}
-            bg={LOC.violet}
-            textColor={LOC.white}
-            fontSize={S(24)}
-            radius={S(18)}
+            shape="half"
+            color="green"
+            width={halfW}
+            height={halfH}
+            fontSize={S(21)}
             pulse
             disabled={!named}
             onClick={() => {
@@ -1242,15 +1266,14 @@ function AdoptPanel() {
             }}
           />
         ) : (
-          <TactileButton
+          <PillButton
             id="adopt_buyslot"
             label={`Buy Slot ${nextSlotPrice}`}
-            width={S(220)}
-            height={S(56)}
-            bg={LOC.orange}
-            textColor={LOC.white}
-            fontSize={S(20)}
-            radius={S(18)}
+            shape="half"
+            color="green"
+            width={halfW}
+            height={halfH}
+            fontSize={S(18)}
             onClick={() => {
               buySlotLocal() // optimistic slot bump; the server sends the single confirming/failure toast
               actions.buySlot()
@@ -1258,8 +1281,7 @@ function AdoptPanel() {
           />
         )}
       </UiEntity>
-      </UiEntity>
-    </PetHudModal>
+    </RevampPanel>
     {mobile() && mobileMagnifierVisible('adopt') && <MobileNameMagnifier target="adopt" />}
     </UiEntity>
   )
