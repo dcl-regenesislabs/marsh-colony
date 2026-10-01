@@ -397,6 +397,7 @@ export function applyBathMinigameLocal(popped: number): void {
   wakeLocal(pet)
   const bubbles = Math.min(popped, Cfg.BATH_BUBBLE_GOAL)
   pet.hygiene = clamp(pet.hygiene + bubbles * Cfg.BATH_HYGIENE_PER_BUBBLE)
+  bumpCounter(p, 'bathCount') // any bath counts for the Journey "Bath" step (mirrors the server)
   if (bubbles < Cfg.BATH_BUBBLE_GOAL) return // partial: hygiene only, no growth/reward
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)

@@ -457,7 +457,7 @@ function StageProgress(props: { size: number; color: Color }) {
 // are optional: PetPanel passes them to show its header inline (the hud2 card has
 // no separate title bar); RemotePetPanel leaves them off since its PetHudModal
 // title already shows the name/level.
-function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; width: number; name?: string; level?: number }) {
+function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; width: number; name?: string; level?: number; ring?: boolean }) {
   const img = Cfg.speciesImage(props.species)
   const rc = Cfg.RARITY_COLOR[props.rarity] ?? Cfg.RARITY_COLOR.common
   const rarityColor: Color = { r: rc.r, g: rc.g, b: rc.b, a: 1 }
@@ -468,13 +468,96 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
       <UiEntity
         uiTransform={{ width: discSize, height: discSize, borderRadius: discSize / 2, margin: { right: S(14) } }}
         uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(props.species) }}
-      />
+      >
+        {props.ring ? (
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { top: -S(4), left: -S(4) }, width: discSize + S(8), height: discSize + S(8) }}
+            uiBackground={{ texture: { src: PASSPORT_PARTS }, textureMode: 'stretch', uvs: PASSPORT_RING_UVS }}
+          />
+        ) : null}
+      </UiEntity>
       <UiEntity uiTransform={{ width: textW, flexDirection: 'column', justifyContent: 'center' }}>
         {props.name !== undefined && (
           <Label value={`${props.name}  ·  Lv ${props.level}`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
         )}
         <Label value={Cfg.rarityLabel(props.rarity).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
         <StageProgress size={props.size} color={rarityColor} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Revamp pill buttons for the Animal Actions panel — same look as the Feed/Bath
+// HUD "Start" button (dark outline, light top band, darker bottom band, gloss,
+// soft drop shadow). The art has NO text: labels here are dynamic ("Wake · 2:30",
+// "Play · Tired", "Breed · Adult"), so they're drawn on top with an outline in
+// the pill's own dark tone. Two shapes sized to this panel: `chip` (the 4 care
+// buttons) and `wide` (Pet / Breed).
+// ---------------------------------------------------------------------------
+const PILL_SHEET = 'assets/images/revamp/pet_action_buttons.png'
+const PILL_SHEET_W = 2048
+const PILL_SHEET_H = 384
+type PillColor = 'orange' | 'blue' | 'yellow' | 'pink' | 'purple' | 'green' | 'gray'
+const PILL_BOX: Record<string, { x0: number; y0: number; x1: number; y1: number }> = {
+  chip_orange: { x0: 0, y0: 0, x1: 304, y1: 120 },
+  chip_blue: { x0: 312, y0: 0, x1: 616, y1: 120 },
+  chip_yellow: { x0: 624, y0: 0, x1: 928, y1: 120 },
+  chip_pink: { x0: 936, y0: 0, x1: 1240, y1: 120 },
+  chip_gray: { x0: 1248, y0: 0, x1: 1552, y1: 120 },
+  wide_pink: { x0: 0, y0: 128, x1: 632, y1: 236 },
+  wide_purple: { x0: 640, y0: 128, x1: 1272, y1: 236 },
+  wide_gray: { x0: 1280, y0: 128, x1: 1912, y1: 236 },
+  // Passport (another player's pet): full-width buttons
+  pass_green: { x0: 0, y0: 256, x1: 656, y1: 336 },
+  pass_purple: { x0: 664, y0: 256, x1: 1320, y1: 336 },
+  pass_gray: { x0: 1328, y0: 256, x1: 1984, y1: 336 }
+}
+// Dark outline tone of each pill, reused as the label's outline.
+const PILL_INK: Record<PillColor, Color> = {
+  orange: { r: 0.55, g: 0.24, b: 0.04, a: 1 },
+  blue: { r: 0.09, g: 0.32, b: 0.55, a: 1 },
+  yellow: { r: 0.59, g: 0.39, b: 0.03, a: 1 },
+  pink: { r: 0.59, g: 0.16, b: 0.35, a: 1 },
+  purple: { r: 0.31, g: 0.17, b: 0.59, a: 1 },
+  green: { r: 0.09, g: 0.35, b: 0.12, a: 1 },
+  gray: { r: 0.41, g: 0.39, b: 0.37, a: 1 }
+}
+const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
+
+function PillButton(props: {
+  id: string
+  label: string
+  shape: 'chip' | 'wide' | 'pass'
+  color: PillColor
+  width: number
+  height: number
+  onClick: () => void
+  disabled?: boolean
+  pulse?: boolean
+  fontSize?: number
+  margin?: Partial<{ top: number; right: number; bottom: number; left: number }>
+}) {
+  const color: PillColor = props.disabled ? 'gray' : props.color
+  const b = PILL_BOX[`${props.shape}_${color}`] ?? PILL_BOX[`${props.shape}_gray`]
+  const uvs = [b.x0 / PILL_SHEET_W, 1 - b.y1 / PILL_SHEET_H, b.x0 / PILL_SHEET_W, 1 - b.y0 / PILL_SHEET_H, b.x1 / PILL_SHEET_W, 1 - b.y0 / PILL_SHEET_H, b.x1 / PILL_SHEET_W, 1 - b.y1 / PILL_SHEET_H]
+  const scale = getPress(props.id) * (props.pulse && !props.disabled ? attentionPulse() : 1)
+  const w = Math.round(props.width * scale)
+  const h = Math.round(props.height * scale)
+  const bodyH = Math.round(h * (1 - PILL_SHADOW_FRAC))
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center', margin: props.margin }}>
+      <UiEntity
+        uiTransform={{ width: w, height: h, flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' }}
+        uiBackground={{ texture: { src: PILL_SHEET }, textureMode: 'stretch', uvs }}
+        onMouseDown={() => {
+          if (props.disabled) return
+          triggerPress(props.id)
+          playUiClick()
+          props.onClick()
+        }}
+      >
+        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(17)} color={PET_UI.white} outlineColor={PILL_INK[color]} width={w} height={bodyH} />
       </UiEntity>
     </UiEntity>
   )
@@ -540,16 +623,14 @@ function PetPanel() {
       </UiEntity>
       {/* Care actions (flat, colored per stat) */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <TactileButton id="care_feed" label="Feed" width={chipW} height={chipH} bg={C.hunger} textColor={C.outline} fontSize={S(16)} radius={S(14)} disabled={locked} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
-        <TactileButton
+        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
+        <PillButton
           id="care_bath"
           label="Bath"
+          shape="chip"
+          color="blue"
           width={chipW}
           height={chipH}
-          bg={C.hygiene}
-          textColor={C.outline}
-          fontSize={S(16)}
-          radius={S(14)}
           disabled={locked}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
@@ -559,15 +640,14 @@ function PetPanel() {
             clientState.petPanelOpen = false
           })}
         />
-        <TactileButton
+        <PillButton
           id="care_sleep"
           label={pet.sleeping ? (lockLeft > 0 ? `Wake in ${Cfg.formatLockCountdown(lockLeft)}` : sleepLeft > 0 ? `Wake · ${Cfg.formatLockCountdown(sleepLeft)}` : 'Wake') : 'Sleep'}
+          shape="chip"
+          color={lockLeft > 0 ? 'gray' : 'yellow'}
           width={chipW}
           height={chipH}
-          bg={lockLeft > 0 ? LOC.neutral : C.energy}
-          textColor={lockLeft > 0 ? LOC.dim : C.outline}
-          fontSize={S(16)}
-          radius={S(14)}
+          fontSize={pet.sleeping && (lockLeft > 0 || sleepLeft > 0) ? S(14) : S(17)}
           disabled={!pet.sleeping && busy}
           pulse={!pet.sleeping && tired && !busy}
           margin={{ left: S(3), right: S(3) }}
@@ -592,15 +672,14 @@ function PetPanel() {
             care('sleep')
           }}
         />
-        <TactileButton
+        <PillButton
           id="care_play"
           label={tired ? 'Play  ·  Tired' : 'Play'}
+          shape="chip"
+          color={tired ? 'gray' : 'pink'}
           width={chipW}
           height={chipH}
-          bg={tired ? LOC.neutral : C.happy}
-          textColor={tired ? LOC.dim : C.outline}
-          fontSize={S(16)}
-          radius={S(14)}
+          fontSize={tired ? S(15) : S(17)}
           disabled={locked}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
@@ -618,16 +697,14 @@ function PetPanel() {
       </UiEntity>
       {/* Pet + Breed, side by side and equal size. */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <TactileButton id="pet_gesture" label="Pet  ·  +Happy" width={halfW} height={S(54)} bg={C.happy} textColor={C.outline} fontSize={S(16)} radius={S(16)} disabled={locked} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
-        <TactileButton
+        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="wide" color="pink" width={halfW} height={S(54)} disabled={locked} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
+        <PillButton
           id="breed_teaser"
           label={unlocked ? 'Breed' : 'Breed  ·  Adult'}
+          shape="wide"
+          color={unlocked ? 'purple' : 'gray'}
           width={halfW}
           height={S(54)}
-          bg={unlocked ? LOC.blue : LOC.neutral}
-          textColor={unlocked ? LOC.white : LOC.dim}
-          fontSize={S(16)}
-          radius={S(16)}
           margin={{ left: S(4) }}
           pulse={unlocked}
           onClick={() => {
@@ -657,60 +734,106 @@ function PetPanel() {
 // pet in-world. Shows the same identity info as the owner's panel (snapshot,
 // rarity, size/stage) plus overall mood, but no care actions: the only thing
 // a non-owner can do here is give it a treat.
+// Passport art (Feed-HUD style: thick dark outline, cream fill, paw ornament on
+// top, baked close X). Texture px: the frame is 1120x940 (= S(560)xS(470) at 2x)
+// with 70px of headroom above it for the ornament.
+const PASSPORT_PANEL = 'assets/images/revamp/passport_panel.png'
+const PASSPORT_PARTS = 'assets/images/revamp/passport_parts.png'
+const PASSPORT_TEX = { w: 1120, h: 1010, top: 70 }
+const PASSPORT_CLOSE = { x: 996, y: 106, size: 84 }
+const PASSPORT_RING_UVS = [0, 1 - 200 / 256, 0, 1, 200 / 1024, 1, 200 / 1024, 1 - 200 / 256]
+const PASSPORT_TRACK_UVS = [0, 1 - 254 / 256, 0, 1 - 210 / 256, 880 / 1024, 1 - 210 / 256, 880 / 1024, 1 - 254 / 256]
+
+function PassportBar(props: { value: number; color: Color; width: number; height: number }) {
+  const v = Math.max(0, Math.min(100, props.value))
+  const inset = Math.max(2, Math.round(props.height * (6 / 44)))
+  const innerH = props.height - inset * 2
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height }} uiBackground={{ texture: { src: PASSPORT_PARTS }, textureMode: 'stretch', uvs: PASSPORT_TRACK_UVS }}>
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: inset, left: inset }, width: Math.round(((props.width - inset * 2) * v) / 100), height: innerH, borderRadius: innerH / 2 }}
+        uiBackground={{ color: props.color }}
+      />
+    </UiEntity>
+  )
+}
+
 function RemotePetPanel() {
   const addr = clientState.viewingPetAddress
   if (!addr) return <UiEntity />
   const entry = clientState.presence.find((p) => p.address.toLowerCase() === addr.toLowerCase())
   if (!entry) return <UiEntity />
-  const contentW = S(560) - S(30) * 2
+  const w = navPanelWidth()
+  const k = w / PASSPORT_TEX.w
+  const h = Math.round(PASSPORT_TEX.h * k)
+  const pad = Math.round(64 * k)
+  const contentW = w - pad * 2
+  const close = () => (clientState.viewingPetAddress = null)
   return (
-    <PetHudModal title={`${entry.name}  ·  Lv ${entry.level}`} width={S(560)} height={S(470)} onClose={() => (clientState.viewingPetAddress = null)}>
-      <PetIdentityRow species={entry.species} rarity={entry.rarity} size={entry.size} width={contentW} />
-      <UiEntity uiTransform={{ width: contentW, flexDirection: 'column', margin: { top: S(4) } }}>
-        <StatRow label="Mood" value={entry.mood} color={C.happy} width={contentW} />
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: PET_UI.scrim }}
+      onMouseDown={() => {}}
+    >
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: PASSPORT_PANEL }, textureMode: 'stretch' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round((PASSPORT_TEX.top + 64) * k), left: pad }, width: contentW, flexDirection: 'column', alignItems: 'center' }}
+        >
+          <Label value={`${entry.name}  ·  Lv ${entry.level}`} fontSize={S(26)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(40), margin: { bottom: S(8) } }} />
+          <PetIdentityRow species={entry.species} rarity={entry.rarity} size={entry.size} width={contentW} ring />
+          <Label value="Mood" fontSize={S(15)} color={ALBUM_INK} textAlign="middle-center" uiTransform={{ width: contentW, height: S(22) }} />
+          <PassportBar value={entry.mood} color={C.happy} width={contentW} height={S(22)} />
+          <PillButton
+            id="give_treat"
+            label="Give a treat"
+            shape="pass"
+            color="green"
+            width={contentW}
+            height={S(56)}
+            fontSize={S(19)}
+            margin={{ top: S(16) }}
+            onClick={() => {
+              // The server drops petOther silently while on cooldown (no notify),
+              // so a fast second click would otherwise look like nothing happened.
+              if (Date.now() - clientState.lastTreatSentAt < Cfg.PET_OTHER_COOLDOWN_MS) {
+                pushToast('Still settling down from the last treat...')
+                return
+              }
+              clientState.lastTreatSentAt = Date.now()
+              actions.petOther(entry.address)
+            }}
+          />
+          <PillButton
+            id="propose_swap"
+            label={`Propose Swap  ·  ${clientState.activePet ? clientState.activePet.name : '—'}`}
+            shape="pass"
+            color="purple"
+            width={contentW}
+            height={S(56)}
+            fontSize={S(19)}
+            margin={{ top: S(10) }}
+            onClick={() => {
+              // Offer YOUR active pet for theirs; the server forwards it for approval.
+              if (!clientState.activePet || hasPendingHatchling()) {
+                pushToast('Select one of your pets first to offer it.')
+                return
+              }
+              actions.proposeSwap(entry.address, playerName())
+              clientState.viewingPetAddress = null
+            }}
+          />
+        </UiEntity>
+        {/* Invisible hit area over the baked close X — last, so it wins the tap. */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(PASSPORT_CLOSE.y * k), left: Math.round(PASSPORT_CLOSE.x * k) }, width: Math.round(PASSPORT_CLOSE.size * k), height: Math.round(PASSPORT_CLOSE.size * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => {
+            playUiClick()
+            close()
+          }}
+        />
       </UiEntity>
-      <TactileButton
-        id="give_treat"
-        label="Give a treat"
-        width={contentW}
-        height={S(56)}
-        bg={C.happy}
-        textColor={LOC.white}
-        fontSize={S(18)}
-        radius={S(16)}
-        margin={{ top: S(16) }}
-        onClick={() => {
-          // The server drops petOther silently while on cooldown (no notify),
-          // so a fast second click would otherwise look like nothing happened.
-          if (Date.now() - clientState.lastTreatSentAt < Cfg.PET_OTHER_COOLDOWN_MS) {
-            pushToast('Still settling down from the last treat...')
-            return
-          }
-          clientState.lastTreatSentAt = Date.now()
-          actions.petOther(entry.address)
-        }}
-      />
-      <TactileButton
-        id="propose_swap"
-        label={`Propose Swap  ·  ${clientState.activePet ? clientState.activePet.name : '—'}`}
-        width={contentW}
-        height={S(56)}
-        bg={LOC.violet}
-        textColor={LOC.white}
-        fontSize={S(18)}
-        radius={S(16)}
-        margin={{ top: S(10) }}
-        onClick={() => {
-          // Offer YOUR active pet for theirs; the server forwards it for approval.
-          if (!clientState.activePet || hasPendingHatchling()) {
-            pushToast('Select one of your pets first to offer it.')
-            return
-          }
-          actions.proposeSwap(entry.address, playerName())
-          clientState.viewingPetAddress = null
-        }}
-      />
-    </PetHudModal>
+    </UiEntity>
   )
 }
 
@@ -1374,9 +1497,18 @@ function ShopPanel() {
 // 1 = pressed, 2 = disabled). Sits under each inventory food card so a player can
 // restock the item they'd otherwise only be able to feed. Shares the tap-bounce
 // press system with TactileButton, swapping to the pressed frame while held.
-const BUY_BTN_SHEET = 'assets/images/revamp/buy_button_states.png'
+// Revamp pill buttons (same style as the Feed/Bath HUD "Start" button).
+// BUY: 3-frame strip [enabled, pressed, disabled]. USE: 2-frame strip
+// [enabled, disabled], drawn over the blank inventory card.
+const BUY_BTN_SHEET = 'assets/images/revamp/inv_buy_button.png'
 const BUY_BTN_FRAMES = 3
-const BUY_BTN_ASPECT = 660 / 214 // one state's cell aspect (~3.08)
+const BUY_BTN_ASPECT = 360 / 104 // one state's cell aspect (~3.46, includes the soft drop shadow)
+const USE_BTN_SHEET = 'assets/images/revamp/inv_use_button.png'
+const USE_BTN_ASPECT = 360 / 104
+// Inventory card without the old baked "Use" (hud3.png card, button painted out);
+// the Use pill sits where the old one was, as fractions of the card box.
+const INV_CARD_BLANK = 'assets/images/revamp/inv_card.png'
+const INV_USE_BOX = { left: 30 / 405, top: 377 / 499, width: 345 / 405 }
 function BuyButton(props: { key?: string; id: string; width: number; enabled: boolean; onClick: () => void }) {
   const height = Math.round(props.width / BUY_BTN_ASPECT)
   const scale = props.enabled ? getPress(props.id) : 1
@@ -1424,7 +1556,17 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
     >
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: cardW, height: cardH }}
-        uiBackground={{ texture: { src: INV_SHEET }, textureMode: 'stretch', uvs: props.enabled ? INV_CARD_ENABLED_UVS : INV_CARD_DISABLED_UVS }}
+        uiBackground={{ texture: { src: INV_CARD_BLANK }, textureMode: 'stretch' }}
+      />
+      <UiEntity
+        uiTransform={{
+          positionType: 'absolute',
+          position: { left: Math.round(cardW * INV_USE_BOX.left), top: Math.round(cardH * INV_USE_BOX.top) },
+          width: Math.round(cardW * INV_USE_BOX.width),
+          height: Math.round((cardW * INV_USE_BOX.width) / USE_BTN_ASPECT),
+          pointerFilter: 'none'
+        }}
+        uiBackground={{ texture: { src: USE_BTN_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(props.enabled ? 0 : 1, 2) }}
       />
       <Label
         value={`x${props.count}`}
@@ -1450,6 +1592,53 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
         textAlign="middle-center"
         uiTransform={{ positionType: 'absolute', position: { left: 0, top: Math.round(cardH * 0.62) }, width: cardW, height: Math.round(cardH * 0.1) }}
       />
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Revamp panel shell — the "Your Journey" frame (goals.png) with the title,
+// subtitle, icon and close X BAKED into the image, same family as the Album.
+// Children are laid out in a full-width column starting at `contentTop`
+// (texture px, scaled with the panel). An invisible hit area sits on the baked
+// X. The art lives in assets/images/revamp/ (generated from goals.png).
+// ---------------------------------------------------------------------------
+const REVAMP_PANEL_W = 998 // every revamp panel shares the Goals frame width
+/** On-screen width shared by the nav panels (Inventory, My Pets, Goals) and the
+ *  pet Passport, so they all open at the same size on desktop and mobile. */
+function navPanelWidth(): number {
+  return S(660)
+}
+const REVAMP_CONTENT_TOP = 190 // first px below the baked title + subtitle
+const REVAMP_CLOSE = { x: 865, y: 20, size: 104 } // baked close button box
+const INVENTORY_PANEL = 'assets/images/revamp/inventory_panel.png'
+const INVENTORY_PANEL_H = 730
+const MYPETS_PANEL = 'assets/images/revamp/mypets_panel.png'
+const MYPETS_PANEL_H = 730
+
+function RevampPanel(props: { src: string; texW: number; texH: number; width: number; contentTop: number; onClose: () => void; children?: any }) {
+  const w = props.width
+  const k = w / props.texW
+  const h = Math.round(props.texH * k)
+  const top = Math.round(props.contentTop * k)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: PET_UI.scrim }}
+      onMouseDown={() => {}}
+    >
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: props.src }, textureMode: 'stretch' }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: 0 }, width: w, height: h - top, flexDirection: 'column', alignItems: 'center' }}>{props.children}</UiEntity>
+        {/* Invisible hit area over the baked close X (transparent bg so the tap registers). */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(REVAMP_CLOSE.y * k), left: Math.round(REVAMP_CLOSE.x * k) }, width: Math.round(REVAMP_CLOSE.size * k), height: Math.round(REVAMP_CLOSE.size * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => {
+            playUiClick()
+            props.onClose()
+          }}
+        />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -1491,7 +1680,7 @@ function InventoryPanel() {
     actions.buyItem(tier) // server is authoritative
   }
   return (
-    <PetHudModal title="Inventory" subtitle="Tap an item to use it on your pet, or hit BUY to stock up." width={S(660)} height={S(520)} onClose={() => ui.close()}>
+    <RevampPanel src={INVENTORY_PANEL} texW={REVAMP_PANEL_W} texH={INVENTORY_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
         <InvColumn width={colW} height={colH}>
           <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { useItemLocal(1); actions.useItem(1) }} />
@@ -1508,20 +1697,26 @@ function InventoryPanel() {
           <BuyButton id="buy_potion" width={buyW} enabled={canAffordPotion} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
         </InvColumn>
       </UiEntity>
-    </PetHudModal>
+    </RevampPanel>
   )
 }
 
 // ---------------------------------------------------------------------------
 // Roster (Pets) — selection system
 // ---------------------------------------------------------------------------
+const ROSTER_CARD_W = 140
+const ROSTER_CARD_SCALE = ROSTER_CARD_W / 180
+const rosterPx = (n: number) => Math.round(S(n) * ROSTER_CARD_SCALE)
+
 function RosterSlotCard(props: { key?: number; index: number }) {
   const p = clientState.player
   if (!p) return <UiEntity />
 
-  const cardW = S(180)
+  // Four slots in one row so My Pets fits the Inventory-sized panel: the card and
+  // everything inside it are the old 180-wide layout scaled by ROSTER_CARD_SCALE.
+  const cardW = S(ROSTER_CARD_W)
   const cardH = Math.round(cardW / PET_CARD_ASPECT)
-  const disc = S(78)
+  const disc = rosterPx(78)
   const unlocked = props.index < p.petSlots
   const pet = p.pets[props.index]
 
@@ -1530,7 +1725,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     // next one up. Its price is the one for the slot count the player is at.
     const canUnlock = props.index === p.petSlots
     return (
-      <PetGridCard
+      <PetGridCard pad={rosterPx(13)}
         selected={false}
         width={cardW}
         height={cardH}
@@ -1543,13 +1738,13 @@ function RosterSlotCard(props: { key?: number; index: number }) {
             : undefined
         }
       >
-        <UiEntity uiTransform={{ width: S(42), height: S(42), borderRadius: S(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: S(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
-          <Label value={canUnlock ? '+' : 'x'} fontSize={S(26)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: S(42), height: S(42) }} />
+        <UiEntity uiTransform={{ width: rosterPx(42), height: rosterPx(42), borderRadius: rosterPx(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
+          <Label value={canUnlock ? '+' : 'x'} fontSize={rosterPx(26)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: rosterPx(42), height: rosterPx(42) }} />
         </UiEntity>
-        <Label value={canUnlock ? 'Unlock' : 'Locked'} fontSize={S(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(4) } }}>
+        <Label value={canUnlock ? 'Unlock' : 'Locked'} fontSize={rosterPx(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(24) }} />
+        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: rosterPx(4) } }}>
           <PriceDot />
-          <Label value={`${Cfg.slotPrice(props.index)}`} fontSize={S(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: S(54), height: S(20), margin: { left: S(6) } }} />
+          <Label value={`${Cfg.slotPrice(props.index)}`} fontSize={rosterPx(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: rosterPx(54), height: rosterPx(20), margin: { left: rosterPx(6) } }} />
         </UiEntity>
       </PetGridCard>
     )
@@ -1561,24 +1756,24 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     if (isFirstEmpty && hatch) {
       const img = Cfg.speciesImage(hatch.species)
       return (
-        <PetGridCard selected={false} width={cardW} height={cardH}>
-          <UiEntity uiTransform={{ width: S(70), height: S(70), borderRadius: S(35), margin: { bottom: S(6) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(hatch.species) }} />
-          <Label value={`${hatch.name} hatched!`} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20) }} />
-          <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(6) } }}>
-            <TactileButton id="hatch_keep" label="" texture={KEEP_BUTTON_ICON} width={S(70)} height={Math.round(S(70) / KEEP_DISCARD_ASPECT)} margin={{ right: S(4) }} pulse onClick={() => keepHatchling()} />
-            <TactileButton id="hatch_discard" label="" texture={DISCARD_BUTTON_ICON} width={S(70)} height={Math.round(S(70) / KEEP_DISCARD_ASPECT)} margin={{ left: S(4) }} onClick={() => discardHatchling()} />
+        <PetGridCard pad={rosterPx(13)} selected={false} width={cardW} height={cardH}>
+          <UiEntity uiTransform={{ width: rosterPx(70), height: rosterPx(70), borderRadius: rosterPx(35), margin: { bottom: rosterPx(6) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(hatch.species) }} />
+          <Label value={`${hatch.name} hatched!`} fontSize={rosterPx(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(20) }} />
+          <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: rosterPx(6) } }}>
+            <TactileButton id="hatch_keep" label="" texture={KEEP_BUTTON_ICON} width={rosterPx(70)} height={Math.round(rosterPx(70) / KEEP_DISCARD_ASPECT)} margin={{ right: rosterPx(4) }} pulse onClick={() => keepHatchling()} />
+            <TactileButton id="hatch_discard" label="" texture={DISCARD_BUTTON_ICON} width={rosterPx(70)} height={Math.round(rosterPx(70) / KEEP_DISCARD_ASPECT)} margin={{ left: rosterPx(4) }} onClick={() => discardHatchling()} />
           </UiEntity>
         </PetGridCard>
       )
     }
 
     return (
-      <PetGridCard selected={false} width={cardW} height={cardH} onClick={() => ui.openAdopt()}>
-        <UiEntity uiTransform={{ width: S(42), height: S(42), borderRadius: S(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: S(10) } }} uiBackground={{ color: PET_UI.badge }}>
-          <Label value="+" fontSize={S(28)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: S(42), height: S(42) }} />
+      <PetGridCard pad={rosterPx(13)} selected={false} width={cardW} height={cardH} onClick={() => ui.openAdopt()}>
+        <UiEntity uiTransform={{ width: rosterPx(42), height: rosterPx(42), borderRadius: rosterPx(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: PET_UI.badge }}>
+          <Label value="+" fontSize={rosterPx(28)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: rosterPx(42), height: rosterPx(42) }} />
         </UiEntity>
-        <Label value="Adopt" fontSize={S(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-        <Label value="Tap to adopt" fontSize={S(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
+        <Label value="Adopt" fontSize={rosterPx(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(24) }} />
+        <Label value="Tap to adopt" fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
       </PetGridCard>
     )
   }
@@ -1586,7 +1781,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
   const isActive = pet.id === p.activePetId
   const img = Cfg.speciesImage(pet.species)
   return (
-    <PetGridCard
+    <PetGridCard pad={rosterPx(13)}
       selected={isActive}
       width={cardW}
       height={cardH}
@@ -1595,15 +1790,15 @@ function RosterSlotCard(props: { key?: number; index: number }) {
         switchActivePet(pet.id)
       }}
     >
-      <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: S(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
-      <Label value={pet.name} fontSize={S(17)} color={isActive ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22) }} />
-      <Label value={`Lv ${pet.petLevel}`} fontSize={S(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18), margin: { top: S(2) } }} />
+      <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
+      <Label value={pet.name} fontSize={rosterPx(17)} color={isActive ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
+      <Label value={`Lv ${pet.petLevel}`} fontSize={rosterPx(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
     </PetGridCard>
   )
 }
 
 // The roster grid used to be a fixed [0,1,2,3] because slots were capped at 4.
-// They're unlimited now, so it pages: 2x2 is what the hud modal body fits.
+// They're unlimited now, so it pages: one row of 4 fits the Inventory-sized panel.
 const ROSTER_PAGE_SIZE = 4
 
 function RosterPanel() {
@@ -1620,8 +1815,8 @@ function RosterPanel() {
   for (let i = start; i < Math.min(total, start + ROSTER_PAGE_SIZE); i++) indices.push(i)
 
   return (
-    <PetHudModal title="My Pets" subtitle="Your colony. Tap a pet to select it and unlock slots to grow." width={S(620)} height={Math.round(S(620) / PET_MODAL_ASPECT)} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'flex-start' }}>
+    <RevampPanel src={MYPETS_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
         {indices.map((i) => (
           <RosterSlotCard key={i} index={i} />
         ))}
@@ -1655,7 +1850,7 @@ function RosterPanel() {
           />
         </UiEntity>
       )}
-    </PetHudModal>
+    </RevampPanel>
   )
 }
 
@@ -1690,8 +1885,10 @@ function albumUvs(b: Box, texW: number, texH: number): number[] {
 }
 const partUvs = (b: Box) => albumUvs(b, 1024, 512)
 
-const ALBUM_PANEL_W = 998
-const ALBUM_PANEL_H = 1290
+// Landscape book: 16 creatures in 2 rows of 8 (row-major over ALBUM_SPECIES).
+const ALBUM_PANEL_W = 1800
+const ALBUM_PANEL_H = 830
+const ALBUM_GRID_COLS = 8
 const ALBUM_CARD_BOX: Record<Rarity | 'locked', Box> = {
   common: { x0: 8, y0: 8, x1: 208, y1: 218 },
   rare: { x0: 220, y0: 8, x1: 420, y1: 218 },
@@ -1712,11 +1909,11 @@ const ALBUM_PILL_BOX: Record<Rarity, Box> = {
 }
 // Layout inside the panel texture.
 const AL = {
-  closeX: 865, closeY: 20, closeSize: 104, // baked close button
-  gridTop: 196, cardW: 200, cardH: 210, gapX: 22, gapY: 16, art: 170,
-  checkSize: 64, checkDx: 148, checkDy: -10,
-  pagerTop: 1110, arrow: 84, pillW: 300, pillH: 80, arrowGap: 26,
-  countTop: 1200, countH: 36, countFont: 26
+  closeX: 1667, closeY: 20, closeSize: 104, // baked close button
+  gridTop: 196, cardW: 190, cardH: 200, gapX: 18, gapY: 16, art: 160,
+  checkSize: 58, checkDx: 140, checkDy: -10,
+  pagerTop: 630, arrow: 84, pillW: 300, pillH: 80, arrowGap: 26,
+  countTop: 718, countH: 40, countFont: 26
 }
 const ALBUM_INK: Color = { r: 0.6, g: 0.48, b: 0.39, a: 1 }
 
@@ -1728,9 +1925,9 @@ function albumCellUvs(index: number): number[] {
 
 function AlbumCard(props: { key?: string; index: number; rarity: Rarity; collected: boolean; k: number }) {
   const k = props.k
-  const col = props.index % ALBUM_COLS
-  const row = Math.floor(props.index / ALBUM_COLS)
-  const gridW = ALBUM_COLS * AL.cardW + (ALBUM_COLS - 1) * AL.gapX
+  const col = props.index % ALBUM_GRID_COLS
+  const row = Math.floor(props.index / ALBUM_GRID_COLS)
+  const gridW = ALBUM_GRID_COLS * AL.cardW + (ALBUM_GRID_COLS - 1) * AL.gapX
   const left = Math.round(((ALBUM_PANEL_W - gridW) / 2 + col * (AL.cardW + AL.gapX)) * k)
   const top = Math.round((AL.gridTop + row * (AL.cardH + AL.gapY)) * k)
   const w = Math.round(AL.cardW * k)
@@ -1784,28 +1981,18 @@ function AlbumPanel() {
   const collected = Cfg.ALBUM_SPECIES.map((sp) => owned.has(Cfg.collectionKey(sp, rarity)))
   const pageCount = collected.filter(Boolean).length
 
-  // Desktop is perfect at a fixed S(600) clamped to the canvas. On mobile,
-  // UiCanvasInformation under-reports the real screen height, so clamping to it was
-  // SHRINKING the album (it rendered at ~55% of the screen). Size it straight off
-  // S() there — which already scales up on mobile — and skip the height clamp so the
-  // portrait book fills the tall screen (the top bar is hidden while it's open).
+  // Landscape: sized off S() so it grows on mobile like the other panels. The
+  // canvas clamp is desktop-only — on mobile UiCanvasInformation under-reports the
+  // real screen and clamping there shrank the panel.
   const aspect = ALBUM_PANEL_W / ALBUM_PANEL_H
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
-  const isM = mobile()
-  let w: number
-  let h: number
-  if (isM) {
-    w = S(500) // S(560) filled the screen edge-to-edge; back off a bit to leave a top/bottom margin like the top bar's
-    h = Math.round(w / aspect)
-  } else {
-    w = S(600)
-    h = Math.round(w / aspect)
-    if (canvas) {
-      const maxW = canvas.width * 0.92
-      const maxH = canvas.height * 0.92
-      if (w > maxW) { w = maxW; h = Math.round(w / aspect) }
-      if (h > maxH) { h = maxH; w = Math.round(h * aspect) }
-    }
+  let w = mobile() ? S(960) : S(1000)
+  let h = Math.round(w / aspect)
+  if (canvas && !mobile()) {
+    const maxW = canvas.width * 0.92
+    const maxH = canvas.height * 0.92
+    if (w > maxW) { w = maxW; h = Math.round(w / aspect) }
+    if (h > maxH) { h = maxH; w = Math.round(h * aspect) }
   }
   const k = w / ALBUM_PANEL_W
   const pillW = Math.round(AL.pillW * k)
@@ -1814,15 +2001,6 @@ function AlbumPanel() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
       <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: ALBUM_PANEL }, textureMode: 'stretch' }}>
-        {/* Invisible hit area over the close X baked into the art (transparent bg so the tap registers). */}
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.closeY * k), left: Math.round(AL.closeX * k) }, width: Math.round(AL.closeSize * k), height: Math.round(AL.closeSize * k), pointerFilter: 'block' }}
-          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => {
-            playUiClick()
-            ui.close()
-          }}
-        />
         {Cfg.ALBUM_SPECIES.map((sp, i) => (
           <AlbumCard key={`${rarity}-${sp}`} index={i} rarity={rarity} collected={collected[i]} k={k} />
         ))}
@@ -1838,6 +2016,15 @@ function AlbumPanel() {
           color={ALBUM_INK}
           textAlign="middle-center"
           uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.countTop * k), left: 0 }, width: w, height: Math.round(AL.countH * k) }}
+        />
+        {/* Invisible hit area over the close X baked into the art (transparent bg so the tap registers). */}
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.closeY * k), left: Math.round(AL.closeX * k) }, width: Math.round(AL.closeSize * k), height: Math.round(AL.closeSize * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
+          onMouseDown={() => {
+            playUiClick()
+            ui.close()
+          }}
         />
       </UiEntity>
     </UiEntity>
@@ -2069,53 +2256,56 @@ function MeteorRewardPanel() {
 // the top-right; an invisible button is overlaid on it.
 // ---------------------------------------------------------------------------
 const GOALS_IMG = 'assets/images/revamp/goals.png'
-const GOALS_TEX = 1024 // source canvas
-const GOALS_ART = { x0: 13, y0: 92, x1: 1011, y1: 906 } // opaque bbox (alpha)
-const GOALS_ART_W = GOALS_ART.x1 - GOALS_ART.x0
-const GOALS_ART_H = GOALS_ART.y1 - GOALS_ART.y0
-const GOALS_ART_ASPECT = GOALS_ART_W / GOALS_ART_H // ~1.226
-// uvs cropping the opaque box (UI order: BL, TL, TR, BR; V flipped).
-const GOALS_UVS = [
-  GOALS_ART.x0 / GOALS_TEX, 1 - GOALS_ART.y1 / GOALS_TEX,
-  GOALS_ART.x0 / GOALS_TEX, 1 - GOALS_ART.y0 / GOALS_TEX,
-  GOALS_ART.x1 / GOALS_TEX, 1 - GOALS_ART.y0 / GOALS_TEX,
-  GOALS_ART.x1 / GOALS_TEX, 1 - GOALS_ART.y1 / GOALS_TEX
+const GOALS_PANEL_H = 730 // same frame size as the Inventory panel (998x730)
+
+// Journey steps. The art has no baked ticks: each completed step gets a tick
+// badge (goals_tick.png) on the bottom-right of its disc. Centres are in
+// goals.png px; `done` reads the player's progress so the panel shows how far
+// along they are.
+const GOALS_TICK_IMG = 'assets/images/revamp/goals_tick.png'
+const GOALS_TICK_SIZE = 54 // goals.png px
+type JourneyStep = { id: 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'; tickX: number; tickY: number }
+const JOURNEY_STEPS: JourneyStep[] = [
+  { id: 'adopt', tickX: 192, tickY: 429 },
+  { id: 'feed', tickX: 372, tickY: 494 },
+  { id: 'bath', tickX: 552, tickY: 429 },
+  { id: 'breed', tickX: 732, tickY: 494 },
+  { id: 'ark', tickX: 912, tickY: 429 }
 ]
-// Close-X centre, re-expressed relative to the CROPPED art frame.
-const GOALS_CLOSE_CX = (0.908 * GOALS_TEX - GOALS_ART.x0) / GOALS_ART_W
-const GOALS_CLOSE_CY = (0.159 * GOALS_TEX - GOALS_ART.y0) / GOALS_ART_H
-const GOALS_CLOSE_FRAC = 0.11 * GOALS_TEX / GOALS_ART_W // hit-area, as a fraction of the frame width
-function GoalsPanel() {
-  // Match the Inventory panel's width; height follows the art's aspect. Clamp to
-  // the canvas so it never overflows a short/low-dpr screen (esp. mobile).
-  const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
-  let w = S(660) // same width as the Inventory modal (consistent across nav panels)
-  let h = Math.round(w / GOALS_ART_ASPECT)
-  if (canvas) {
-    const maxW = canvas.width * 0.92
-    const maxH = canvas.height * 0.92
-    if (w > maxW) { w = maxW; h = Math.round(w / GOALS_ART_ASPECT) }
-    if (h > maxH) { h = maxH; w = Math.round(h * GOALS_ART_ASPECT) }
+function journeyStepDone(id: JourneyStep['id']): boolean {
+  const p = clientState.player
+  if (!p) return false
+  const c = p.counters ?? {}
+  switch (id) {
+    case 'adopt':
+      return p.pets.length > 0
+    case 'feed':
+      return (c['feedCount'] ?? 0) > 0
+    case 'bath':
+      return (c['bathCount'] ?? 0) > 0 || (c['cleanCount'] ?? 0) > 0
+    case 'breed':
+      return (c['breedCount'] ?? 0) > 0
+    case 'ark':
+      // TODO(Ark): hook to the Ark redemption counter once that feature lands.
+      return (c['arkCount'] ?? 0) > 0
   }
-  const closeSz = Math.round(w * GOALS_CLOSE_FRAC)
-  const closeLeft = Math.round(w * GOALS_CLOSE_CX - closeSz / 2)
-  const closeTop = Math.round(h * GOALS_CLOSE_CY - closeSz / 2)
+}
+
+function GoalsPanel() {
+  // Same shell + size as Inventory / My Pets (RevampPanel at navPanelWidth()).
+  const w = navPanelWidth()
+  const k = w / REVAMP_PANEL_W
+  const sz = Math.round(GOALS_TICK_SIZE * k)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
-      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_IMG }, textureMode: 'stretch', uvs: GOALS_UVS }}>
-        {/* Invisible close button sitting on the X baked into the art. The fully
-            transparent background is what guarantees the tap/click registers on
-            both mobile and Unity (same trick as the tap-to-exit overlays). */}
+    <RevampPanel src={GOALS_IMG} texW={REVAMP_PANEL_W} texH={GOALS_PANEL_H} width={w} contentTop={0} onClose={() => ui.close()}>
+      {JOURNEY_STEPS.filter((st) => journeyStepDone(st.id)).map((st) => (
         <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: closeTop, left: closeLeft }, width: closeSz, height: closeSz, pointerFilter: 'block' }}
-          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => {
-            playUiClick()
-            ui.close()
-          }}
+          key={`tick-${st.id}`}
+          uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz, pointerFilter: 'none' }}
+          uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }}
         />
-      </UiEntity>
-    </UiEntity>
+      ))}
+    </RevampPanel>
   )
 }
 
@@ -3499,9 +3689,19 @@ function PetHudModal(props: { title: string; subtitle?: string; width: number; h
 // Same hud2 card background + pink close button as PetHudModal, but with no
 // built-in title bar — for panels (like the pet status detail) whose content
 // already renders its own header (name/level) inline.
+// Animal Actions card (the owner's PetPanel): the revamp frame (same family as
+// the Album / Inventory / My Pets panels) WITHOUT a baked title, since the header
+// is the pet's own name/level rendered inline by PetIdentityRow. The close X is
+// baked in (smaller than on the titled panels so it clears the header row); an
+// invisible hit area sits on it.
+const PET_ACTIONS_PANEL = 'assets/images/revamp/pet_actions_panel.png'
+const PET_ACTIONS_TEX_W = 998
+const PET_ACTIONS_CLOSE = { x: 896, y: 22, size: 76 }
+
 function PetHudCard(props: { width: number; height: number; onClose: () => void; children?: any }) {
   const sidePad = S(30)
   const topPad = S(26)
+  const k = props.width / PET_ACTIONS_TEX_W
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
@@ -3509,24 +3709,26 @@ function PetHudCard(props: { width: number; height: number; onClose: () => void;
       onMouseDown={() => {}}
     >
       <UiEntity uiTransform={{ width: props.width, height: props.height }}>
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height }} uiBackground={{ texture: { src: PET_HUD_SHEET }, textureMode: 'stretch', uvs: PET_MODAL_UVS }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height }} uiBackground={{ texture: { src: PET_ACTIONS_PANEL }, textureMode: 'stretch' }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: topPad, left: sidePad }, width: props.width - sidePad * 2, height: props.height - topPad * 2, flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
+          {props.children}
+        </UiEntity>
+        {/* Invisible hit area over the baked close X — after the content so it wins the tap. */}
         <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: S(14), right: S(26) }, width: S(42), height: S(42), pointerFilter: 'block' }}
-          uiBackground={{ texture: { src: PET_HUD_SHEET }, textureMode: 'stretch', uvs: PET_CLOSE_PINK_UVS }}
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(PET_ACTIONS_CLOSE.y * k), left: Math.round(PET_ACTIONS_CLOSE.x * k) }, width: Math.round(PET_ACTIONS_CLOSE.size * k), height: Math.round(PET_ACTIONS_CLOSE.size * k), pointerFilter: 'block' }}
+          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
           onMouseDown={() => {
             playUiClick()
             props.onClose()
           }}
         />
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: topPad, left: sidePad }, width: props.width - sidePad * 2, height: props.height - topPad * 2, flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
-          {props.children}
-        </UiEntity>
       </UiEntity>
     </UiEntity>
   )
 }
 
-function PetGridCard(props: { selected: boolean; width: number; height: number; onClick?: () => void; children?: any }) {
+function PetGridCard(props: { selected: boolean; width: number; height: number; onClick?: () => void; children?: any; pad?: number }) {
+  const pad = props.pad ?? S(18)
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, margin: { left: S(6), right: S(6), top: S(6), bottom: S(6) } }}>
       <UiEntity
@@ -3541,7 +3743,7 @@ function PetGridCard(props: { selected: boolean; width: number; height: number; 
             : undefined
         }
       />
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(18), left: S(18) }, width: props.width - S(36), height: props.height - S(36), flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: pad, left: pad }, width: props.width - pad * 2, height: props.height - pad * 2, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {props.children}
       </UiEntity>
     </UiEntity>
@@ -3838,8 +4040,9 @@ const Root = () => {
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         {!hideHudForPepitoTheft && (
           <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-            {/* Hide the top bar while the Album is open on mobile so it can use the full height. */}
-            {!(mobile() && uiState.panel === 'album') && <TopBars />}
+            {/* Hide the top bar while any panel / passport / dialog is open, so it never
+                overlaps them (same gate the bottom nav uses). */}
+            {!bigUiOpen() && <TopBars />}
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />

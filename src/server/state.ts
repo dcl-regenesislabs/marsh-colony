@@ -784,6 +784,9 @@ export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
   }
   const bubbles = Math.min(popped, C.BATH_BUBBLE_GOAL)
   const hygiene = bubbles * C.BATH_HYGIENE_PER_BUBBLE
+  // Any bath (even a partial one) counts for the Journey "Bath" step. cleanCount
+  // stays full-bath-only since it feeds the Squeaky Clean achievement.
+  bump(p, 'bathCount')
   if (bubbles >= C.BATH_BUBBLE_GOAL) {
     // Full bath = a completed clean: full hygiene + growth tick + XP + coins.
     applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes)
