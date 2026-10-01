@@ -1313,9 +1313,24 @@ const BH_POTION_EMPTY = { uvs: breedHudUv(18, 762, 702, 895), aspect: (702 - 18)
 const BH_CLOSE = { uvs: breedHudUv(590, 614, 718, 742), aspect: 1 }
 const BH_BREED = { uvs: breedHudUv(18, 896, 500, 1014), aspect: (500 - 18) / (1014 - 896) }
 
-// Inline notice for the breed modal — toasts are hidden while a modal is open
-// (bigUiOpen), so buy-potion feedback shows here instead. Auto-expires.
+// Inline notice for the breed flow (name modal and partner picker) — toasts are
+// hidden while a big panel is open (bigUiOpen), so feedback inside the flow shows
+// here instead. Auto-expires.
 let breedNotice = { text: '', until: 0 }
+function showBreedNotice(text: string) {
+  breedNotice = { text, until: Date.now() + 2500 }
+}
+function BreedNoticePill(props: { marginTop: number }) {
+  if (Date.now() >= breedNotice.until) return <UiEntity />
+  return (
+    <UiEntity
+      uiTransform={{ margin: { top: props.marginTop }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
+      uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
+    >
+      <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
+    </UiEntity>
+  )
+}
 
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
@@ -1382,9 +1397,9 @@ function BreedNamePanel() {
                   if (buyPotionLocal()) {
                     uiState.breedUsePotion = true
                     actions.buyPotion()
-                    breedNotice = { text: 'Bought a Rarity Potion!', until: Date.now() + 2500 }
+                    showBreedNotice('Bought a Rarity Potion!')
                   } else {
-                    breedNotice = { text: `Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`, until: Date.now() + 2500 }
+                    showBreedNotice(`Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`)
                   }
                 }
           }
@@ -1400,15 +1415,8 @@ function BreedNamePanel() {
           />
         </UiEntity>
 
-        {/* Inline notice (buy feedback) — toasts are suppressed under a modal. */}
-        {Date.now() < breedNotice.until && (
-          <UiEntity
-            uiTransform={{ margin: { top: S(8) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
-            uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
-          >
-            <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
-          </UiEntity>
-        )}
+        {/* Inline notice (buy / fee feedback) — toasts are suppressed under a modal. */}
+        <BreedNoticePill marginTop={S(8)} />
 
         {/* Breeding fee (economy rebalance) */}
         <UiEntity
@@ -1434,7 +1442,7 @@ function BreedNamePanel() {
               // this modal was still open, just close — no stale actions.breed('').
               // Check the fee here too: once the egg cinematic starts it can't be taken back.
               if ((clientState.player?.currency ?? 0) < Cfg.BREED_COST) {
-                pushToast(`Breeding costs ${Cfg.BREED_COST} coins`)
+                showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
                 return
               }
               if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
@@ -3925,7 +3933,7 @@ function PartnerCard(props: { key?: string; pet: PetData }) {
       selected={false}
       width={cardW}
       height={cardH}
-      onClick={() => (adult ? chooseBreedPartner(pet.id) : pushToast('That pet must be an Adult to breed.'))}
+      onClick={() => (adult ? chooseBreedPartner(pet.id) : showBreedNotice('That pet must be an Adult to breed.'))}
     >
       <UiEntity
         uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
@@ -3959,6 +3967,11 @@ function BreedPickerPanel() {
         </UiEntity>
       )}
       <CardPager idPrefix="partner" page={page} pageCount={pageCount} onPage={(n) => (uiState.breedPickerPage = n)} />
+      {/* Rejections (non-Adult) show here: toasts are suppressed while the picker
+          is open. Absolute, in the gap above the cards, so nothing shifts. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(4), left: 0 }, width: '100%', justifyContent: 'center', flexDirection: 'row', pointerFilter: 'none' }}>
+        <BreedNoticePill marginTop={0} />
+      </UiEntity>
     </RevampPanel>
   )
 }
