@@ -666,15 +666,11 @@ export const COINS_PER_ACTION = 5
 
 // ---------------------------------------------------------------------------
 // Care payouts (economy rebalance). Coins are only paid when the care was
-// actually NEEDED and, per pet, only for the first CARE_PAID_ACTIONS_PER_DAY
-// paid actions of the day — past that, care still grows the pet and gives XP,
-// it just stops minting coins. Shared by the server (authoritative) and the
+// actually NEEDED (the stat it restores was low). Shared by the server (authoritative) and the
 // client's optimistic sim (client/sim.ts) so the "+coins" popup matches.
 // ---------------------------------------------------------------------------
 /** A Feed/Bath only pays coins if hunger/hygiene was below this BEFORE the care. */
 export const CARE_PAY_STAT_THRESHOLD = 70
-/** Paid care actions (feed / bath / play) per pet per day. */
-export const CARE_PAID_ACTIONS_PER_DAY = 15
 /** Feed minigame: fewer fruits than this is a snack — hunger only, no growth/reward. */
 export const FEED_MIN_FRUITS = 3
 /** Feed minigame coins: 1 per 2 fruits caught, capped. */
@@ -687,33 +683,15 @@ export const BATH_FULL_COINS = 8
 /** Using a shop item (Kibble / Feast) skips a minigame: XP + growth, but no coins. */
 export const ITEM_USE_COINS = 0
 
-/** Day index a pet's paid-care counter belongs to. */
-export function careDay(atMs: number): number {
-  return Math.floor(atMs / DAY_MS)
-}
-/** Paid care actions this pet already used today. */
-export function paidCareToday(pet: { paidCareDay?: number; paidCareCount?: number }, atMs: number): number {
-  return pet.paidCareDay === careDay(atMs) ? pet.paidCareCount ?? 0 : 0
-}
 /**
  * Coins a care action actually pays: 0 if the stat it restores was already at or
  * above CARE_PAY_STAT_THRESHOLD (pass `statBefore` null for actions with no such
- * stat, like Play), or if the pet hit today's paid-care cap.
+ * stat, like Play).
  */
-export function careCoins(base: number, statBefore: number | null, pet: { paidCareDay?: number; paidCareCount?: number }, atMs: number): number {
+export function careCoins(base: number, statBefore: number | null): number {
   if (base <= 0) return 0
   if (statBefore !== null && statBefore >= CARE_PAY_STAT_THRESHOLD) return 0
-  if (paidCareToday(pet, atMs) >= CARE_PAID_ACTIONS_PER_DAY) return 0
   return base
-}
-/** Record one paid care action against the pet's daily cap. */
-export function notePaidCare(pet: { paidCareDay?: number; paidCareCount?: number }, atMs: number): void {
-  const day = careDay(atMs)
-  if (pet.paidCareDay !== day) {
-    pet.paidCareDay = day
-    pet.paidCareCount = 0
-  }
-  pet.paidCareCount = (pet.paidCareCount ?? 0) + 1
 }
 
 /** Coins to breed (both parents Adult + a free slot still required). */

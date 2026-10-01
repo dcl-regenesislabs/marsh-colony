@@ -721,12 +721,10 @@ function applyCompletedCare(
   coins = C.COINS_PER_ACTION,
   // Economy rebalance: `payStat` = the stat this care restores (Feed: hunger,
   // Bath: hygiene) — no coins if it was already >= CARE_PAY_STAT_THRESHOLD.
-  // `capped` = counts against the pet's daily paid-care cap.
-  opts: { payStat?: StatKey; capped?: boolean; caretakerXp?: number } = {}
+  opts: { payStat?: StatKey; caretakerXp?: number } = {}
 ): void {
   const statBefore = opts.payStat ? pet[opts.payStat] : null
-  const paid = opts.capped ? C.careCoins(coins, statBefore, pet, now()) : coins
-  if (opts.capped && paid > 0) C.notePaidCare(pet, now())
+  const paid = C.careCoins(coins, statBefore)
   wake(pet)
   for (const key of Object.keys(effects) as StatKey[]) {
     pet[key] = clamp(pet[key] + effects[key]!)
@@ -806,7 +804,6 @@ export function careAction(p: PlayerData, action: CareAction, onBed: boolean): N
   const payStat: StatKey | undefined = action === 'feed' ? 'hunger' : action === 'clean' ? 'hygiene' : undefined
   applyCompletedCare(p, pet, C.ACTION_EFFECT[action], `${action}Count`, notes, xp, coins, {
     payStat,
-    capped: true,
     caretakerXp: action === 'play' ? C.CARETAKER_XP_PLAY : C.CARETAKER_XP_PER_ACTION
   })
   return notes
@@ -849,8 +846,8 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   if (caught > 0) bump(p, 'feedAnyCount') // any feed counts for the Journey "Feed" step
   if (caught >= C.FEED_MIN_FRUITS) {
     // A real meal: growth + XP, and coins scaled by fruit caught (only if the pet
-    // was actually hungry, and within the daily paid-care cap).
-    applyCompletedCare(p, pet, { hunger: caught * C.FEED_HUNGER_PER_FRUIT }, 'feedCount', notes, C.PET_XP_PER_ACTION, C.feedCoins(caught), { payStat: 'hunger', capped: true })
+    // was actually hungry).
+    applyCompletedCare(p, pet, { hunger: caught * C.FEED_HUNGER_PER_FRUIT }, 'feedCount', notes, C.PET_XP_PER_ACTION, C.feedCoins(caught), { payStat: 'hunger' })
   } else if (caught > 0) {
     // A snack (fewer than FEED_MIN_FRUITS): hunger only — no growth / reward, so
     // an empty round can't farm coins or the careCount-driven Adult gate.
@@ -892,8 +889,8 @@ export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
   bump(p, 'bathCount')
   if (bubbles >= C.BATH_BUBBLE_GOAL) {
     // Full bath = a completed clean: full hygiene + growth tick + XP + coins
-    // (coins only if the pet was actually dirty, within the daily cap).
-    applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes, C.PET_XP_PER_ACTION, C.BATH_FULL_COINS, { payStat: 'hygiene', capped: true })
+    // (coins only if the pet was actually dirty).
+    applyCompletedCare(p, pet, { hygiene }, 'cleanCount', notes, C.PET_XP_PER_ACTION, C.BATH_FULL_COINS, { payStat: 'hygiene' })
   } else {
     // Partial: proportional hygiene ONLY — no careCount/growth/reward, so a
     // 1-bubble bath can't farm the careCount-driven ADULT breeding gate.

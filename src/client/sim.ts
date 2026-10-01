@@ -351,11 +351,10 @@ export function applyCareLocal(action: CareAction, onBed: boolean): boolean {
   }
   // Play is energy-gated: a worn-out pet earns nothing until it has slept.
   if (action === 'play' && !Cfg.canPlay(pet)) return false
-  // Coins only when the care was needed and within the pet's daily paid-care
-  // cap — same rule as the server (Cfg.careCoins), so the popup matches.
+  // Coins only when the care was needed — same rule as the server
+  // (Cfg.careCoins), so the popup matches.
   const statBefore = action === 'feed' ? pet.hunger : action === 'clean' ? pet.hygiene : null
-  const coins = Cfg.careCoins(action === 'play' ? Cfg.PLAY_COINS_REWARD : Cfg.COINS_PER_ACTION, statBefore, pet, Date.now())
-  if (coins > 0) Cfg.notePaidCare(pet, Date.now())
+  const coins = Cfg.careCoins(action === 'play' ? Cfg.PLAY_COINS_REWARD : Cfg.COINS_PER_ACTION, statBefore)
   wakeLocal(pet)
   const effects = Cfg.ACTION_EFFECT[action]
   for (const key of Object.keys(effects) as StatKey[]) {
@@ -385,8 +384,7 @@ export function applyFeedMinigameLocal(caught: number): void {
   if (caught < Cfg.FEED_MIN_FRUITS) return // a snack: hunger only, no growth/reward (mirrors the server)
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
-  const coins = Cfg.careCoins(Cfg.feedCoins(caught), hungerBefore, pet, Date.now())
-  if (coins > 0) Cfg.notePaidCare(pet, Date.now())
+  const coins = Cfg.careCoins(Cfg.feedCoins(caught), hungerBefore)
   const xp = grantXp(p)
   p.currency += coins
   bumpCounter(p, 'feedCount')
@@ -411,8 +409,7 @@ export function applyBathMinigameLocal(popped: number): void {
   if (bubbles < Cfg.BATH_BUBBLE_GOAL) return // partial: hygiene only, no growth/reward
   pet.careCount += 1
   pet.size = Cfg.growSize(pet.size) // monotonic — never shrink (mirrors the server)
-  const coins = Cfg.careCoins(Cfg.BATH_FULL_COINS, hygieneBefore, pet, Date.now())
-  if (coins > 0) Cfg.notePaidCare(pet, Date.now())
+  const coins = Cfg.careCoins(Cfg.BATH_FULL_COINS, hygieneBefore)
   const xp = grantXp(p)
   p.currency += coins
   bumpCounter(p, 'cleanCount')

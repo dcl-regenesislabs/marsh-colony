@@ -48,11 +48,6 @@ export interface PetData {
   // Set by the authoritative Feed result after a poisonous catch. It persists
   // until the authoritative Caretaker cure flow clears it.
   sick: boolean
-  // Daily cap on coin-paying care (economy rebalance): which day the counter
-  // belongs to and how many paid actions this pet used that day. Optional so
-  // older saves load (missing = none used yet).
-  paidCareDay?: number
-  paidCareCount?: number
   // Bookkeeping
   bornAt: number // ms timestamp
   lastUpdated: number // ms timestamp of last decay calculation

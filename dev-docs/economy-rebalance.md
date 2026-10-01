@@ -13,9 +13,8 @@ client's optimistic sim (`client/sim.ts`) so the "+coins" popup always matches.
 | Play | 9 | 9 (already energy-gated) |
 | Kibble / Feast | +5 coins | 0 coins (`ITEM_USE_COINS`): XP + growth only — items are a sink |
 | Feed / Bath only pay if… | always | the stat was **below 70** before the care (`CARE_PAY_STAT_THRESHOLD`) |
-| Daily cap | none | **15 paid care actions per pet per day** (`CARE_PAID_ACTIONS_PER_DAY`); after that care still grows the pet and gives XP |
 
-The cap is tracked per pet (`PetData.paidCareDay` / `paidCareCount`, optional so old saves load).
+There is no daily cap on paid care: the stat threshold and the minigame result are what limit coins.
 
 ## Login
 
