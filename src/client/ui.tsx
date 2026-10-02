@@ -1314,8 +1314,8 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
   // starts on top of the actual input on any density, rather than at a fixed px.
   const canvasW = canvas?.width ?? 1600
   const canvasH = canvas?.height ?? 720
-  const startWidthRatio = props.target === 'adopt' ? 0.36 : 0.44
-  const startTopRatio = props.target === 'adopt' ? 0.45 : 0.3
+  const startWidthRatio = 0.36
+  const startTopRatio = props.target === 'adopt' ? 0.45 : 0.35
   const zoom = mobileMagnifierProgress()
   const width = Math.round(canvasW * (startWidthRatio + (0.54 - startWidthRatio) * zoom))
   const height = Math.round(canvasH * (0.125 + (0.182 - 0.125) * zoom))
@@ -1339,19 +1339,10 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
 // server's surprise inside the egg; the name is prefixed "Gen-N" server-side.
 // A rarity potion (bought in the Shop) can be spent on this roll to tilt the
 // odds toward rare/legendary — it is consumed server-side by this breed only.
-// breed_ui_hud.png — one 1024² sheet of the illustrated Name-your-Offspring modal
-// pieces (title card, egg+gems decoration, two potion pills, close X, Breed button).
-// Boxes measured off the source art; each renders at its native aspect (no stretch).
-const BREED_HUD = 'assets/images/revamp/breed_ui_hud.png'
-function breedHudUv(x0: number, y0: number, x1: number, y1: number): number[] {
-  return sheetUvRect(x0, y0, x1, y1, 1024, 1024)
-}
-const BH_CARD = { uvs: breedHudUv(17, 163, 703, 577), aspect: (703 - 17) / (577 - 163) }
-const BH_EGG = { uvs: breedHudUv(706, 43, 1018, 541), aspect: (1018 - 706) / (541 - 43) }
-const BH_POTION_FULL = { uvs: breedHudUv(18, 614, 570, 742), aspect: (570 - 18) / (742 - 614) } // "have potions" state
-const BH_POTION_EMPTY = { uvs: breedHudUv(18, 762, 702, 895), aspect: (702 - 18) / (895 - 762) } // "no potions" state
-const BH_CLOSE = { uvs: breedHudUv(590, 614, 718, 742), aspect: 1 }
-const BH_BREED = { uvs: breedHudUv(18, 896, 500, 1014), aspect: (500 - 18) / (1014 - 896) }
+// Same revamp frame as the adoption "Name Your Pet" step (title, subtitle and
+// close X baked into breeding_background.png); the input, potion row and Breed
+// button are laid out on top.
+const BREED_NAME_PANEL = 'assets/images/revamp/breeding_background.png'
 
 // Inline notice for the breed flow (name modal and partner picker) — toasts are
 // hidden while a big panel is open (bigUiOpen), so feedback inside the flow shows
@@ -1375,127 +1366,129 @@ function BreedNoticePill(props: { marginTop: number }) {
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
   const potions = clientState.player?.inventory.rarityPotions ?? 0
+  const coins = clientState.player?.currency ?? 0
   const hasPotion = potions > 0
   const usingPotion = hasPotion && uiState.breedUsePotion
+  const noticeOn = Date.now() < breedNotice.until
 
-  // On-screen sizes (tune these on the first run).
-  const cardW = S(560)
-  const cardH = Math.round(cardW / BH_CARD.aspect)
-  const pill = hasPotion ? BH_POTION_FULL : BH_POTION_EMPTY
-  const pillH = S(74) // same thickness both states (the potion bottle is baked in, so this shrinks it too)
-  const pillW = Math.round(pillH * pill.aspect) // width from the native aspect — no stretch
-  const pillPadL = Math.round(pillW * 0.24) // where the text starts, right of the baked-in potion bottle
-  const breedW = S(340)
-  const breedH = Math.round(breedW / BH_BREED.aspect)
+  const potionIcon = S(60)
+  const buyW = S(120)
+  const addW = S(120)
+  const addH = Math.round(addW / PILL_HALF_ASPECT)
+  const breedW = S(190)
+  const breedH = Math.round(breedW / PILL_HALF_ASPECT)
 
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
-      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', width: cardW }}>
-        {/* Title card (title baked into the art) with the name input overlaid. */}
-        <UiEntity uiTransform={{ width: cardW, height: cardH, positionType: 'relative' }} uiBackground={{ texture: { src: BREED_HUD }, textureMode: 'stretch', uvs: BH_CARD.uvs }}>
-          {/* name input, dropped into the card's empty cream area */}
-          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(178), left: '50%' }, margin: { left: -S(220) }, width: S(440), height: S(58), borderRadius: S(14) }} uiBackground={{ color: LOC.white }}>
-            <Input
-              placeholder="Type a name..."
-              fontSize={S(22)}
-              color={LOC.body}
-              placeholderColor={LOC.dim}
-              uiTransform={{ width: '100%', height: '100%' }}
-              onMouseDown={() => {
-                if (mobile()) showMobileMagnifier('breed')
-              }}
-              onChange={(v) => {
-                uiState.breedName = v
-                if (mobile() && !isMobileMagnifierSubmitEcho('breed', v)) showMobileMagnifier('breed')
-              }}
-              onSubmit={(v) => {
-                uiState.breedName = v
-                if (mobile()) hideMobileMagnifier('breed', v)
-              }}
-            />
-          </UiEntity>
-        </UiEntity>
-
-        {/* Potion pill: two states. Have potions -> tappable "Apply Rarity Potion"
-            toggle showing the count. None -> the buy prompt (informational). */}
-        <UiEntity
-          uiTransform={{ width: pillW, height: pillH, margin: { top: S(20) }, positionType: 'relative', pointerFilter: 'block' }}
-          uiBackground={{ texture: { src: BREED_HUD }, textureMode: 'stretch', uvs: pill.uvs }}
-          onMouseDown={
-            hasPotion
-              ? () => {
-                  playUiClick()
-                  uiState.breedUsePotion = !uiState.breedUsePotion
-                }
-              : () => {
-                  // No potions: buy one on the spot with coins. buyPotionLocal is the
-                  // optimistic mirror (deducts coins + adds the potion, false if broke);
-                  // the server call confirms. Auto-apply it — you bought it for THIS roll.
-                  // Feedback goes to an INLINE notice, not pushToast: toasts are
-                  // suppressed while a modal (bigUiOpen) is on screen, so they'd be invisible.
-                  playUiClick()
-                  if (buyPotionLocal()) {
-                    uiState.breedUsePotion = true
-                    actions.buyPotion()
-                    showBreedNotice('Bought a Rarity Potion!')
-                  } else {
-                    showBreedNotice(`Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`)
-                  }
-                }
-          }
-        >
-          {/* Text absolutely placed to the RIGHT of the baked-in bottle — kept off
-              the sprite's flex box so it can't affect how the pill renders. */}
-          <Label
-            value={hasPotion ? `${usingPotion ? '✓ ' : ''}Apply Rarity Potion  x${potions}` : 'Buy potions to improve rare/legendary odds'}
-            fontSize={hasPotion ? S(17) : S(13)}
-            color={LOC.body}
-            textAlign="middle-left"
-            uiTransform={{ positionType: 'absolute', position: { left: pillPadL, top: 0 }, width: pillW - pillPadL - S(18), height: '100%' }}
-          />
-        </UiEntity>
-
-        {/* Inline notice (buy / fee feedback) — toasts are suppressed under a modal. */}
-        <BreedNoticePill marginTop={S(8)} />
-
-        {/* Breeding fee (economy rebalance) */}
-        <UiEntity
-          uiTransform={{ margin: { top: S(10) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }}
-          uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}
-        >
-          <Label value={`Breeding costs ${Cfg.BREED_COST} coins`} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(22) }} />
-        </UiEntity>
-
-        {/* Breed! */}
-        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(8) } }}>
-          <TactileButton
-            id="breed_confirm"
-            label=""
-            texture={BREED_HUD}
-            uvs={BH_BREED.uvs}
-            width={breedW}
-            height={breedH}
-            pulse
-            onClick={() => {
-              // Nest flow: the partner is already placed; run the egg cinematic
-              // (which sends the breed). If the flow was cancelled (world BACK) while
-              // this modal was still open, just close — no stale actions.breed('').
-              // Check the fee here too: once the egg cinematic starts it can't be taken back.
-              if ((clientState.player?.currency ?? 0) < Cfg.BREED_COST) {
-                showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
-                return
-              }
-              if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
-              uiState.breedName = ''
-              uiState.breedUsePotion = false
-              ui.close()
-            }}
-          />
-        </UiEntity>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
+    <RevampPanel src={BREED_NAME_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+      {/* Offspring name (same field as the adoption name step) */}
+      <UiEntity
+        uiTransform={{ width: S(340), height: S(50), margin: { top: S(14) }, borderRadius: S(14), borderWidth: S(2), borderColor: ADOPT_INPUT_BORDER }}
+        uiBackground={{ color: LOC.white }}
+      >
+        <Input
+          placeholder="Type a name..."
+          fontSize={S(19)}
+          color={PET_UI.ink}
+          placeholderColor={PET_UI.muted}
+          uiTransform={{ width: '100%', height: '100%' }}
+          uiBackground={{ color: { r: 1, g: 1, b: 1, a: 0 } }}
+          onMouseDown={() => {
+            if (mobile()) showMobileMagnifier('breed')
+          }}
+          onChange={(v) => {
+            uiState.breedName = v
+            if (mobile() && !isMobileMagnifierSubmitEcho('breed', v)) showMobileMagnifier('breed')
+          }}
+          onSubmit={(v) => {
+            uiState.breedName = v
+            if (mobile()) hideMobileMagnifier('breed', v)
+          }}
+        />
       </UiEntity>
-      {/* Standard red BACK (top-left, like the other flows) instead of an X. */}
-      <BackButton onClick={() => ui.close()} />
-      {mobile() && mobileMagnifierVisible('breed') && <MobileNameMagnifier target="breed" />}
+
+      {/* Rarity potion row: icon + owned count, BUY (coins), and Add/Remove to
+          spend one on this breed. */}
+      <UiEntity uiTransform={{ width: S(520), height: S(70), margin: { top: S(18) }, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        <UiEntity uiTransform={{ width: potionIcon, height: potionIcon }} uiBackground={{ texture: { src: 'assets/images/revamp/potion.png' }, textureMode: 'stretch' }} />
+        <UiEntity uiTransform={{ width: S(170), height: S(52), flexDirection: 'column', margin: { left: S(6), right: S(8) } }}>
+          <Label value={`${Cfg.RARITY_POTION_LABEL}  x${potions}`} fontSize={S(17)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ width: '100%', height: S(28) }} />
+          <Label value={`${Cfg.RARITY_POTION_PRICE} coins each`} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
+        </UiEntity>
+        <BuyButton
+          id="breed_buy_potion"
+          width={buyW}
+          enabled={coins >= Cfg.RARITY_POTION_PRICE}
+          onClick={() => {
+            // buyPotionLocal is the optimistic mirror (deducts coins + adds the
+            // potion, false if broke); the server call confirms. Auto-add it — you
+            // bought it for THIS roll. Feedback goes to the inline notice, not
+            // pushToast: toasts are suppressed while a modal (bigUiOpen) is open.
+            if (buyPotionLocal()) {
+              uiState.breedUsePotion = true
+              actions.buyPotion()
+              showBreedNotice('Bought a Rarity Potion!')
+            } else {
+              showBreedNotice(`Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`)
+            }
+          }}
+        />
+        <PillButton
+          id="breed_add_potion"
+          label={usingPotion ? 'Remove' : 'Add'}
+          shape="half"
+          color={usingPotion ? 'pink' : 'green'}
+          width={addW}
+          height={addH}
+          fontSize={S(16)}
+          margin={{ left: S(8) }}
+          disabled={!hasPotion}
+          onClick={() => {
+            uiState.breedUsePotion = !uiState.breedUsePotion
+          }}
+        />
+      </UiEntity>
+
+      {/* Status line: inline notice (buy / fee feedback) while it lasts, else
+          whether a potion is on this breed and the breeding fee. */}
+      <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
+        <Label
+          value={noticeOn ? breedNotice.text : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}Breeding costs ${Cfg.BREED_COST} coins`}
+          fontSize={S(15)}
+          color={noticeOn ? LOC.orange : PET_UI.muted}
+          textAlign="middle-center"
+          uiTransform={{ width: '100%', height: S(24) }}
+        />
+      </UiEntity>
+
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(8) } }}>
+        <PillButton
+          id="breed_confirm"
+          label="Breed!"
+          shape="half"
+          color="green"
+          width={breedW}
+          height={breedH}
+          fontSize={S(21)}
+          pulse
+          onClick={() => {
+            // Nest flow: the partner is already placed; run the egg cinematic
+            // (which sends the breed). If the flow was cancelled (world BACK) while
+            // this modal was still open, just close — no stale actions.breed('').
+            // Check the fee here too: once the egg cinematic starts it can't be taken back.
+            if (coins < Cfg.BREED_COST) {
+              showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
+              return
+            }
+            if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
+            uiState.breedName = ''
+            uiState.breedUsePotion = false
+            ui.close()
+          }}
+        />
+      </UiEntity>
+    </RevampPanel>
+    {mobile() && mobileMagnifierVisible('breed') && <MobileNameMagnifier target="breed" />}
     </UiEntity>
   )
 }
