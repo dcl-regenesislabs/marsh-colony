@@ -1146,7 +1146,7 @@ const BH_BREED = { uvs: breedHudUv(18, 896, 500, 1014), aspect: (500 - 18) / (10
 // (bigUiOpen), so buy-potion feedback shows here instead. Auto-expires.
 let breedNotice = { text: '', until: 0 }
 
-function BreedNamePanel() {
+function LegacyBreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
   const potions = clientState.player?.inventory.rarityPotions ?? 0
   const hasPotion = potions > 0
@@ -1263,6 +1263,130 @@ function BreedNamePanel() {
       </UiEntity>
       {/* Standard red BACK (top-left, like the other flows) instead of an X. */}
       <BackButton onClick={() => ui.close()} />
+      {mobile() && mobileMagnifierVisible('breed') && <MobileNameMagnifier target="breed" />}
+    </UiEntity>
+  )
+}
+
+// breed_hud.png is the current Name-your-Baby sheet. Its pieces are laid out
+// vertically here in their intended interaction order: title, potion, name,
+// and Breed. Every crop is rendered at its source aspect ratio.
+const BREED_BABY_HUD = 'assets/images/revamp/breed_hud.png'
+const BHB_TITLE = { uvs: breedHudUv(19, 18, 713, 267), aspect: (713 - 19) / (267 - 18) }
+const BHB_POTION_FULL = { uvs: breedHudUv(27, 300, 539, 438), aspect: (539 - 27) / (438 - 300) }
+const BHB_POTION_EMPTY = { uvs: breedHudUv(27, 434, 666, 565), aspect: (666 - 27) / (565 - 434) }
+const BHB_BREED = { uvs: breedHudUv(26, 570, 480, 700), aspect: (480 - 26) / (700 - 570) }
+const BHB_NAME_FIELD = { uvs: breedHudUv(27, 750, 538, 886), aspect: (538 - 27) / (886 - 750) }
+
+function BreedNamePanel() {
+  if (uiState.panel !== 'breedName') return <UiEntity />
+  const potions = clientState.player?.inventory.rarityPotions ?? 0
+  const hasPotion = potions > 0
+  const usingPotion = hasPotion && uiState.breedUsePotion
+  const titleW = mobile() ? S(400) : S(520)
+  const titleH = Math.round(titleW / BHB_TITLE.aspect)
+  const potion = hasPotion ? BHB_POTION_FULL : BHB_POTION_EMPTY
+  const potionH = mobile() ? S(55) : S(65)
+  const potionW = Math.round(potionH * potion.aspect)
+  // The purchase version has the extra green + badge, so its copy starts
+  // farther right than the normal potion row.
+  const potionTextLeft = Math.round(potionW * (hasPotion ? 0.24 : 0.32))
+  const nameW = mobile() ? S(330) : S(430)
+  const nameH = Math.round(nameW / BHB_NAME_FIELD.aspect)
+  const breedW = mobile() ? S(250) : S(350)
+  const breedH = Math.round(breedW / BHB_BREED.aspect)
+
+  const onPotionClick = () => {
+    playUiClick()
+    if (hasPotion) {
+      uiState.breedUsePotion = !uiState.breedUsePotion
+      return
+    }
+    if (buyPotionLocal()) {
+      uiState.breedUsePotion = true
+      actions.buyPotion()
+      breedNotice = { text: 'Bought a Rarity Potion!', until: Date.now() + 2500 }
+    } else {
+      breedNotice = { text: `Not enough coins â€” a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`, until: Date.now() + 2500 }
+    }
+  }
+
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', width: titleW }}>
+        <UiEntity uiTransform={{ width: titleW, height: titleH }} uiBackground={{ texture: { src: BREED_BABY_HUD }, textureMode: 'stretch', uvs: BHB_TITLE.uvs }} />
+
+        <UiEntity uiTransform={{ width: titleW, height: potionH, margin: { top: S(10) }, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+          <UiEntity uiTransform={{ width: potionW, height: potionH, positionType: 'relative', pointerFilter: 'block' }} uiBackground={{ texture: { src: BREED_BABY_HUD }, textureMode: 'stretch', uvs: potion.uvs }} onMouseDown={onPotionClick}>
+            <Label
+              value={hasPotion ? `${usingPotion ? 'âœ“ ' : ''}Use Rarity Potion  x${potions}` : 'Buy a Rarity Potion'}
+              fontSize={hasPotion ? S(15) : S(14)}
+              color={LOC.body}
+              textAlign="middle-left"
+              uiTransform={{ positionType: 'absolute', position: { top: 0, left: potionTextLeft }, width: potionW - potionTextLeft - S(14), height: '100%' }}
+            />
+          </UiEntity>
+        </UiEntity>
+
+        {/* This blank art is intentionally the real text-entry field. */}
+        <UiEntity uiTransform={{ width: nameW, height: nameH, margin: { top: S(12) }, positionType: 'relative' }} uiBackground={{ texture: { src: BREED_BABY_HUD }, textureMode: 'stretch', uvs: BHB_NAME_FIELD.uvs }}>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: S(18) }, width: nameW - S(36), height: nameH, justifyContent: 'center' }}>
+            <Input
+              placeholder="Type a name..."
+              fontSize={mobile() ? S(16) : S(20)}
+              color={LOC.body}
+              placeholderColor={LOC.dim}
+              textAlign="middle-center"
+              value={uiState.breedName}
+              // UiInput draws an unavoidable native grey field. Keep it as the
+              // focus target only; the visible text is the label below, over the
+              // blank field baked into breed_hud.
+              uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', opacity: 0 }}
+              onMouseDown={() => {
+                if (mobile()) showMobileMagnifier('breed')
+              }}
+              onChange={(value) => {
+                uiState.breedName = value
+                if (mobile() && !isMobileMagnifierSubmitEcho('breed', value)) showMobileMagnifier('breed')
+              }}
+              onSubmit={(value) => {
+                uiState.breedName = value
+                if (mobile()) hideMobileMagnifier('breed', value)
+              }}
+            />
+            <Label
+              value={uiState.breedName || 'Type a name...'}
+              fontSize={mobile() ? S(16) : S(20)}
+              color={uiState.breedName ? LOC.body : LOC.dim}
+              textAlign="middle-center"
+              uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}
+            />
+          </UiEntity>
+        </UiEntity>
+
+        {Date.now() < breedNotice.until && (
+          <UiEntity uiTransform={{ margin: { top: S(8) }, padding: { left: S(16), right: S(16), top: S(4), bottom: S(4) }, borderRadius: S(13), alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: { r: 0.1, g: 0.08, b: 0.14, a: 0.85 } }}>
+            <Label value={breedNotice.text} fontSize={S(15)} color={LOC.white} textAlign="middle-center" uiTransform={{ height: S(24) }} />
+          </UiEntity>
+        )}
+
+        <UiEntity uiTransform={{ width: breedW, height: breedH, margin: { top: S(14) } }}>
+          <TactileButton
+            id="breed_confirm"
+            label=""
+            texture={BREED_BABY_HUD}
+            uvs={BHB_BREED.uvs}
+            width={breedW}
+            height={breedH}
+            onClick={() => {
+              if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
+              uiState.breedName = ''
+              uiState.breedUsePotion = false
+              ui.close()
+            }}
+          />
+        </UiEntity>
+      </UiEntity>
       {mobile() && mobileMagnifierVisible('breed') && <MobileNameMagnifier target="breed" />}
     </UiEntity>
   )

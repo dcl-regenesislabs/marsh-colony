@@ -17,7 +17,7 @@ import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
 import { C, S, TactileButton } from './theme'
 
-export const UI_DEBUG_MODE = false
+export const UI_DEBUG_MODE = true
 
 // ---------------------------------------------------------------------------
 // Fixtures — minimal placeholder data for screens that render empty without a
@@ -425,7 +425,9 @@ function resetAllDebugFlags(): void {
   debugForcePanel('none' as Panel)
 }
 
-let currentScreenIndex = 0
+// Open the Breed name/potion screen immediately after a reload. The debug bar
+// remains available to inspect its two inventory variants or any other UI.
+let currentScreenIndex = Math.max(0, DEBUG_SCREENS.findIndex((screen) => screen.id === 'breedName'))
 let currentVariantIndex = 0
 let showJumpList = false
 let initialized = false
