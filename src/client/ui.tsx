@@ -1202,9 +1202,9 @@ function AdoptPanel() {
   const sp = uiState.adoptSpecies
 
   if (uiState.adoptStep === 'pick') {
-    // Same Next button as the tutorial, so "next" reads the same everywhere.
-    const nextW = S(150)
-    const nextH = Math.round(nextW / PET_NEXT_ASPECT)
+    // Use the same revamp action-pill treatment as the adoption controls below.
+    const nextW = S(165)
+    const nextH = Math.round(nextW / PILL_HALF_ASPECT)
     return (
       <RevampPanel src={ADOPT_CHOOSE_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(40) } }}>
@@ -1213,7 +1213,7 @@ function AdoptPanel() {
           ))}
         </UiEntity>
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(14) } }}>
-          <TactileButton id="adopt_next" label="Next" texture={PET_NEXT_TEXTURE} width={nextW} height={nextH} pulse onClick={() => (uiState.adoptStep = 'name')} />
+          <PillButton id="adopt_next" label="Next" shape="half" color="green" width={nextW} height={nextH} pulse onClick={() => (uiState.adoptStep = 'name')} />
         </UiEntity>
       </RevampPanel>
     )
@@ -3684,7 +3684,6 @@ function LightModal(props: { title: string; width: number; height: number; onClo
 // the player is home a big centered "Hatch" button starts the rub-to-hatch flow.
 // ---------------------------------------------------------------------------
 const PET_HUD_SHEET = 'assets/images/revamp/hud2.png'
-const PET_NEXT_TEXTURE = 'assets/images/tutorialUi/btn_next.png'
 const PET_HUD_W = 1024
 const PET_HUD_H = 1024
 
@@ -3708,7 +3707,6 @@ const PET_CLOSE_PINK_UVS = petHudUvRect(PET_CLOSE_PINK_BOX.x0, PET_CLOSE_PINK_BO
 
 const PET_MODAL_ASPECT = (PET_MODAL_BOX.x1 - PET_MODAL_BOX.x0) / (PET_MODAL_BOX.y1 - PET_MODAL_BOX.y0)
 const PET_CARD_ASPECT = (PET_CARD_SELECTED_BOX.x1 - PET_CARD_SELECTED_BOX.x0) / (PET_CARD_SELECTED_BOX.y1 - PET_CARD_SELECTED_BOX.y0)
-const PET_NEXT_ASPECT = 639 / 378
 
 // Inventory item card template (hud3.png) — outlined card with a pink count
 // badge (top-right) and a baked-in "Use" button (green enabled / gray
