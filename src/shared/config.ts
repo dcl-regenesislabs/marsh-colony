@@ -334,8 +334,10 @@ export function ballWalkClip(species: string): string {
   return `Ball_${cap(speciesParts(species).head)}_Walk`
 }
 
-// Optional thumbnail shown in the adoption card circle. Add image paths as the
-// art lands; species without one fall back to a colored disc.
+// Optional thumbnail shown in pet/profile card circles. Crosses do not have
+// separate 2D portraits yet, so they inherit their head family's original
+// portrait (matching the icon convention below) instead of falling back to a
+// blank colored disc.
 const SPECIES_IMAGE: Record<string, string> = {
   'sprout-original': 'assets/images/pets/sprout.png',
   'pepito-original': 'assets/images/pets/pepito.png',
@@ -344,7 +346,7 @@ const SPECIES_IMAGE: Record<string, string> = {
 }
 
 export function speciesImage(species: string): string | undefined {
-  return SPECIES_IMAGE[species]
+  return SPECIES_IMAGE[species] ?? SPECIES_IMAGE[`${speciesParts(species).head}-original`]
 }
 
 // Compact, monochrome icons for native mobile controls. Cross-bred pets use
