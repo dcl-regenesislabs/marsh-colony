@@ -1134,13 +1134,12 @@ function speciesColor(s: string): Color {
 }
 
 // Same card as My Pets / Choose a Partner (one row of 4 in the Inventory-sized
-// revamp panel); the chosen one gets the selected card plus the Goals tick.
+// revamp panel); the chosen one gets the selected card (PetGridCard adds the tick).
 function SpeciesCard(props: { key?: string; species: string }) {
   const selected = uiState.adoptSpecies === props.species
   const cardW = S(ROSTER_CARD_W)
   const cardH = Math.round(cardW / PET_CARD_ASPECT)
   const disc = rosterPx(78)
-  const tick = S(30)
   const img = Cfg.speciesImage(props.species)
   return (
     <UiEntity uiTransform={{ width: cardW + S(12), height: cardH + S(12) }}>
@@ -1160,12 +1159,6 @@ function SpeciesCard(props: { key?: string; species: string }) {
         <Label value={Cfg.speciesLabel(props.species)} fontSize={rosterPx(17)} color={selected ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
         <Label value={selected ? 'Selected' : 'Tap to choose'} fontSize={rosterPx(13)} color={selected ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
       </PetGridCard>
-      {selected && (
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: 0, left: S(6) + cardW - Math.round(tick * 0.8) }, width: tick, height: tick, pointerFilter: 'none' }}
-          uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }}
-        />
-      )}
     </UiEntity>
   )
 }
@@ -3819,6 +3812,7 @@ function PetHudCard(props: { width: number; height: number; onClose: () => void;
 
 function PetGridCard(props: { selected: boolean; width: number; height: number; onClick?: () => void; children?: any; pad?: number }) {
   const pad = props.pad ?? S(18)
+  const tick = S(30)
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, margin: { left: S(6), right: S(6), top: S(6), bottom: S(6) } }}>
       <UiEntity
@@ -3836,6 +3830,14 @@ function PetGridCard(props: { selected: boolean; width: number; height: number; 
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top: pad, left: pad }, width: props.width - pad * 2, height: props.height - pad * 2, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {props.children}
       </UiEntity>
+      {/* The selected card art has no baked check: overlay the Goals tick on its
+          top-right corner, overhanging into the card's own margin. */}
+      {props.selected && (
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: -S(6), left: props.width - Math.round(tick * 0.8) }, width: tick, height: tick, pointerFilter: 'none' }}
+          uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }}
+        />
+      )}
     </UiEntity>
   )
 }
