@@ -425,9 +425,10 @@ function StageProgress(props: { size: number; color: Color }) {
   const node = S(13)
   const labelW = S(80)
   return (
-    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', margin: { top: S(6), bottom: S(2) } }}>
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', margin: { top: S(8), bottom: S(2) } }}>
       {/* the bar: grey track + rarity fill + a marker dot per stage */}
-      <UiEntity uiTransform={{ width: '100%', height: node, justifyContent: 'center' }}>
+      {/* Leave a small right-side gutter so the Adult marker is never clipped. */}
+      <UiEntity uiTransform={{ width: '98%', height: node, justifyContent: 'center' }}>
         <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: '100%', height: barH, borderRadius: barH / 2 }} uiBackground={{ color: inactive }} />
         <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: (node - barH) / 2 }, width: `${Math.round(overall * 100)}%`, height: barH, borderRadius: barH / 2 }} uiBackground={{ color: props.color }} />
         {GROWTH_MARKS.map((m) => (
@@ -586,7 +587,11 @@ function PetPanel() {
   if (!pet || !clientState.petPanelOpen || hasPendingHatchling() || clientState.feedGame.active) return <UiEntity />
 
   const care = (a: CareAction) => triggerCare(a)
-  const contentW = S(700) - S(30) * 2 // LightModal inner width (card minus padding)
+  // Pet Actions now uses the same 998x730 frame dimensions and on-screen size
+  // as the My Pets and Inventory panels.
+  const panelW = navPanelWidth()
+  const panelH = Math.round(MYPETS_PANEL_H * (panelW / REVAMP_PANEL_W))
+  const contentW = panelW - S(30) * 2 // Pet Actions inner width (card minus padding)
   const chipW = Math.floor((contentW - S(30)) / 4) // 4 care buttons across, with slack
   const chipH = S(60)
   const halfW = Math.round((contentW - S(8)) / 2)
@@ -624,7 +629,7 @@ function PetPanel() {
   }
 
   return (
-    <PetHudCard width={S(700)} height={S(480)} onClose={() => (clientState.petPanelOpen = false)}>
+    <PetHudCard width={panelW} height={panelH} onClose={() => (clientState.petPanelOpen = false)}>
       <PetIdentityRow species={pet.species} rarity={pet.rarity} size={pet.size} width={contentW} name={pet.name} level={pet.petLevel} />
       {careActive() && (
         <Label value={`Busy${queueLength() > 0 ? ` +${queueLength()}` : ''}`} fontSize={S(14)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20), margin: { bottom: S(6) } }} />
@@ -3793,7 +3798,10 @@ function PetHudCard(props: { width: number; height: number; onClose: () => void;
     >
       <UiEntity uiTransform={{ width: props.width, height: props.height }}>
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height }} uiBackground={{ texture: { src: PET_ACTIONS_PANEL }, textureMode: 'stretch' }} />
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: topPad, left: sidePad }, width: props.width - sidePad * 2, height: props.height - topPad * 2, flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}>
+        {/* Buttons may pulse slightly past the content column, into this card's
+            built-in side padding. Keeping that padding visible prevents the
+            Breed CTA from being clipped at its widest point. */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: topPad, left: sidePad }, width: props.width - sidePad * 2, height: props.height - topPad * 2, flexDirection: 'column', alignItems: 'center', overflow: 'visible' }}>
           {props.children}
         </UiEntity>
         {/* Invisible hit area over the baked close X — after the content so it wins the tap. */}
