@@ -2466,44 +2466,46 @@ function DailyRewardPanel() {
 // ---------------------------------------------------------------------------
 // Purely client-side: switching a track, muting or changing the volume never
 // touches the authoritative server (see music.ts). The volume ladder is 5 steps
-// instead of cozy-farm's 10 — this panel is roughly half as wide, so 10 buttons
-// would land below a comfortable touch target on mobile.
+// instead of cozy-farm's 10 so each button stays a comfortable touch target on
+// mobile.
+// Same revamp frame as Inventory / My Pets / Goals: title, subtitle and close X
+// are baked into jukebox.png, and the rows use the cream/brown card palette.
+const JUKEBOX_PANEL = 'assets/images/revamp/jukebox.png'
+const JUKEBOX_PANEL_H = 730
+const JUKEBOX_UI = {
+  tile: { r: 1, g: 0.99, b: 0.96, a: 1 } as Color,
+  selected: { r: 0.99, g: 0.89, b: 0.77, a: 1 } as Color, // peach fill of the selected pet card
+  selectedBorder: { r: 0.36, g: 0.69, b: 0.62, a: 1 } as Color // its teal outline
+}
 const VOLUME_STEPS = [20, 40, 60, 80, 100]
 // NOT module-level consts: S() reads the async-resolved platform, so anything
 // computed at import time would be frozen at desktop scale.
-const songRowH = () => S(62)
+const jukeboxContentW = () => S(470)
+const songRowH = () => S(56)
 const songRowGap = () => S(8)
 
 function SongRow(props: { key?: string; id: SongId; label: string; playing: boolean }) {
+  const disc = S(38)
+  const tick = S(28)
   return (
     <UiEntity
-      uiTransform={{ width: '100%', height: songRowH(), flexDirection: 'row', alignItems: 'center', padding: { left: S(12), right: S(12) }, margin: { bottom: songRowGap() }, borderRadius: S(12), pointerFilter: 'block' }}
-      uiBackground={{ color: props.playing ? LOC.blue : LOC.tile }}
+      uiTransform={{ width: '100%', height: songRowH(), flexDirection: 'row', alignItems: 'center', padding: { left: S(12), right: S(12) }, margin: { bottom: songRowGap() }, borderRadius: S(14), borderWidth: S(2), borderColor: props.playing ? JUKEBOX_UI.selectedBorder : ADOPT_INPUT_BORDER, pointerFilter: 'block' }}
+      uiBackground={{ color: props.playing ? JUKEBOX_UI.selected : JUKEBOX_UI.tile }}
       onMouseDown={() => {
         if (props.playing) return
         playUiClick()
         playSong(props.id)
       }}
     >
-      <UiEntity
-        uiTransform={{ width: S(40), height: S(40), borderRadius: S(20), margin: { right: S(12) }, alignItems: 'center', justifyContent: 'center' }}
-        uiBackground={{ color: props.playing ? LOC.white : LOC.neutral }}
-      >
-        <Label value="♪" fontSize={S(20)} color={props.playing ? LOC.blue : LOC.dim} textAlign="middle-center" uiTransform={{ width: S(40), height: S(40) }} />
+      <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { right: S(12) }, alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: props.playing ? PET_UI.badge : PET_UI.lock }}>
+        <Label value="♪" fontSize={S(19)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: disc, height: disc }} />
       </UiEntity>
       <UiEntity uiTransform={{ flex: 1, height: '100%', flexDirection: 'column', justifyContent: 'center' }}>
-        <Label value={props.label} fontSize={S(18)} color={props.playing ? LOC.white : LOC.body} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(24) }} />
-        {props.playing && (
-          <Label
-            value={musicState.muted ? 'Muted' : 'Now playing'}
-            fontSize={S(13)}
-            color={musicState.muted ? LOC.neutral : LOC.white}
-            textAlign="middle-left"
-            textWrap="nowrap"
-            uiTransform={{ width: '100%', height: S(18) }}
-          />
-        )}
+        <Label value={props.label} fontSize={S(18)} color={props.playing ? C.greenDark : PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(24) }} />
+        {props.playing && <Label value={musicState.muted ? 'Muted' : 'Now playing'} fontSize={S(13)} color={musicState.muted ? PET_UI.muted : C.greenDark} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(18) }} />}
       </UiEntity>
+      {/* Same external tick the selected pet card uses. */}
+      {props.playing && <UiEntity uiTransform={{ width: tick, height: tick }} uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }} />}
     </UiEntity>
   )
 }
@@ -2511,57 +2513,56 @@ function SongRow(props: { key?: string; id: SongId; label: string; playing: bool
 function VolumeStep(props: { key?: string; pct: number; active: boolean; width: number }) {
   return (
     <UiEntity
-      uiTransform={{ width: props.width, height: S(44), margin: { left: S(3), right: S(3) }, alignItems: 'center', justifyContent: 'center', borderRadius: S(10), pointerFilter: 'block' }}
-      uiBackground={{ color: props.active ? LOC.orange : LOC.tile }}
+      uiTransform={{ width: props.width, height: S(42), margin: { left: S(3), right: S(3) }, alignItems: 'center', justifyContent: 'center', borderRadius: S(12), borderWidth: S(2), borderColor: props.active ? PET_UI.badge : ADOPT_INPUT_BORDER, pointerFilter: 'block' }}
+      uiBackground={{ color: props.active ? PET_UI.badge : JUKEBOX_UI.tile }}
       onMouseDown={() => {
         if (props.active) return
         playUiClick()
         setMusicVolume(props.pct / 100)
       }}
     >
-      <Label value={`${props.pct}%`} fontSize={S(14)} color={props.active ? LOC.white : LOC.dim} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(20) }} />
+      <Label value={`${props.pct}%`} fontSize={S(14)} color={props.active ? PET_UI.white : PET_UI.muted} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(20) }} />
     </UiEntity>
   )
 }
 
 function JukeboxPanel() {
-  const modalW = S(620)
-  const modalH = Math.round(modalW / PET_MODAL_ASPECT)
+  const contentW = jukeboxContentW()
   const muted = musicState.muted
   // Snap the live volume to the nearest ladder step so exactly one button reads
   // as selected even when the value isn't on the ladder (the 42% default isn't).
   const volPct = musicState.volume * 100
   const activeStep = VOLUME_STEPS.reduce((best, pct) => (Math.abs(pct - volPct) < Math.abs(best - volPct) ? pct : best))
-  const stepW = Math.round((modalW - S(60)) / VOLUME_STEPS.length) - S(6)
+  const stepW = Math.round(contentW / VOLUME_STEPS.length) - S(6)
   return (
-    <PetHudModal title="Jukebox" subtitle="Pick the colony's ambient track." width={modalW} height={modalH} onClose={() => ui.close()}>
-      <UiEntity uiTransform={{ width: '100%', height: SONGS.length * (songRowH() + songRowGap()), flexDirection: 'column' }}>
+    <RevampPanel src={JUKEBOX_PANEL} texW={REVAMP_PANEL_W} texH={JUKEBOX_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+      <UiEntity uiTransform={{ width: contentW, height: SONGS.length * (songRowH() + songRowGap()), flexDirection: 'column', margin: { top: S(8) } }}>
         {SONGS.map((song) => (
           <SongRow key={song.id} id={song.id} label={song.label} playing={song.id === musicState.currentSongId} />
         ))}
       </UiEntity>
 
-      <Label value="Volume" fontSize={S(15)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24), margin: { top: S(6) } }} />
-      <UiEntity uiTransform={{ width: '100%', height: S(44), flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+      <Label value="Volume" fontSize={S(15)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: contentW, height: S(22), margin: { top: S(4) } }} />
+      <UiEntity uiTransform={{ width: contentW, height: S(42), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', margin: { top: S(2) } }}>
         {VOLUME_STEPS.map((pct) => (
           <VolumeStep key={`vol-${pct}`} pct={pct} active={pct === activeStep} width={stepW} />
         ))}
       </UiEntity>
 
-      <UiEntity uiTransform={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'flex-end', margin: { top: S(10) } }}>
+      <UiEntity uiTransform={{ width: contentW, height: S(50), justifyContent: 'center', alignItems: 'center', margin: { top: S(12) } }}>
         <TactileButton
           id="jukebox_mute"
           label={muted ? 'Unmute music' : 'Mute music'}
-          width={S(280)}
-          height={S(56)}
-          bg={muted ? LOC.red : LOC.neutral}
-          textColor={muted ? LOC.white : LOC.body}
-          fontSize={S(19)}
+          width={S(260)}
+          height={S(50)}
+          bg={muted ? PET_UI.badge : ADOPT_INPUT_BORDER}
+          textColor={muted ? PET_UI.white : PET_UI.ink}
+          fontSize={S(18)}
           radius={S(14)}
           onClick={() => toggleMute()}
         />
       </UiEntity>
-    </PetHudModal>
+    </RevampPanel>
   )
 }
 
@@ -3670,7 +3671,6 @@ const PET_CARD_SELECTED_UVS = petHudUvRect(PET_CARD_SELECTED_BOX.x0, PET_CARD_SE
 const PET_CARD_PLAIN_UVS = petHudUvRect(PET_CARD_PLAIN_BOX.x0, PET_CARD_PLAIN_BOX.y0, PET_CARD_PLAIN_BOX.x1, PET_CARD_PLAIN_BOX.y1)
 const PET_CLOSE_PINK_UVS = petHudUvRect(PET_CLOSE_PINK_BOX.x0, PET_CLOSE_PINK_BOX.y0, PET_CLOSE_PINK_BOX.x1, PET_CLOSE_PINK_BOX.y1)
 
-const PET_MODAL_ASPECT = (PET_MODAL_BOX.x1 - PET_MODAL_BOX.x0) / (PET_MODAL_BOX.y1 - PET_MODAL_BOX.y0)
 const PET_CARD_ASPECT = (PET_CARD_SELECTED_BOX.x1 - PET_CARD_SELECTED_BOX.x0) / (PET_CARD_SELECTED_BOX.y1 - PET_CARD_SELECTED_BOX.y0)
 const PET_NEXT_ASPECT = 639 / 378
 
