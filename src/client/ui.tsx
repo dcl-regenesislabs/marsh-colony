@@ -465,8 +465,26 @@ function StageProgress(props: { size: number; color: Color }) {
 // are optional: PetPanel passes them to show its header inline (the hud2 card has
 // no separate title bar); RemotePetPanel leaves them off since its PetHudModal
 // title already shows the name/level.
+type PetProfilePhoto = { src: string; uvs?: number[] }
+
+/**
+ * Junior pets use their exact creature portrait from the album sheet. Unlike
+ * the original-family thumbnails, those sheets include every head/body cross
+ * and every rarity, so a newborn never falls back to a plain color disc.
+ */
+function petProfilePhoto(species: string, rarity: Rarity, size: number): PetProfilePhoto | undefined {
+  if (Cfg.petStage(size) === 'JUNIOR') {
+    const { head, body } = Cfg.speciesParts(species)
+    const albumIndex = Cfg.ALBUM_SPECIES.indexOf(Cfg.crossSpecies(head, body))
+    if (albumIndex >= 0) return { src: ALBUM_SHEETS[rarity], uvs: albumCellUvs(albumIndex) }
+  }
+
+  const src = Cfg.speciesImage(species)
+  return src ? { src } : undefined
+}
+
 function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; width: number; name?: string; level?: number; ring?: boolean }) {
-  const img = Cfg.speciesImage(props.species)
+  const photo = petProfilePhoto(props.species, props.rarity, props.size)
   const rc = Cfg.RARITY_COLOR[props.rarity] ?? Cfg.RARITY_COLOR.common
   const rarityColor: Color = { r: rc.r, g: rc.g, b: rc.b, a: 1 }
   const discSize = S(84)
@@ -475,7 +493,11 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
     <UiEntity uiTransform={{ width: props.width, flexDirection: 'row', alignItems: 'center', margin: { bottom: S(10) } }}>
       <UiEntity
         uiTransform={{ width: discSize, height: discSize, borderRadius: discSize / 2, margin: { right: S(14) } }}
-        uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(props.species) }}
+        uiBackground={
+          photo
+            ? { texture: { src: photo.src }, textureMode: 'stretch', ...(photo.uvs ? { uvs: photo.uvs } : {}) }
+            : { color: speciesColor(props.species) }
+        }
       >
         {props.ring ? (
           <UiEntity
@@ -1844,10 +1866,17 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     const isFirstEmpty = props.index === p.pets.length
     const hatch = p.hatchling
     if (isFirstEmpty && hatch) {
-      const img = Cfg.speciesImage(hatch.species)
+      const photo = petProfilePhoto(hatch.species, hatch.rarity, hatch.size)
       return (
         <PetGridCard pad={rosterPx(13)} selected={false} width={cardW} height={cardH}>
-          <UiEntity uiTransform={{ width: rosterPx(70), height: rosterPx(70), borderRadius: rosterPx(35), margin: { bottom: rosterPx(6) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(hatch.species) }} />
+          <UiEntity
+            uiTransform={{ width: rosterPx(70), height: rosterPx(70), borderRadius: rosterPx(35), margin: { bottom: rosterPx(6) } }}
+            uiBackground={
+              photo
+                ? { texture: { src: photo.src }, textureMode: 'stretch', ...(photo.uvs ? { uvs: photo.uvs } : {}) }
+                : { color: speciesColor(hatch.species) }
+            }
+          />
           <Label value={`${hatch.name} hatched!`} fontSize={rosterPx(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(20) }} />
           <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: rosterPx(6) } }}>
             <TactileButton id="hatch_keep" label="" texture={KEEP_BUTTON_ICON} width={rosterPx(70)} height={Math.round(rosterPx(70) / KEEP_DISCARD_ASPECT)} margin={{ right: rosterPx(4) }} pulse onClick={() => keepHatchling()} />
@@ -1869,7 +1898,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
   }
 
   const isActive = pet.id === p.activePetId
-  const img = Cfg.speciesImage(pet.species)
+  const photo = petProfilePhoto(pet.species, pet.rarity, pet.size)
   return (
     <PetGridCard pad={rosterPx(13)}
       selected={isActive}
@@ -1880,7 +1909,14 @@ function RosterSlotCard(props: { key?: number; index: number }) {
         switchActivePet(pet.id)
       }}
     >
-      <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
+      <UiEntity
+        uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
+        uiBackground={
+          photo
+            ? { texture: { src: photo.src }, textureMode: 'stretch', ...(photo.uvs ? { uvs: photo.uvs } : {}) }
+            : { color: speciesColor(pet.species) }
+        }
+      />
       <Label value={pet.name} fontSize={rosterPx(17)} color={isActive ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
       <Label value={`Lv ${pet.petLevel}`} fontSize={rosterPx(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
     </PetGridCard>
