@@ -4115,6 +4115,7 @@ const Root = () => {
   // nothing covers it, leaving only the petting overlay (BACK + swipe hint).
   // Hatching also owns the whole screen (egg framed by a fixed camera).
   // Feed tree minigame also owns the whole screen (cinematic camera under the tree).
+  // The breeding animation likewise owns the screen while its egg cinematic plays.
   // Computed as a value (not early-returned) so UI_DEBUG_MODE's browser bar
   // below can render on top of ANY of these branches, not just the default one.
   const hideHudForPepitoTheft = pepitoStealHidesHud()
@@ -4136,6 +4137,10 @@ const Root = () => {
     ) : clientState.bathGame.active ? (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <BathGameOverlay />
+      </UiEntity>
+    ) : clientState.breed.active && clientState.breed.phase === 'animating' ? (
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        <BreedFxOverlay />
       </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
@@ -4177,9 +4182,6 @@ const Root = () => {
         <DialogBox />
         {/* Toasts are the only global notification surface. */}
         {!hideHudForPepitoTheft && <Toasts />}
-        {/* Breeding cinematic FX sit on top of everything (the flashes should
-            wash over the whole HUD during the "creation" moment). */}
-        {!hideHudForPepitoTheft && <BreedFxOverlay />}
       </UiEntity>
     )
   return (
