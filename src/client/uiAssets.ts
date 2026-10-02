@@ -83,7 +83,6 @@ const STATIC_UI_ASSETS: readonly string[] = [
   'assets/images/bath button.png',
   'assets/images/revamp/dailyrewards_hud.png',
   'assets/images/tutorialUi/btn_close.png',
-  'assets/images/tutorialUi/btn_next.png',
   'assets/images/breedEffect/p1.png',
   'assets/images/breedEffect/p2.png',
   'assets/images/circle_01.png',
