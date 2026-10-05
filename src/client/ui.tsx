@@ -37,7 +37,7 @@ import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTIO
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { firstSessionHud, FIRST_SESSION_CHAPTERS } from './firstSession'
+import { firstSessionHud, firstSessionStep, FIRST_SESSION_CHAPTERS } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -1044,14 +1044,14 @@ function BottomNav() {
   // separate "selected" variant.
   const navSize = Sbtn(92)
   const plateSize = navSize + S(10)
-  const nav = (id: string, uvs: number[], panel: Panel, onClick: () => void) => {
+  const nav = (id: string, uvs: number[], panel: Panel, onClick: () => void, pulse = false) => {
     const sel = uiState.panel === panel
     return (
       <UiEntity
         uiTransform={{ width: plateSize, height: plateSize, alignItems: 'center', justifyContent: 'center', margin: { left: S(6), right: S(6) }, borderRadius: S(18) }}
         uiBackground={sel ? { color: LOC.blue } : undefined}
       >
-        <TactileButton id={id} label="" texture={HUD_SHEET} uvs={uvs} width={navSize} height={navSize} onClick={onClick} />
+        <TactileButton id={id} label="" texture={HUD_SHEET} uvs={uvs} width={navSize} height={navSize} pulse={pulse && !sel} onClick={onClick} />
       </UiEntity>
     )
   }
@@ -1061,7 +1061,7 @@ function BottomNav() {
   // DESKTOP: the classic centered bottom bar.
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster())}
+      {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster(), firstSessionHud.pulse === 'myPets')}
       {nav('nav_inv', NAV_INV_UVS, 'inventory', () => ui.openInventory())}
       {nav('nav_goals', NAV_GOALS_UVS, 'goals', () => ui.openGoals())}
     </UiEntity>
@@ -1868,6 +1868,9 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     // Slots are unlimited, and the grid only ever renders ONE locked card: the
     // next one up. Its price is the one for the slot count the player is at.
     const canUnlock = props.index === p.petSlots
+    // First session: the Caretaker asked for this card — its badge throbs.
+    const k = canUnlock && firstSessionHud.pulse === 'myPets' && firstSessionStep() === 'slot' ? attentionPulse() : 1
+    const badge = Math.round(rosterPx(42) * k)
     return (
       <PetGridCard pad={rosterPx(13)}
         selected={false}
@@ -1882,8 +1885,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
             : undefined
         }
       >
-        <UiEntity uiTransform={{ width: rosterPx(42), height: rosterPx(42), borderRadius: rosterPx(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
-          <Label value={canUnlock ? '+' : 'x'} fontSize={rosterPx(26)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: rosterPx(42), height: rosterPx(42) }} />
+        <UiEntity uiTransform={{ width: badge, height: badge, borderRadius: Math.round(badge / 2), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
+          <Label value={canUnlock ? '+' : 'x'} fontSize={Math.round(rosterPx(26) * k)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: badge, height: badge }} />
         </UiEntity>
         <Label value={canUnlock ? 'Unlock' : 'Locked'} fontSize={rosterPx(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(24) }} />
         <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: rosterPx(4) } }}>

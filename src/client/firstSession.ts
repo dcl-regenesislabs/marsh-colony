@@ -17,7 +17,11 @@
 import { engine, Transform } from '@dcl/sdk/ecs'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
-import { showArrowTo, hideArrow, getLocalPet } from './pet'
+import { showArrowTo, hideArrow, getLocalPet, getEggPending } from './pet'
+import { objectPosition } from './objects'
+import { EntityNames } from '../../assets/scene/entity-names'
+import { dailyClaimable } from './sim'
+import { slotPrice } from '../shared/config'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession
@@ -36,7 +40,11 @@ export type FirstSessionStep =
   | 'bath' // chapter 3 starts: the chase left it muddy
   | 'play' // fetch until it is worn out (the server tires it if the player stalls)
   | 'rest' // let it sleep on the bed
-  | 'egg2' // chapter 4: a second egg (Phase 5 continues here)
+  | 'slot' // chapter 4: while it naps, unlock slot 2 in My Pets
+  | 'adopt2' // go to the Caretaker and adopt a second egg
+  | 'hatch2' // collect the egg, carry it home, hatch, keep (existing flows guide it)
+  | 'freeTime' // ~30 s to enjoy the new pet (the meteor gets a mention if it is down)
+  | 'switch' // chapter 5 starts (Phase 6 continues here)
 
 /** Chapter shown on the bar ("Chapter 1/6"), per step. */
 const CHAPTER: Record<FirstSessionStep, number> = {
@@ -49,7 +57,11 @@ const CHAPTER: Record<FirstSessionStep, number> = {
   bath: 3,
   play: 3,
   rest: 3,
-  egg2: 4
+  slot: 4,
+  adopt2: 4,
+  hatch2: 4,
+  freeTime: 4,
+  switch: 5
 }
 export const FIRST_SESSION_CHAPTERS = 6
 
@@ -59,17 +71,42 @@ const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   bath: "It's covered in mud from the chase! Tap it and choose Bath.",
   play: "It's feeling better. Let's play! Tap it and choose Play.",
   rest: "It's worn out. Let it rest on the bed. Tap it and choose Sleep.",
-  egg2: 'While it naps, open My Pets and buy a new slot. Then come see me for a second egg.'
+  adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
+  switch: 'Open My Pets and pick your first pet again. I have something for it!'
 }
 
+/** Objectives whose wording depends on the moment. */
+function objectiveFor(s: FirstSessionStep): string {
+  const p = clientState.player
+  if (s === 'slot' && p) {
+    const price = slotPrice(p.petSlots)
+    return p.currency >= price
+      ? 'While it naps, open My Pets and unlock a new slot.'
+      : `A new slot costs ${price} coins. Yours are piling up while your pet is happy!`
+  }
+  if (s === 'freeTime') {
+    return dailyClaimable() ? 'A meteor fell nearby! Go take a look while they get to know each other.' : ''
+  }
+  return OBJECTIVE[s] ?? ''
+}
+
+/** Free time with the new pet before the Caretaker calls you back. */
+const FREE_TIME_SECONDS = 30
+
 /** The pet-panel button each step asks for (arrow to the pet, then this pulses). */
-export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep'
+export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep' | 'myPets'
 const BUTTON: Partial<Record<FirstSessionStep, FirstSessionPulse>> = {
   feed: 'feed',
   bath: 'bath',
   play: 'play',
-  rest: 'sleep'
+  rest: 'sleep',
+  slot: 'myPets',
+  switch: 'myPets'
 }
+/** Steps whose UI target pulses as soon as the objective is up (no pet to point at). */
+const PULSE_AT_ONCE: Partial<Record<FirstSessionStep, boolean>> = { slot: true, switch: true }
+/** Steps that point the guide arrow at the Caretaker instead of the pet. */
+const TO_CARETAKER: Partial<Record<FirstSessionStep, boolean>> = { adopt2: true }
 
 /** Fetch rounds, or seconds, in 'play' before the server tires the pet itself. */
 const PLAY_FALLBACK_ROUNDS = 4
@@ -118,6 +155,8 @@ let bathsAtStart = 0
 let playsAtStart = 0
 /** Seconds spent in 'play'; and whether the tire fallback was already asked for. */
 let playTime = 0
+/** Seconds of free time left. */
+let freeLeft = 0
 let tireAsked = false
 let breatheLeft = 0
 let objectiveTime = 0
@@ -215,9 +254,32 @@ function advance(dt: number): void {
       return
     }
     case 'rest':
-      if (clientState.activePet?.sleeping) goTo('egg2', BREATHE_SECONDS)
+      if (clientState.activePet?.sleeping) goTo('slot', BREATHE_SECONDS)
       return
-    case 'egg2':
+    case 'slot':
+      if (p && p.pets.length < p.petSlots) goTo('adopt2')
+      return
+    case 'adopt2':
+      // Adopt! confirmed: the existing pickup/carry/hatch flows take it from here.
+      if (getEggPending() || clientState.carryEgg.active || p?.hatchling) goTo('hatch2')
+      return
+    case 'hatch2': {
+      if (!p) return
+      const eggFlow = getEggPending() || clientState.carryEgg.active || clientState.hatch.active || !!p.hatchling
+      if (eggFlow) return
+      if (p.pets.length >= 2) {
+        freeLeft = FREE_TIME_SECONDS
+        goTo('freeTime', BREATHE_SECONDS)
+      } else if (p.pets.length < p.petSlots) {
+        goTo('adopt2') // cancelled or discarded: the slot is still free, adopt again
+      }
+      return
+    }
+    case 'freeTime':
+      if (breatheLeft <= 0 && !clientState.fetch.active) freeLeft -= dt
+      if (freeLeft <= 0) goTo('switch')
+      return
+    case 'switch':
       return
   }
 }
@@ -227,7 +289,7 @@ function firstSessionSystem(dt: number): void {
   if (breatheLeft > 0) breatheLeft -= dt
   advance(dt)
 
-  const objective = breatheLeft > 0 ? '' : OBJECTIVE[step] ?? ''
+  const objective = breatheLeft > 0 ? '' : objectiveFor(step)
   // The Caretaker talking in person, or a panel taking the screen, pauses the clock.
   const paused = clientState.dialog.open || clientState.fetch.active
   if (objective && !paused) objectiveTime += dt
@@ -245,18 +307,27 @@ function firstSessionSystem(dt: number): void {
   firstSessionHud.shownFor = objectiveTime
   firstSessionHud.emphasize = !!objective && objectiveTime >= NUDGE_REPEAT_SECONDS
   const button = objective ? BUTTON[step] : undefined
-  const pointing = !!button && objectiveTime >= NUDGE_POINT_SECONDS
-  firstSessionHud.pulse = pointing && panelOpen ? button! : null
-
-  // Point at the pet until its panel is open; the step's button pulses after that.
-  const wantArrow = pointing && !panelOpen
-  setArrow(wantArrow)
-  if (wantArrow) {
-    const pet = getLocalPet()
-    if (pet !== null && Transform.has(pet)) showArrowTo(Transform.get(pet).position, 'firstSession')
+  const due = objectiveTime >= NUDGE_POINT_SECONDS
+  if (button === 'myPets') {
+    // A HUD target, nothing in the world: pulse My Pets (and its Unlock card) right away.
+    firstSessionHud.pulse = PULSE_AT_ONCE[step] || due ? button : null
+    setArrow(false)
+  } else if (objective && TO_CARETAKER[step]) {
+    firstSessionHud.pulse = null
+    setArrow(due)
+    if (due) showArrowTo(objectPosition(EntityNames.Caretaker_glb), 'firstSession')
+  } else {
+    firstSessionHud.pulse = button && due && panelOpen ? button : null
+    // Point at the pet until its panel is open; the step's button pulses after that.
+    const wantArrow = !!button && due && !panelOpen
+    setArrow(wantArrow)
+    if (wantArrow) {
+      const pet = getLocalPet()
+      if (pet !== null && Transform.has(pet)) showArrowTo(Transform.get(pet).position, 'firstSession')
+    }
   }
 
-  if (objective && !repeated && objectiveTime >= NUDGE_REPEAT_SECONDS) {
+  if (objective && step !== 'freeTime' && !repeated && objectiveTime >= NUDGE_REPEAT_SECONDS) {
     repeated = true
     clientState.toasts.push({ message: `Caretaker: ${objective}`, kind: 'info' })
   }
