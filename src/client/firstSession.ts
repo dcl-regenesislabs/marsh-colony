@@ -23,6 +23,8 @@ import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog } from './state'
+import { trackEvent } from '../shared/analytics'
+import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
@@ -230,8 +232,23 @@ function goTo(next: FirstSessionStep, breathe = 0): void {
   bathsAtStart = c['bathCount'] ?? 0
   playsAtStart = c['playCount'] ?? 0
   playTime = 0
-  // TODO(analytics): report `first_session_step` to PostHog here.
   console.log('[FirstSession] step ->', next)
+  reportStep(next)
+}
+
+/** Every step reached goes to PostHog, so the funnel shows how far first
+ *  visits get. Forced debug sessions stay out of the stats. */
+let sessionClock = 0
+let stepIndex = 0
+function reportStep(next: FirstSessionStep): void {
+  stepIndex += 1
+  if (DEBUG_FORCE_FIRST_SESSION) return
+  trackEvent('first_session_step', clientState.player?.address ?? '', {
+    step: next,
+    step_index: stepIndex,
+    chapter: CHAPTER[next],
+    seconds_in_session: Math.round(sessionClock)
+  })
 }
 
 /** Any progress on the objective restarts the nudge ladder. */
@@ -402,6 +419,8 @@ function firstSessionSystem(dt: number): void {
     }
     return
   }
+  if (stepIndex === 0 && clientState.player) reportStep('intro') // the visit starts
+  sessionClock += dt
   if (breatheLeft > 0) breatheLeft -= dt
   advance(dt)
 
