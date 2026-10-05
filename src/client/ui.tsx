@@ -2989,6 +2989,10 @@ function HatchOverlay() {
 // precisely, so these were found by testing on-device.
 const bubbleBottomRaw = 180
 const bubbleRightRaw = 290
+// First session: the same bubble pointing at the native Pet Actions button
+// (IA_SECONDARY, the next arc slot). A first guess: calibrate on-device.
+const petActionsBubbleBottomRaw = 260
+const petActionsBubbleRightRaw = 200
 const barBottomRaw = 320
 const barRightRaw = 240
 
@@ -3025,6 +3029,30 @@ function DesktopThrowGuidance(props: { instruction: string; charge: number; visi
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height: `${pct}%`, borderRadius: meterWidth / 2 }}
           uiBackground={{ color: { r: 0.75, g: 0.9, b: 0.35, a: 0.65 } }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** First session, mobile: "Pet Actions" bubble pointing at the native button
+ *  that opens the pet's panel, while an objective needs it (firstSession.ts). */
+function PetActionsHint() {
+  if (!firstSessionHud.pointPetActions || bigUiOpen()) return <UiEntity />
+  const k = attentionPulse()
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(petActionsBubbleBottomRaw), right: S(petActionsBubbleRightRaw) }, width: Math.round(S(280) * k), height: Math.round(S(187) * k), pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+          uiBackground={{ texture: { src: 'assets/images/revamp/bubble.png' }, textureMode: 'stretch' }}
+        />
+        <Label
+          value="Pet Actions"
+          fontSize={Math.round(S(20) * k)}
+          color={{ r: 0.25, g: 0.18, b: 0.14, a: 1 }}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(S(55) * k), left: Math.round(S(20) * k) }, width: Math.round(S(240) * k), height: Math.round(S(50) * k) }}
         />
       </UiEntity>
     </UiEntity>
@@ -4264,6 +4292,7 @@ const Root = () => {
             {!bigUiOpen() && <TopBars />}
             <BottomNav />
             <FetchOverlay />
+            <PetActionsHint />
             <PepitoRockChargeOverlay />
             <CarryHatchButton />
             <BathButton />

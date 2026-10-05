@@ -34,6 +34,8 @@ import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog } from './state'
+import { mobile } from './ui/theme'
+import { petTouchControlsAreVisible } from './touchControls'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 
@@ -97,14 +99,14 @@ export const FIRST_SESSION_CHAPTERS = 6
 
 /** What the Caretaker asks for while the step is waiting on the player. */
 const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
-  feed: 'Your pet is hungry! Tap it and choose Feed.',
-  bath: "It's covered in mud from the chase! Tap it and choose Bath.",
-  play: "It's feeling better. Let's play! Tap it and choose Play.",
-  rest: "It's worn out. Let it rest on the bed. Tap it and choose Sleep.",
+  feed: 'Your pet is hungry! {tap} and choose Feed.',
+  bath: "It's covered in mud from the chase! {tap} and choose Bath.",
+  play: "It's feeling better. Let's play! {tap} and choose Play.",
+  rest: "It's worn out. Let it rest on the bed. {tap} and choose Sleep.",
   adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
   switch: 'Open My Pets and pick your first pet again. I have something for it!',
   grow: 'Find the mushroom in the woods and tap it. Your pet will grow up!',
-  breed: 'Tap your pet and choose Breed, then carry it to the breeding nest in the house.'
+  breed: '{tap} and choose Breed, then carry it to the breeding nest in the house.'
 }
 
 const GROW_DIALOG = [
@@ -131,11 +133,18 @@ function objectiveFor(s: FirstSessionStep): string {
       : `A new slot costs ${price} coins. Yours are piling up while your pet is happy!`
   }
   if (s === 'grow' && !growIntroDone) return '' // the Caretaker speaks first
-  if (s === 'breed' && clientState.activePet?.sleeping) return "It's still asleep. Tap it and wake it up."
+  if (s === 'breed' && clientState.activePet?.sleeping) return withTap("It's still asleep. {tap} and wake it up.")
   if (s === 'freeTime') {
     return dailyClaimable() ? 'A meteor fell nearby! Go take a look while they get to know each other.' : ''
   }
-  return OBJECTIVE[s] ?? ''
+  return withTap(OBJECTIVE[s] ?? '')
+}
+
+/** How the pet's actions open on this device: the native Pet Actions button on
+ *  mobile (pointed at by a bubble, see PetActionsHint in ui.tsx), the pet itself
+ *  on desktop. */
+function withTap(line: string): string {
+  return line.replace('{tap}', mobile() ? 'Tap Pet Actions' : 'Click your pet')
 }
 
 /** Free time with the new pet before the Caretaker calls you back. */
@@ -266,6 +275,8 @@ export const firstSessionHud = {
   /** The sticky objective toast: what to do now, '' when nothing is asked.
    *  It appears once the Caretaker's dialog is closed and stays until done. */
   task: '',
+  /** Mobile: point a bubble at the native Pet Actions button. */
+  pointPetActions: false,
   /** Bumped when the player sits on it: the toast throbs for a moment. */
   nudgedAt: 0,
   /** Button to pulse for the current objective, if any. */
@@ -514,6 +525,7 @@ function firstSessionSystem(dt: number): void {
   if (!firstSessionActive()) {
     firstSessionHud.pulse = null
     firstSessionHud.task = ''
+    firstSessionHud.pointPetActions = false
     return
   }
   if (stepIndex === 0 && clientState.player) reportStep('intro') // the visit starts
@@ -552,6 +564,10 @@ function firstSessionSystem(dt: number): void {
   const button = heard ? BUTTON[step] : undefined
   firstSessionHud.chapter = CHAPTER[step]
   firstSessionHud.pulse = button && (button === 'myPets' || clientState.petPanelOpen) ? button : null
+  // The step wants a pet action and its panel is still closed: on mobile, point
+  // at the button that opens it (like Fetch's "Hold to throw" bubble).
+  firstSessionHud.pointPetActions =
+    !!button && button !== 'myPets' && mobile() && petTouchControlsAreVisible() && !clientState.petPanelOpen && !clientState.dialog.open
 }
 
 export function setupFirstSession(): void {
