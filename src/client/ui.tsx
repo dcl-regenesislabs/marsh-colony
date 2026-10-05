@@ -34,7 +34,7 @@ import {
   BREED_BURST_FRAMES,
   playPetVoice
 } from './pet'
-import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, showPetTouchControls } from './touchControls'
+import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, setMyPetsSpotlight, showPetTouchControls } from './touchControls'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
@@ -1068,8 +1068,13 @@ function syncPetTouchControlsSystem(): void {
     hidePetTouchControls()
     return
   }
+  // First session: the Caretaker asked for My Pets -> it is the only button.
+  const spotlight = firstSessionHud.pulse === 'myPets'
+  setMyPetsSpotlight(spotlight)
   showPetTouchControls(clientState.followEnabled, icon)
-  if (inputSystem.isTriggered(NAV_ROSTER_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+  if (spotlight && inputSystem.isTriggered(MY_PETS_SPOTLIGHT_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openRoster()
+  } else if (inputSystem.isTriggered(NAV_ROSTER_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
     ui.openRoster()
   } else if (inputSystem.isTriggered(NAV_INVENTORY_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
     ui.openInventory()
@@ -3059,6 +3064,29 @@ function PetActionsHint() {
   )
 }
 
+/** First session, mobile: "My Pets" bubble on the lone My Pets button (it sits
+ *  in Fetch's Throw slot, so it reuses that calibrated bubble position). */
+function MyPetsHint() {
+  if (!mobile() || firstSessionHud.pulse !== 'myPets' || !myPetsSpotlightVisible() || bigUiOpen()) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(bubbleBottomRaw), right: S(bubbleRightRaw) }, width: S(280), height: S(187), pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+          uiBackground={{ texture: { src: 'assets/images/revamp/bubble.png' }, textureMode: 'stretch' }}
+        />
+        <Label
+          value="My Pets"
+          fontSize={S(20)}
+          color={{ r: 0.25, g: 0.18, b: 0.14, a: 1 }}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: S(55), left: S(20) }, width: S(240), height: S(50) }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FetchOverlay() {
   if (!clientState.fetch.active) return <UiEntity />
   const st = clientState.fetch
@@ -4293,6 +4321,7 @@ const Root = () => {
             <BottomNav />
             <FetchOverlay />
             <PetActionsHint />
+            <MyPetsHint />
             <PepitoRockChargeOverlay />
             <CarryHatchButton />
             <BathButton />
