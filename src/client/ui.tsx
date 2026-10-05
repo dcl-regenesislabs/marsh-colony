@@ -24,6 +24,7 @@ import {
   cancelCarryPet,
   canStartPetInteraction,
   startBreedErrand,
+  firstSessionBreedPartner,
   cancelBreed,
   placeParentA,
   chooseBreedPartner,
@@ -795,6 +796,11 @@ function PetPanel() {
               pushToast('Grow your pet to Adult to unlock breeding!')
               return
             }
+            // First session: the Caretaker lends his own pet, so no partner check.
+            if (firstSessionBreedPartner() !== null) {
+              startBreedErrand()
+              return
+            }
             if (otherPets.length === 0) {
               pushToast('You need a second pet to breed with.')
               return
@@ -1412,6 +1418,9 @@ function BreedNamePanel() {
   const hasPotion = potions > 0
   const usingPotion = hasPotion && uiState.breedUsePotion
   const noticeOn = Date.now() < breedNotice.until
+  // First session: the Caretaker's lent partner breeds for free.
+  const lent = clientState.breed.partnerId === Cfg.FIRST_SESSION_PARTNER_ID
+  const fee = lent ? 0 : Cfg.BREED_COST
 
   const potionIcon = S(60)
   const buyW = S(120)
@@ -1495,7 +1504,7 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={noticeOn ? breedNotice.text : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}Breeding costs ${Cfg.BREED_COST} coins`}
+          value={noticeOn ? breedNotice.text : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
           fontSize={S(15)}
           color={noticeOn ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
@@ -1518,7 +1527,7 @@ function BreedNamePanel() {
             // (which sends the breed). If the flow was cancelled (world BACK) while
             // this modal was still open, just close — no stale actions.breed('').
             // Check the fee here too: once the egg cinematic starts it can't be taken back.
-            if (coins < Cfg.BREED_COST) {
+            if (coins < fee) {
               showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
               return
             }

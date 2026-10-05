@@ -511,6 +511,16 @@ export const FIRST_SESSION_CURE_GIFT = 30
 /** First session: hygiene after the Pepito chase, low enough that the Bath beat
  *  is earned (and pays — Bath only pays coins below CARE_PAY_STAT_THRESHOLD). */
 export const FIRST_SESSION_MUDDY_HYGIENE = 35
+
+/** First session breed: the Caretaker lends his own Adult as parent B. The
+ *  client sends this id as partnerPetId; the server only honours it during the
+ *  first session, once, and charges no fee. The player never owns this pet. */
+export const FIRST_SESSION_PARTNER_ID = 'caretaker-partner'
+/** The lent partner's species: a Fluflito, or an Amebita when the player's pet
+ *  already has the Fluflito body (so the baby still comes out a real cross). */
+export function firstSessionPartnerSpecies(petA: { body?: string; species: string }): string {
+  return petBody(petA) === 'fluflito' ? 'amebita-original' : 'fluflito-original'
+}
 export const SICKNESS_CURE_COOLDOWN_MS = 8000
 // The server issues a short-lived cure authorization only after the player
 // reaches the Care Center. This leaves time for the theft/chase and prevents a

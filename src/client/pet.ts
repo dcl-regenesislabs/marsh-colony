@@ -1817,6 +1817,42 @@ function breedSpot(off: Vector3): Vector3 {
   return Vector3.create(n.x + off.x, n.y + off.y, n.z + off.z)
 }
 
+// ---------------------------------------------------------------------------
+// First session: the Caretaker lends his own Adult as parent B. It waits in the
+// right bowl from the moment the nest lesson starts, the partner picker is
+// skipped, and the server breeds with it for free (FIRST_SESSION_PARTNER_ID).
+// ---------------------------------------------------------------------------
+let lentPartner: { species: string; entity: Entity } | null = null
+
+/** Species of the lent partner while the first session offers one, else null. */
+export function firstSessionBreedPartner(): string | null {
+  return lentPartner?.species ?? null
+}
+
+/** Seat the lent partner in bowl B (species), or take it away (null). */
+export function setFirstSessionBreedPartner(species: string | null): void {
+  if (lentPartner && lentPartner.species === species) return
+  if (lentPartner) {
+    forgetAnimator(lentPartner.entity)
+    engine.removeEntity(lentPartner.entity)
+    lentPartner = null
+  }
+  if (species === null) return
+  const e = engine.addEntity()
+  const spot = breedSpot(BREED_BOWL_B_OFF)
+  Transform.create(e, {
+    position: spot,
+    rotation: yawToward(spot, breedSpot(BREED_CAM_AVATAR_OFF), yawOffsetForSpecies(species)),
+    scale: petScale(species, stageScaleFor(C.SIZE_MAX))
+  })
+  // Visual only: no colliders, nothing to click.
+  GltfContainer.create(e, { src: modelForSpecies(species), visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
+  applyCreatureSkin(e, species, 'common')
+  ensureAnimator(e, species)
+  setClip(e, 'sit')
+  lentPartner = { species, entity: e }
+}
+
 /** Breed step 1 — pick the active Adult up and send the player to the nest. */
 export function startBreedErrand(): void {
   const a = clientState.activePet
@@ -1830,7 +1866,7 @@ export function startBreedErrand(): void {
     return
   }
   const others = clientState.player?.pets.filter((x) => x.id !== a.id) ?? []
-  if (!others.some((x) => petStage(x.size) === 'ADULT')) {
+  if (!lentPartner && !others.some((x) => petStage(x.size) === 'ADULT')) {
     pushToast('You need a second Adult pet to breed with.')
     return
   }
@@ -1891,6 +1927,12 @@ export function placeParentA(): void {
     if (clientState.activePet) playPetVoice(clientState.activePet.species)
   }
   clientState.breed.phase = 'pickB' // ui.tsx shows the partner picker off this phase
+  if (lentPartner) {
+    // First session: the Caretaker's pet is already in bowl B — no picker.
+    clientState.breed.partnerId = C.FIRST_SESSION_PARTNER_ID
+    clientState.breed.phase = 'ready'
+    playPetVoice(lentPartner.species)
+  }
 }
 
 /** Breed step 3 — the roster picker's tap: place parent B in the right bowl. */

@@ -219,6 +219,20 @@ function now(): number {
   return Date.now()
 }
 
+/** The Caretaker's Adult that the first session lends as breeding partner.
+ *  Built on the fly for the roll; it is never stored on the player. */
+function caretakerPartner(a: PetData): PetData {
+  const species = C.firstSessionPartnerSpecies(a)
+  const pet = newPet(species, `Caretaker's ${C.speciesLabel(species)}`)
+  pet.id = C.FIRST_SESSION_PARTNER_ID
+  pet.size = C.SIZE_MAX
+  pet.hunger = 100
+  pet.hygiene = 100
+  pet.energy = 100
+  pet.happiness = 100
+  return pet
+}
+
 function newPet(species: string, name: string): PetData {
   const t = now()
   const parts = C.speciesParts(species) // head/body families (originals: head === body)
@@ -702,7 +716,10 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   tickPlayer(p)
   const a = activePet(p)
   if (!a) return { notes: [{ kind: 'error', message: 'No active pet' }], rarity: null }
-  const b = p.pets.find((x) => x.id === partnerId && x.id !== a.id)
+  // First session: the Caretaker's lent Adult stands in as parent B, for free.
+  const lent = partnerId === C.FIRST_SESSION_PARTNER_ID && isFirstSession(p.address)
+  const b = lent ? caretakerPartner(a) : p.pets.find((x) => x.id === partnerId && x.id !== a.id)
+  const fee = lent ? 0 : C.BREED_COST
   if (!b) return { notes: [{ kind: 'error', message: 'Pick a different pet to breed with' }], rarity: null }
   if (C.petStage(a.size) !== 'ADULT' || C.petStage(b.size) !== 'ADULT') {
     return { notes: [{ kind: 'error', message: 'Both pets must be Adult to breed' }], rarity: null }
@@ -719,12 +736,15 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
     return { notes: [{ kind: 'error', message: `No ${C.RARITY_POTION_LABEL} in your inventory` }], rarity: null }
   }
 
-  if (p.currency < C.BREED_COST) {
+  if (p.currency < fee) {
     return { notes: [{ kind: 'error', message: `Breeding costs ${C.BREED_COST} coins` }], rarity: null }
+  }
+  if (lent && !takeFirstSessionGift(p.address, 'breed')) {
+    return { notes: [{ kind: 'error', message: 'Pick a different pet to breed with' }], rarity: null }
   }
 
   // Consumed here, after every check passed, so a rejected breed never eats it.
-  p.currency -= C.BREED_COST
+  p.currency -= fee
   if (usePotion) p.inventory.rarityPotions -= 1
   const rarity = rollRarity(a, b, usePotion)
   // Genetics: the offspring wears the ACTIVE pet's head and the PARTNER's body
@@ -741,7 +761,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   bump(p, 'breedCount')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
-  const notes: Notify[] = [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch! (-${C.BREED_COST} coins)` }]
+  const notes: Notify[] = [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!${fee > 0 ? ` (-${fee} coins)` : ''}` }]
   grantCaretakerXp(p, C.CARETAKER_XP_BREED, notes)
   checkJourney(p, notes)
   return { notes, rarity, species: child.species, name: child.name }

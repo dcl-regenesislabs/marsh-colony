@@ -17,14 +17,15 @@
 import { engine, Transform } from '@dcl/sdk/ecs'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
-import { showArrowTo, hideArrow, getLocalPet, getEggPending } from './pet'
+import { showArrowTo, hideArrow, getLocalPet, getEggPending, setFirstSessionBreedPartner } from './pet'
 import { objectPosition } from './objects'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
-import { slotPrice } from '../shared/config'
+import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
+import { openDialog } from './state'
 
 export function firstSessionActive(): boolean {
-  return clientState.firstSession
+  return clientState.firstSession && step !== 'done'
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,15 @@ export type FirstSessionStep =
   | 'adopt2' // go to the Caretaker and adopt a second egg
   | 'hatch2' // collect the egg, carry it home, hatch, keep (existing flows guide it)
   | 'freeTime' // ~30 s to enjoy the new pet (the meteor gets a mention if it is down)
-  | 'switch' // chapter 5 starts (Phase 6 continues here)
+  | 'switch' // chapter 5: back to pet 1 in My Pets
+  | 'grow' // pet 1 must be Adult (the mushroom, Phase 7b, does it; debug Grow until then)
+  | 'nest' // walk to the breeding nest: the Caretaker's pet waits in bowl B
+  | 'slot3' // the baby needs room: unlock slot 3
+  | 'breed' // tap pet 1, choose Breed, carry it to the nest (existing errand)
+  | 'breeding' // the breed errand / cinematic owns the screen
+  | 'hatch3' // carry the hybrid egg home, hatch, keep (existing flows)
+  | 'wrapup' // chapter 6: the Caretaker's closing words
+  | 'done' // the rest of the visit is the normal game
 
 /** Chapter shown on the bar ("Chapter 1/6"), per step. */
 const CHAPTER: Record<FirstSessionStep, number> = {
@@ -61,7 +70,15 @@ const CHAPTER: Record<FirstSessionStep, number> = {
   adopt2: 4,
   hatch2: 4,
   freeTime: 4,
-  switch: 5
+  switch: 5,
+  grow: 5,
+  nest: 5,
+  slot3: 5,
+  breed: 5,
+  breeding: 5,
+  hatch3: 5,
+  wrapup: 6,
+  done: 6
 }
 export const FIRST_SESSION_CHAPTERS = 6
 
@@ -72,18 +89,31 @@ const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   play: "It's feeling better. Let's play! Tap it and choose Play.",
   rest: "It's worn out. Let it rest on the bed. Tap it and choose Sleep.",
   adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
-  switch: 'Open My Pets and pick your first pet again. I have something for it!'
+  switch: 'Open My Pets and pick your first pet again. I have something for it!',
+  grow: 'Your pet must be an Adult to breed. (Grow mushroom coming soon: use the debug Grow for now.)',
+  nest: 'Follow the arrow to the breeding nest in the house.',
+  breed: 'Tap your pet and choose Breed, then carry it to the nest.'
 }
+
+const CLOSING_DIALOG = [
+  'Look at that: your very first hybrid!',
+  'Babies need lots of care to grow up. Feed it, bathe it and play with it.',
+  "Next time you won't need my pet. Raise your two to Adult and breed them yourselves.",
+  'Come back tomorrow: your daily streak reward will be waiting!'
+]
 
 /** Objectives whose wording depends on the moment. */
 function objectiveFor(s: FirstSessionStep): string {
   const p = clientState.player
-  if (s === 'slot' && p) {
+  if ((s === 'slot' || s === 'slot3') && p) {
     const price = slotPrice(p.petSlots)
     return p.currency >= price
-      ? 'While it naps, open My Pets and unlock a new slot.'
+      ? s === 'slot3'
+        ? 'Open My Pets and unlock one more slot for the baby.'
+        : 'While it naps, open My Pets and unlock a new slot.'
       : `A new slot costs ${price} coins. Yours are piling up while your pet is happy!`
   }
+  if (s === 'breed' && clientState.activePet?.sleeping) return "It's still asleep. Tap it and wake it up."
   if (s === 'freeTime') {
     return dailyClaimable() ? 'A meteor fell nearby! Go take a look while they get to know each other.' : ''
   }
@@ -94,19 +124,44 @@ function objectiveFor(s: FirstSessionStep): string {
 const FREE_TIME_SECONDS = 30
 
 /** The pet-panel button each step asks for (arrow to the pet, then this pulses). */
-export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep' | 'myPets'
+export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep' | 'breed' | 'myPets'
 const BUTTON: Partial<Record<FirstSessionStep, FirstSessionPulse>> = {
   feed: 'feed',
   bath: 'bath',
   play: 'play',
   rest: 'sleep',
   slot: 'myPets',
-  switch: 'myPets'
+  switch: 'myPets',
+  slot3: 'myPets',
+  breed: 'breed'
 }
 /** Steps whose UI target pulses as soon as the objective is up (no pet to point at). */
-const PULSE_AT_ONCE: Partial<Record<FirstSessionStep, boolean>> = { slot: true, switch: true }
-/** Steps that point the guide arrow at the Caretaker instead of the pet. */
-const TO_CARETAKER: Partial<Record<FirstSessionStep, boolean>> = { adopt2: true }
+const PULSE_AT_ONCE: Partial<Record<FirstSessionStep, boolean>> = { slot: true, switch: true, slot3: true }
+
+const BREED_NEST = EntityNames.DualNest01_glb_2
+/** Close enough to the nest for the Caretaker's lesson. */
+const NEST_REACH = 7
+
+/** Steps that point the guide arrow at a place instead of the pet; `atOnce`
+ *  skips the wait (the Caretaker is leading, not reminding). */
+const PLACE: Partial<Record<FirstSessionStep, { at: () => ReturnType<typeof objectPosition>; atOnce: boolean }>> = {
+  adopt2: { at: () => objectPosition(EntityNames.Caretaker_glb), atOnce: false },
+  nest: { at: () => objectPosition(BREED_NEST), atOnce: true }
+}
+
+/** Pet 1, the one adopted at the start: chapter 5 grows and breeds it. */
+let firstPetId = ''
+
+function playerNear(target: { x: number; z: number }, reach: number): boolean {
+  if (!Transform.has(engine.PlayerEntity)) return false
+  const pp = Transform.get(engine.PlayerEntity).position
+  return Math.hypot(pp.x - target.x, pp.z - target.z) <= reach
+}
+
+function hasFreeSlot(): boolean {
+  const p = clientState.player
+  return !!p && p.pets.length < p.petSlots
+}
 
 /** Fetch rounds, or seconds, in 'play' before the server tires the pet itself. */
 const PLAY_FALLBACK_ROUNDS = 4
@@ -204,6 +259,7 @@ function advance(dt: number): void {
     case 'intro':
       // The first pet has been kept: it is in the roster and nothing is pending.
       if (p && p.pets.length > 0 && !p.hatchling && clientState.activePet && !clientState.hatch.active) {
+        firstPetId = clientState.activePet.id
         goTo('meet', BREATHE_SECONDS)
       }
       return
@@ -280,12 +336,72 @@ function advance(dt: number): void {
       if (freeLeft <= 0) goTo('switch')
       return
     case 'switch':
+      if (clientState.activePet && clientState.activePet.id === firstPetId) goTo('grow', 3)
+      return
+    case 'grow': {
+      const pet = clientState.activePet
+      if (pet && pet.id === firstPetId && petStage(pet.size) === 'ADULT') {
+        setFirstSessionBreedPartner(firstSessionPartnerSpecies(pet)) // already waiting in bowl B
+        goTo('nest', 3)
+      }
+      return
+    }
+    case 'nest': {
+      if (breatheLeft > 0 || clientState.dialog.open) return
+      if (!playerNear(objectPosition(BREED_NEST), NEST_REACH)) return
+      const pet = clientState.activePet
+      const partner = speciesLabel(firstSessionPartnerSpecies(pet ?? { species: '' }))
+      const needSlot = !hasFreeSlot()
+      openDialog(
+        'Caretaker',
+        [
+          'This is where new life begins.',
+          `My ${partner} is waiting in the second bowl. This time it will be your pet's partner.`,
+          ...(needSlot ? ['The baby will need a home of its own, so unlock one more slot in My Pets first.'] : [])
+        ],
+        'Got it!'
+      )
+      goTo(needSlot ? 'slot3' : 'breed')
+      return
+    }
+    case 'slot3':
+      if (hasFreeSlot()) goTo('breed')
+      return
+    case 'breed':
+      if (clientState.breed.active) goTo('breeding')
+      return
+    case 'breeding':
+      if (clientState.breed.active) return
+      if (clientState.carryEgg.active || p?.hatchling) {
+        setFirstSessionBreedPartner(null) // the Caretaker takes his pet back
+        goTo('hatch3')
+      } else {
+        goTo('breed') // BACK before breeding: try again
+      }
+      return
+    case 'hatch3':
+      if (getEggPending() || clientState.carryEgg.active || clientState.hatch.active || p?.hatchling) return
+      goTo('wrapup', 4)
+      return
+    case 'wrapup':
+      if (breatheLeft > 0 || clientState.dialog.open) return
+      openDialog('Caretaker', CLOSING_DIALOG, 'Thanks!')
+      goTo('done')
+      return
+    case 'done':
       return
   }
 }
 
 function firstSessionSystem(dt: number): void {
-  if (!firstSessionActive()) return
+  if (!firstSessionActive()) {
+    if (step === 'done' && firstSessionHud.text) {
+      firstSessionHud.text = ''
+      firstSessionHud.pulse = null
+      setArrow(false)
+    }
+    return
+  }
   if (breatheLeft > 0) breatheLeft -= dt
   advance(dt)
 
@@ -312,10 +428,12 @@ function firstSessionSystem(dt: number): void {
     // A HUD target, nothing in the world: pulse My Pets (and its Unlock card) right away.
     firstSessionHud.pulse = PULSE_AT_ONCE[step] || due ? button : null
     setArrow(false)
-  } else if (objective && TO_CARETAKER[step]) {
+  } else if (objective && PLACE[step]) {
+    const place = PLACE[step]!
+    const show = place.atOnce || due
     firstSessionHud.pulse = null
-    setArrow(due)
-    if (due) showArrowTo(objectPosition(EntityNames.Caretaker_glb), 'firstSession')
+    setArrow(show)
+    if (show) showArrowTo(place.at(), 'firstSession')
   } else {
     firstSessionHud.pulse = button && due && panelOpen ? button : null
     // Point at the pet until its panel is open; the step's button pulses after that.
