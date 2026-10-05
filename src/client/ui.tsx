@@ -37,6 +37,7 @@ import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTIO
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
+import { firstSessionHud, FIRST_SESSION_CHAPTERS } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -343,6 +344,45 @@ function PetsCountBar(props: { height: number }) {
           textWrap="nowrap"
           uiTransform={{ width: textW, height: h }}
         />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// First session: the Caretaker's objective line (firstSession.ts). A slim bar
+// under the top HUD with his portrait (the same circle the dialog uses), the
+// chapter and the one thing he wants next. Fades in; throbs when he repeats
+// himself. Only ever shown during a brand-new player's first visit.
+// ---------------------------------------------------------------------------
+const FS_PORTRAIT = 'assets/images/revamp/caretaker.png'
+const FS_BAR = {
+  bg: { r: 1, g: 0.97, b: 0.92, a: 0.96 } as Color,
+  border: { r: 0.85, g: 0.74, b: 0.62, a: 1 } as Color,
+  label: { r: 0.6, g: 0.45, b: 0.33, a: 1 } as Color,
+  ink: { r: 0.23, g: 0.17, b: 0.15, a: 1 } as Color
+}
+
+function FirstSessionBar() {
+  const hud = firstSessionHud
+  if (!clientState.firstSession || !hud.text) return <UiEntity />
+  const fade = Math.min(1, hud.shownFor / 0.5)
+  const k = hud.emphasize ? attentionPulse() : 1
+  const w = Math.round(S(600) * k)
+  const h = Math.round(S(66) * k)
+  const disc = Math.round(S(52) * k)
+  const top = (mobile() ? S(46) : S(10)) + S(58) + S(12)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -w / 2 }, width: w, height: h, pointerFilter: 'none', opacity: fade }}>
+      <UiEntity
+        uiTransform={{ width: w, height: h, flexDirection: 'row', alignItems: 'center', borderRadius: h / 2, borderWidth: Math.max(2, S(2)), borderColor: FS_BAR.border, padding: { left: S(7), right: S(22) } }}
+        uiBackground={{ color: FS_BAR.bg }}
+      >
+        <UiEntity uiTransform={{ width: disc, height: disc, flexShrink: 0 }} uiBackground={{ texture: { src: FS_PORTRAIT }, textureMode: 'stretch' }} />
+        <UiEntity uiTransform={{ flexGrow: 1, height: h, flexDirection: 'column', justifyContent: 'center', margin: { left: S(12) } }}>
+          <Label value={`CARETAKER  ·  CHAPTER ${hud.chapter}/${FIRST_SESSION_CHAPTERS}`} fontSize={S(12)} color={FS_BAR.label} textAlign="middle-left" uiTransform={{ width: '100%', height: S(16) }} />
+          <Label value={hud.text} fontSize={S(18)} color={FS_BAR.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
+        </UiEntity>
       </UiEntity>
     </UiEntity>
   )
@@ -664,7 +704,7 @@ function PetPanel() {
       </UiEntity>
       {/* Care actions (flat, colored per stat) */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
+        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} pulse={firstSessionHud.pulseFeed} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
         <PillButton
           id="care_bath"
           label="Bath"
@@ -4185,6 +4225,7 @@ const Root = () => {
             {/* Hide the top bar while any panel / passport / dialog is open, so it never
                 overlaps them (same gate the bottom nav uses). */}
             {!bigUiOpen() && <TopBars />}
+            {!bigUiOpen() && !clientState.dialog.open && <FirstSessionBar />}
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />

@@ -2126,7 +2126,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg' | 'firstSession'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -2151,6 +2151,7 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
   if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
   if (arrowOwner === 'getEgg') return pendingEgg !== null
+  if (arrowOwner === 'firstSession') return clientState.firstSessionArrow
   return false
 }
 

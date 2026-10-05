@@ -66,6 +66,8 @@ export function playerName(): string {
 export function caretakerIntro(): string[] {
   return [
     `Welcome to the Mars colony, ${playerName()}. I'm the Caretaker — out here, every colony is built on the creatures we raise.`,
+    // First session only: name the goal the whole visit builds toward.
+    ...(clientState.firstSession ? ['Your goal today: raise a creature worth breeding. I will guide you every step of the way.'] : []),
     'Tap "Adopt a Pet" to take in your first Martian companion.',
     'Keep it thriving: Feed at the Bowl, Bath at the Pond, Sleep on the Bed, Play at the Ball. Tap it anytime for some love.',
     "A healthy, happy pet earns Coins — and soon you'll breed it with other settlers' pets to grow the colony. Let's begin!"

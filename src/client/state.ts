@@ -60,6 +60,8 @@ export const clientState: {
   // The server says this is the player's very first visit (see firstSession.ts).
   // Latched for the visit: once true it stays true until the scene reloads.
   firstSession: boolean
+  // firstSession.ts is currently pointing the guide arrow (arrowOwnerActive in pet.ts).
+  firstSessionArrow: boolean
   // Whether the pet control panel (stats + care) is open. Closed by default so
   // it doesn't cover the screen; opens by clicking the pet, closes with the X.
   petPanelOpen: boolean
@@ -187,6 +189,7 @@ export const clientState: {
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
   introShown: false,
   firstSession: false,
+  firstSessionArrow: false,
   petPanelOpen: false,
   viewingPetAddress: null,
   incomingSwap: null,
@@ -431,6 +434,9 @@ export function pushToast(message: string, kind: string = 'info'): void {
 // ---------------------------------------------------------------------------
 const shownHints = new Set<string>()
 export function showHint(id: string, message: string, kind: string = 'info'): void {
+  // During the first session the Caretaker's objective bar is the only guide,
+  // so the one-off hints stay quiet instead of talking over it.
+  if (clientState.firstSession) return
   if (shownHints.has(id)) return
   shownHints.add(id)
   pushToast(message, kind)

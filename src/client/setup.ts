@@ -37,6 +37,7 @@ import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaret
 import { setupCaretakerPet } from './caretakerPet'
 import { setupCaptain } from './captain'
 import { setupFeedTask } from './feed'
+import { setupFirstSession } from './firstSession'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
 import { queueSicknessCinematic, setupSicknessCinematic } from './sicknessCinematic'
@@ -287,6 +288,7 @@ export function setupClient(): void {
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
+  setupFirstSession() // brand-new players only: the Caretaker-guided first visit (firstSession.ts)
   setupSicknessCinematic() // poisoned Feed round: sad pet + Caretaker introduction
   setupSicknessProps() // runtime-only medicine table + potion; intentionally absent from the composite
   setupSicknessErrand() // walk to the Caretaker, then play the medicine-table cure scene
