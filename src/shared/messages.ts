@@ -45,6 +45,8 @@ export const Messages = {
   // First session only: the player has played Fetch for a while without wearing
   // the pet out — tire it so the "rest on the bed" beat can't strand them.
   firstSessionTire: Schemas.Map({}),
+  // First session only, once: the woods mushroom grows pet 1 to Adult (no coins).
+  firstSessionGrow: Schemas.Map({ petId: Schemas.String }),
   // Shop: buy one rarity potion (boosts the next breeding roll it is used on).
   buyPotion: Schemas.Map({}),
   // Spend a spin ticket on the wheel.

@@ -529,6 +529,9 @@ export const actions = {
   debugGrowAdult(): void {
     room.send('debugGrowAdult', {})
   },
+  firstSessionGrow(petId: string): void {
+    room.send('firstSessionGrow', { petId })
+  },
   firstSessionTire(): void {
     room.send('firstSessionTire', {})
   },

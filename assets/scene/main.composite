@@ -3145,6 +3145,27 @@
             "parent": 660
           }
         },
+        "668": {
+          "json": {
+            "position": {
+              "x": 221.25,
+              "y": 0,
+              "z": 245.25
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "scale": {
+              "x": 1.5,
+              "y": 1.5,
+              "z": 1.5
+            },
+            "parent": 0
+          }
+        },
         "66050": {
           "json": {
             "position": {
@@ -4598,6 +4619,13 @@
             "invisibleMeshesCollisionMask": 3
           }
         },
+        "668": {
+          "json": {
+            "src": "assets/asset-packs/gypsy_mushroom/Mushroom_02/Mushroom_02.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "66059": {
           "json": {
             "src": "assets/Models/Mountain01/mountain01.glb",
@@ -5397,6 +5425,11 @@
             "value": "Headpoint06"
           }
         },
+        "668": {
+          "json": {
+            "value": "Gypsy mushroom"
+          }
+        },
         "66050": {
           "json": {
             "value": "Plants"
@@ -5610,7 +5643,8 @@
                   593,
                   594,
                   660,
-                  131682
+                  131682,
+                  668
                 ]
               },
               {
@@ -6352,6 +6386,10 @@
               {
                 "entity": 131682,
                 "children": []
+              },
+              {
+                "entity": 668,
+                "children": []
               }
             ]
           }
@@ -6817,6 +6855,12 @@
           "json": {}
         },
         "666": {
+          "json": {}
+        },
+        "667": {
+          "json": {}
+        },
+        "668": {
           "json": {}
         },
         "66050": {

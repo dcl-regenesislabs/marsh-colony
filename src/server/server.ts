@@ -286,6 +286,18 @@ export function server(): void {
     pushSnapshot(p)
   })
 
+  room.onMessage('firstSessionGrow', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    if (!S.isFirstSession(ctx.from)) return
+    const notes = S.firstSessionGrow(p, data.petId)
+    if (!notes) return
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+    broadcastPresence() // its size changed — mirror it for everyone
+  })
+
   room.onMessage('buyPotion', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)

@@ -1244,6 +1244,19 @@ export function firstSessionTire(p: PlayerData): boolean {
   return true
 }
 
+/** First session only, once per visit: the Caretaker's grow mushroom takes the
+ *  given pet straight to Adult so it can breed — like the debug cheat, but
+ *  without the coins. */
+export function firstSessionGrow(p: PlayerData, petId: string): Notify[] | null {
+  const pet = p.pets.find((x) => x.id === petId)
+  if (!pet || C.petStage(pet.size) === 'ADULT') return null
+  if (!takeFirstSessionGift(p.address, 'grow')) return null
+  tickPlayer(p)
+  pet.careCount = Math.max(pet.careCount, 70) // keeps size maxed even after decay
+  pet.size = C.SIZE_MAX // Adult (>= PET_STAGE_ADULT_SIZE)
+  return [{ kind: 'shop', message: `${pet.name} grew into an Adult!` }]
+}
+
 /** Roll a weighted reward from the pool and apply it. Shared by spin + meteor. */
 function rollAndApplyReward(p: PlayerData): { reward: C.SpinReward; index: number } {
   const total = C.SPIN_REWARDS.reduce((s, r) => s + r.weight, 0)

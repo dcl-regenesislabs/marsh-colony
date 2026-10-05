@@ -14,7 +14,17 @@
 // objective bar on the HUD (FirstSessionBar in ui.tsx), with nudges that
 // escalate the longer the player sits on it (see NUDGE_*).
 
-import { engine, Transform } from '@dcl/sdk/ecs'
+import {
+  engine,
+  Transform,
+  GltfContainer,
+  VisibilityComponent,
+  ColliderLayer,
+  pointerEventsSystem,
+  InputAction,
+  type Entity
+} from '@dcl/sdk/ecs'
+import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
 import { showArrowTo, hideArrow, getLocalPet, getEggPending, setFirstSessionBreedPartner } from './pet'
@@ -22,7 +32,7 @@ import { objectPosition } from './objects'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
-import { openDialog } from './state'
+import { openDialog, pushToast } from './state'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 
@@ -48,7 +58,7 @@ export type FirstSessionStep =
   | 'hatch2' // collect the egg, carry it home, hatch, keep (existing flows guide it)
   | 'freeTime' // ~30 s to enjoy the new pet (the meteor gets a mention if it is down)
   | 'switch' // chapter 5: back to pet 1 in My Pets
-  | 'grow' // pet 1 must be Adult (the mushroom, Phase 7b, does it; debug Grow until then)
+  | 'grow' // the Caretaker's gift: find the mushroom in the woods, it grows pet 1 to Adult
   | 'nest' // walk to the breeding nest: the Caretaker's pet waits in bowl B
   | 'slot3' // the baby needs room: unlock slot 3
   | 'breed' // tap pet 1, choose Breed, carry it to the nest (existing errand)
@@ -92,10 +102,15 @@ const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   rest: "It's worn out. Let it rest on the bed. Tap it and choose Sleep.",
   adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
   switch: 'Open My Pets and pick your first pet again. I have something for it!',
-  grow: 'Your pet must be an Adult to breed. (Grow mushroom coming soon: use the debug Grow for now.)',
+  grow: 'Find the mushroom in the woods and tap it. Your pet will grow up!',
   nest: 'Follow the arrow to the breeding nest in the house.',
   breed: 'Tap your pet and choose Breed, then carry it to the nest.'
 }
+
+const GROW_DIALOG = [
+  "Since it's your first time, I've granted you a Grow Potion.",
+  'Go find a mushroom in the woods. One bite and your pet will be all grown up!'
+]
 
 const CLOSING_DIALOG = [
   'Look at that: your very first hybrid!',
@@ -115,6 +130,7 @@ function objectiveFor(s: FirstSessionStep): string {
         : 'While it naps, open My Pets and unlock a new slot.'
       : `A new slot costs ${price} coins. Yours are piling up while your pet is happy!`
   }
+  if (s === 'grow' && !growIntroDone) return '' // the Caretaker speaks first
   if (s === 'breed' && clientState.activePet?.sleeping) return "It's still asleep. Tap it and wake it up."
   if (s === 'freeTime') {
     return dailyClaimable() ? 'A meteor fell nearby! Go take a look while they get to know each other.' : ''
@@ -148,7 +164,70 @@ const NEST_REACH = 7
  *  skips the wait (the Caretaker is leading, not reminding). */
 const PLACE: Partial<Record<FirstSessionStep, { at: () => ReturnType<typeof objectPosition>; atOnce: boolean }>> = {
   adopt2: { at: () => objectPosition(EntityNames.Caretaker_glb), atOnce: false },
-  nest: { at: () => objectPosition(BREED_NEST), atOnce: true }
+  nest: { at: () => objectPosition(BREED_NEST), atOnce: true },
+  grow: { at: () => objectPosition(EntityNames.Gypsy_mushroom), atOnce: false }
+}
+
+// ---------------------------------------------------------------------------
+// The grow mushroom ("Gypsy mushroom", placed in Creator Hub). It only exists for a
+// first-session player on the 'grow' step: everyone else never sees it, so the
+// scene is unchanged for returning players.
+// ---------------------------------------------------------------------------
+let growIntroDone = false
+let mushroom: Entity | null = null
+let mushroomShown: boolean | null = null
+let mushroomEaten = false
+/** Seconds into the eaten pop, or -1 when not popping. */
+let mushroomPop = -1
+let mushroomScale = Vector3.One()
+const MUSHROOM_POP_S = 0.7
+
+function findMushroom(): Entity | null {
+  if (mushroom !== null) return mushroom
+  const e = engine.getEntityOrNullByName(EntityNames.Gypsy_mushroom)
+  if (e === null || !Transform.has(e) || !GltfContainer.has(e)) return null
+  mushroom = e
+  mushroomScale = Vector3.clone(Transform.get(e).scale)
+  pointerEventsSystem.onPointerDown(
+    { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: 'Pick the mushroom', maxDistance: 10 } },
+    () => eatMushroom()
+  )
+  return e
+}
+
+function eatMushroom(): void {
+  if (step !== 'grow' || mushroomEaten || clientState.dialog.open) return
+  const pet = clientState.activePet
+  if (!pet || pet.id !== firstPetId) {
+    pushToast('Pick your first pet in My Pets first!')
+    return
+  }
+  mushroomEaten = true
+  mushroomPop = 0
+  actions.firstSessionGrow(pet.id) // the server grows it; the snapshot brings the new size
+}
+
+/** Show or hide the mushroom (visuals AND colliders) and run its pop. */
+function updateMushroom(dt: number): void {
+  const e = findMushroom()
+  if (e === null) return
+  if (mushroomPop >= 0) {
+    mushroomPop += dt
+    const p = Math.min(1, mushroomPop / MUSHROOM_POP_S)
+    // A quick swell, then it shrinks away.
+    const k = p < 0.3 ? 1 + (p / 0.3) * 0.35 : 1.35 * (1 - (p - 0.3) / 0.7)
+    Transform.getMutable(e).scale = Vector3.scale(mushroomScale, Math.max(0, k))
+    if (p >= 1) mushroomPop = -1
+    else return
+  }
+  const want = firstSessionActive() && step === 'grow' && !mushroomEaten
+  if (want === mushroomShown) return
+  mushroomShown = want
+  VisibilityComponent.createOrReplace(e, { visible: want })
+  const g = GltfContainer.getMutable(e)
+  g.visibleMeshesCollisionMask = want ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
+  g.invisibleMeshesCollisionMask = want ? ColliderLayer.CL_PHYSICS | ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
+  if (want) Transform.getMutable(e).scale = Vector3.clone(mushroomScale)
 }
 
 /** Pet 1, the one adopted at the start: chapter 5 grows and breeds it. */
@@ -356,6 +435,11 @@ function advance(dt: number): void {
       if (clientState.activePet && clientState.activePet.id === firstPetId) goTo('grow', 3)
       return
     case 'grow': {
+      if (!growIntroDone && breatheLeft <= 0 && !clientState.dialog.open) {
+        growIntroDone = true
+        openDialog('Caretaker', GROW_DIALOG, "I'm on it!")
+        return
+      }
       const pet = clientState.activePet
       if (pet && pet.id === firstPetId && petStage(pet.size) === 'ADULT') {
         setFirstSessionBreedPartner(firstSessionPartnerSpecies(pet)) // already waiting in bowl B
@@ -411,6 +495,7 @@ function advance(dt: number): void {
 }
 
 function firstSessionSystem(dt: number): void {
+  updateMushroom(dt) // also hides it for everyone who is not on the 'grow' step
   if (!firstSessionActive()) {
     if (step === 'done' && firstSessionHud.text) {
       firstSessionHud.text = ''
