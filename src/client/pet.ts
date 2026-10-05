@@ -878,17 +878,12 @@ function registerPetOpenClick(entity: Entity): void {
   )
 }
 
-/** True when nothing else is already framing or carrying the pet. A completed
- * care action can resolve while a minigame is still handing control back, so
- * queue the reveal until that flow has released the pet. */
+/** A completed care action can resolve while another flow still owns the pet.
+ * Queue the reveal until that shared activity gate releases it; a sleeping pet
+ * must also remain in its sleep mode even if an item changed its growth stage. */
 function canStartGrowthCinematic(): boolean {
-  return !clientState.hatch.active &&
-    !clientState.carryEgg.active &&
-    !clientState.carryPet.active &&
-    !clientState.breed.active &&
-    !clientState.feedGame.active &&
-    !clientState.bathGame.active &&
-    !clientState.petting.active &&
+  return !clientState.activePet?.sleeping &&
+    !otherActivityActive() &&
     !sadCinematicActive &&
     !cureCinematicActive
 }
@@ -1008,7 +1003,7 @@ function updateGrowthCinematic(dt: number): void {
   if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
   if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
   growthCinematic = null
-  mode = clientState.followEnabled ? 'follow' : 'wander'
+  mode = pet.sleeping ? 'asleep' : clientState.followEnabled ? 'follow' : 'wander'
 }
 
 function ensureLocalPet(): void {
