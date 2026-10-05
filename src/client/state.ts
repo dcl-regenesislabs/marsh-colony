@@ -21,6 +21,8 @@ export type DialogState = {
   // Show the "Adopt" button art on the final page (only the Caretaker intro,
   // whose CTA is adopting). Everything else uses the neutral "Next" art.
   adoptCta: boolean
+  // Small caption next to the speaker's name (first session: "Chapter 4/6").
+  tag?: string
 }
 
 /** A brief, non-blocking visual acknowledgement for an earned care reward. */

@@ -184,7 +184,10 @@ export function DialogBox() {
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: padTop, left: padH }, width: bubbleW - padH * 2, height: avatarH, flexDirection: 'row', alignItems: 'flex-start' }}>
           <UiEntity uiTransform={{ width: avatarW, height: avatarH }} uiBackground={{ texture: { src: portraitFor(d.npcName) }, textureMode: 'stretch' }} />
           <UiEntity uiTransform={{ width: textColW, height: avatarH, flexDirection: 'column', margin: { left: gapAvatarText } }}>
-            <Label value={d.npcName} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ width: textColW, height: titleH, margin: { top: S(14) } }} />
+            <UiEntity uiTransform={{ width: textColW, height: titleH, margin: { top: S(14) }, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Label value={d.npcName} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ height: titleH }} />
+              {d.tag ? <Label value={d.tag.toUpperCase()} fontSize={S(15)} color={LGT.body} textAlign="middle-right" uiTransform={{ height: titleH, margin: { right: S(8) } }} /> : null}
+            </UiEntity>
             <Label value={body} fontSize={S(18)} color={LGT.body} textAlign="top-left" textWrap="wrap" uiTransform={{ width: textColW, height: bodyTextH, margin: { top: rowGap } }} />
 
             {/* Page dots (left) + Next/final button (right) */}

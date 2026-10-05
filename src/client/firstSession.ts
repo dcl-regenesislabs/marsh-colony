@@ -9,15 +9,16 @@
 // game must go through firstSessionActive(), which is false for every
 // returning player — so for them the game behaves exactly as before.
 //
-// The Caretaker is the only voice that teaches. In person he uses the normal
-// dialog; between those moments his current instruction rides a one-line
-// objective bar on the HUD (FirstSessionBar in ui.tsx), with nudges that
-// escalate the longer the player sits on it (see NUDGE_*).
+// The Caretaker is the only voice that teaches, always through the normal
+// dialog (tagged "Chapter x/6"). Each objective is said once when the screen is
+// free, and once more if the player sits on it (NUDGE_REPEAT_SECONDS). No guide
+// arrows: the player finds things; only the right button pulses.
 
 import {
   engine,
   Transform,
   GltfContainer,
+  MeshCollider,
   VisibilityComponent,
   ColliderLayer,
   pointerEventsSystem,
@@ -27,8 +28,7 @@ import {
 import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
-import { showArrowTo, hideArrow, getLocalPet, getEggPending, setFirstSessionBreedPartner } from './pet'
-import { objectPosition } from './objects'
+import { getEggPending, setFirstSessionBreedPartner } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
@@ -59,7 +59,7 @@ export type FirstSessionStep =
   | 'freeTime' // ~30 s to enjoy the new pet (the meteor gets a mention if it is down)
   | 'switch' // chapter 5: back to pet 1 in My Pets
   | 'grow' // the Caretaker's gift: find the mushroom in the woods, it grows pet 1 to Adult
-  | 'nest' // walk to the breeding nest: the Caretaker's pet waits in bowl B
+  | 'nest' // the Caretaker's breeding lesson: his pet now waits in the nest's bowl B
   | 'slot3' // the baby needs room: unlock slot 3
   | 'breed' // tap pet 1, choose Breed, carry it to the nest (existing errand)
   | 'breeding' // the breed errand / cinematic owns the screen
@@ -103,8 +103,7 @@ const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
   switch: 'Open My Pets and pick your first pet again. I have something for it!',
   grow: 'Find the mushroom in the woods and tap it. Your pet will grow up!',
-  nest: 'Follow the arrow to the breeding nest in the house.',
-  breed: 'Tap your pet and choose Breed, then carry it to the nest.'
+  breed: 'Tap your pet and choose Breed, then carry it to the breeding nest in the house.'
 }
 
 const GROW_DIALOG = [
@@ -153,20 +152,7 @@ const BUTTON: Partial<Record<FirstSessionStep, FirstSessionPulse>> = {
   slot3: 'myPets',
   breed: 'breed'
 }
-/** Steps whose UI target pulses as soon as the objective is up (no pet to point at). */
-const PULSE_AT_ONCE: Partial<Record<FirstSessionStep, boolean>> = { slot: true, switch: true, slot3: true }
 
-const BREED_NEST = EntityNames.DualNest01_glb_2
-/** Close enough to the nest for the Caretaker's lesson. */
-const NEST_REACH = 7
-
-/** Steps that point the guide arrow at a place instead of the pet; `atOnce`
- *  skips the wait (the Caretaker is leading, not reminding). */
-const PLACE: Partial<Record<FirstSessionStep, { at: () => ReturnType<typeof objectPosition>; atOnce: boolean }>> = {
-  adopt2: { at: () => objectPosition(EntityNames.Caretaker_glb), atOnce: false },
-  nest: { at: () => objectPosition(BREED_NEST), atOnce: true },
-  grow: { at: () => objectPosition(EntityNames.Gypsy_mushroom), atOnce: false }
-}
 
 // ---------------------------------------------------------------------------
 // The grow mushroom ("Gypsy mushroom", placed in Creator Hub). It only exists for a
@@ -181,6 +167,11 @@ let mushroomEaten = false
 let mushroomPop = -1
 let mushroomScale = Vector3.One()
 const MUSHROOM_POP_S = 0.7
+/** The model is small (~0.5 m): an invisible box makes it easy to tap... */
+const MUSHROOM_HIT_SIZE = 1.6
+/** ...and walking right up to it picks it too, so nobody gets stuck. */
+const MUSHROOM_PICK_REACH = 1.8
+let mushroomHit: Entity | null = null
 
 function findMushroom(): Entity | null {
   if (mushroom !== null) return mushroom
@@ -188,10 +179,20 @@ function findMushroom(): Entity | null {
   if (e === null || !Transform.has(e) || !GltfContainer.has(e)) return null
   mushroom = e
   mushroomScale = Vector3.clone(Transform.get(e).scale)
+  // Click target: an invisible box around the mushroom (pointer layer only, so
+  // it never blocks walking). Its collider is switched off while hidden.
+  const pos = Transform.get(e).position
+  const hit = engine.addEntity()
+  Transform.create(hit, {
+    position: Vector3.create(pos.x, pos.y + MUSHROOM_HIT_SIZE / 2, pos.z),
+    scale: Vector3.create(MUSHROOM_HIT_SIZE, MUSHROOM_HIT_SIZE, MUSHROOM_HIT_SIZE)
+  })
+  MeshCollider.setBox(hit, ColliderLayer.CL_NONE)
   pointerEventsSystem.onPointerDown(
-    { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: 'Pick the mushroom', maxDistance: 10 } },
+    { entity: hit, opts: { button: InputAction.IA_POINTER, hoverText: 'Pick the mushroom', maxDistance: 16 } },
     () => eatMushroom()
   )
+  mushroomHit = hit
   return e
 }
 
@@ -221,6 +222,7 @@ function updateMushroom(dt: number): void {
     else return
   }
   const want = firstSessionActive() && step === 'grow' && !mushroomEaten
+  if (want && growIntroDone && playerDistanceTo(Transform.get(e).position) <= MUSHROOM_PICK_REACH) eatMushroom()
   if (want === mushroomShown) return
   mushroomShown = want
   VisibilityComponent.createOrReplace(e, { visible: want })
@@ -228,15 +230,16 @@ function updateMushroom(dt: number): void {
   g.visibleMeshesCollisionMask = want ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
   g.invisibleMeshesCollisionMask = want ? ColliderLayer.CL_PHYSICS | ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
   if (want) Transform.getMutable(e).scale = Vector3.clone(mushroomScale)
+  if (mushroomHit !== null) MeshCollider.setBox(mushroomHit, want ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE)
 }
 
 /** Pet 1, the one adopted at the start: chapter 5 grows and breeds it. */
 let firstPetId = ''
 
-function playerNear(target: { x: number; z: number }, reach: number): boolean {
-  if (!Transform.has(engine.PlayerEntity)) return false
+function playerDistanceTo(target: { x: number; z: number }): number {
+  if (!Transform.has(engine.PlayerEntity)) return Infinity
   const pp = Transform.get(engine.PlayerEntity).position
-  return Math.hypot(pp.x - target.x, pp.z - target.z) <= reach
+  return Math.hypot(pp.x - target.x, pp.z - target.z)
 }
 
 function hasFreeSlot(): boolean {
@@ -244,32 +247,22 @@ function hasFreeSlot(): boolean {
   return !!p && p.pets.length < p.petSlots
 }
 
-/** Fetch rounds, or seconds, in 'play' before the server tires the pet itself. */
-const PLAY_FALLBACK_ROUNDS = 4
+/** Seconds in 'play' without a single fetch before the server tires the pet anyway. */
 const PLAY_FALLBACK_SECONDS = 120
 
 /** Breathing room after a reward before the next instruction shows up. */
 const BREATHE_SECONDS = 10
 
-// Escalating nudges, counted from when the objective appears (which is itself
-// after the breathing beat, so these land at ~10 / 25 / 60 s of the spec).
-/** Point at the target: the guide arrow, or a pulse on the right button. */
-const NUDGE_POINT_SECONDS = 15
-/** The Caretaker repeats himself: the bar throbs and his line comes back as a toast. */
+// Counted from when the Caretaker said the objective (dialog closed, not in Fetch).
+/** The Caretaker repeats himself once if the player sits on the objective. */
 const NUDGE_REPEAT_SECONDS = 50
 
 // ---------------------------------------------------------------------------
 // State read by the UI
 // ---------------------------------------------------------------------------
 export const firstSessionHud = {
-  /** Objective line, or '' when the bar should be hidden. */
-  text: '',
   chapter: 1,
-  /** Seconds the current objective has been up (drives the fade-in). */
-  shownFor: 0,
-  /** The Caretaker is repeating himself: the bar throbs. */
-  emphasize: false,
-  /** Pet-panel button to pulse, if any. */
+  /** Button to pulse for the current objective, if any. */
   pulse: null as FirstSessionPulse | null
 }
 
@@ -297,7 +290,6 @@ let tireAsked = false
 let breatheLeft = 0
 let objectiveTime = 0
 let repeated = false
-let arrowUp = false
 
 export function firstSessionStep(): FirstSessionStep {
   return step
@@ -306,6 +298,7 @@ export function firstSessionStep(): FirstSessionStep {
 function goTo(next: FirstSessionStep, breathe = 0): void {
   step = next
   breatheLeft = breathe
+  said = ''
   resetNudges()
   const c = clientState.player?.counters ?? {}
   bathsAtStart = c['bathCount'] ?? 0
@@ -334,21 +327,11 @@ function reportStep(next: FirstSessionStep): void {
 function resetNudges(): void {
   objectiveTime = 0
   repeated = false
-  setArrow(false)
-}
-
-function setArrow(on: boolean): void {
-  if (on === arrowUp) return
-  arrowUp = on
-  clientState.firstSessionArrow = on
-  if (!on) hideArrow('firstSession')
 }
 
 // ---------------------------------------------------------------------------
 // Step transitions — each one watches the real game state, nothing is faked.
 // ---------------------------------------------------------------------------
-let lastPanelOpen = false
-
 function advance(dt: number): void {
   const p = clientState.player
   switch (step) {
@@ -397,9 +380,9 @@ function advance(dt: number): void {
       }
       if (breatheLeft <= 0) playTime += dt
       const rounds = (p?.counters['playCount'] ?? 0) - playsAtStart
-      // Fallback: it has played enough (or the player stalls). The server takes
-      // its energy down once, then the step above moves on to 'rest'.
-      if (!tireAsked && !clientState.fetch.active && (rounds >= PLAY_FALLBACK_ROUNDS || playTime >= PLAY_FALLBACK_SECONDS)) {
+      // One fetch is enough: when the player leaves Fetch (or stalls), the
+      // server wears the pet out once and the step above moves on to 'rest'.
+      if (!tireAsked && !clientState.fetch.active && (rounds >= 1 || playTime >= PLAY_FALLBACK_SECONDS)) {
         tireAsked = true
         actions.firstSessionTire()
       }
@@ -435,9 +418,9 @@ function advance(dt: number): void {
       if (clientState.activePet && clientState.activePet.id === firstPetId) goTo('grow', 3)
       return
     case 'grow': {
-      if (!growIntroDone && breatheLeft <= 0 && !clientState.dialog.open) {
+      if (!growIntroDone && breatheLeft <= 0 && canInterrupt()) {
         growIntroDone = true
-        openDialog('Caretaker', GROW_DIALOG, "I'm on it!")
+        say(GROW_DIALOG, "I'm on it!")
         return
       }
       const pet = clientState.activePet
@@ -448,16 +431,14 @@ function advance(dt: number): void {
       return
     }
     case 'nest': {
-      if (breatheLeft > 0 || clientState.dialog.open) return
-      if (!playerNear(objectPosition(BREED_NEST), NEST_REACH)) return
+      if (breatheLeft > 0 || !canInterrupt()) return
       const pet = clientState.activePet
       const partner = speciesLabel(firstSessionPartnerSpecies(pet ?? { species: '' }))
       const needSlot = !hasFreeSlot()
-      openDialog(
-        'Caretaker',
+      say(
         [
-          'This is where new life begins.',
-          `My ${partner} is waiting in the second bowl. This time it will be your pet's partner.`,
+          'Look how big it is! Now it is ready for the best part: breeding.',
+          `In the house there is a breeding nest. My ${partner} is waiting in its second bowl: this time it will be your pet's partner.`,
           ...(needSlot ? ['The baby will need a home of its own, so unlock one more slot in My Pets first.'] : [])
         ],
         'Got it!'
@@ -485,8 +466,8 @@ function advance(dt: number): void {
       goTo('wrapup', 4)
       return
     case 'wrapup':
-      if (breatheLeft > 0 || clientState.dialog.open) return
-      openDialog('Caretaker', CLOSING_DIALOG, 'Thanks!')
+      if (breatheLeft > 0 || !canInterrupt()) return
+      say(CLOSING_DIALOG, 'Thanks!')
       goTo('done')
       return
     case 'done':
@@ -494,14 +475,38 @@ function advance(dt: number): void {
   }
 }
 
+/** Nothing else owns the screen right now, so the Caretaker can speak. */
+function canInterrupt(): boolean {
+  const c = clientState
+  return (
+    !c.dialog.open &&
+    !c.petPanelOpen &&
+    !c.fetch.active &&
+    !c.feedTask.active &&
+    !c.feedGame.active &&
+    !c.bathGame.active &&
+    !c.carryEgg.active &&
+    !c.carryPet.active &&
+    !c.breed.active &&
+    !c.hatch.active &&
+    !c.pepitoChase.active &&
+    !c.sicknessErrand.active
+  )
+}
+
+/** The Caretaker speaks through the normal dialog, tagged with the chapter. */
+function say(pages: string[], finalLabel = 'Got it!'): void {
+  openDialog('Caretaker', pages, finalLabel)
+  clientState.dialog.tag = `Chapter ${CHAPTER[step]}/${FIRST_SESSION_CHAPTERS}`
+}
+
+/** The objective line last said for this step ('' = not said yet). */
+let said = ''
+
 function firstSessionSystem(dt: number): void {
   updateMushroom(dt) // also hides it for everyone who is not on the 'grow' step
   if (!firstSessionActive()) {
-    if (step === 'done' && firstSessionHud.text) {
-      firstSessionHud.text = ''
-      firstSessionHud.pulse = null
-      setArrow(false)
-    }
+    firstSessionHud.pulse = null
     return
   }
   if (stepIndex === 0 && clientState.player) reportStep('intro') // the visit starts
@@ -510,49 +515,33 @@ function firstSessionSystem(dt: number): void {
   advance(dt)
 
   const objective = breatheLeft > 0 ? '' : objectiveFor(step)
-  // The Caretaker talking in person, or a panel taking the screen, pauses the clock.
+  // Every Caretaker dialog in the first session carries the chapter (intro, cure...).
+  const d = clientState.dialog
+  if (d.open && d.npcName === 'Caretaker' && !d.tag) d.tag = `Chapter ${CHAPTER[step]}/${FIRST_SESSION_CHAPTERS}`
+
+  // The Caretaker says the objective in his dialog once it can be heard (and
+  // again whenever its wording changes, e.g. enough coins now, or it woke up).
+  if (objective && objective !== said && canInterrupt()) {
+    said = objective
+    objectiveTime = 0
+    repeated = false
+    say([objective])
+  }
+  const heard = !!objective && said === objective
+
+  // Waiting on the player: if they sit on it, he repeats himself once.
   const paused = clientState.dialog.open || clientState.fetch.active
-  if (objective && !paused) objectiveTime += dt
-
-  // Opening the pet panel is progress toward "choose Feed": restart the ladder
-  // so the pulse moves from the pet (arrow) to the button.
-  const panelOpen = clientState.petPanelOpen
-  if (panelOpen !== lastPanelOpen) {
-    lastPanelOpen = panelOpen
-    if (objective) resetNudges()
-  }
-
-  firstSessionHud.text = objective
-  firstSessionHud.chapter = CHAPTER[step]
-  firstSessionHud.shownFor = objectiveTime
-  firstSessionHud.emphasize = !!objective && objectiveTime >= NUDGE_REPEAT_SECONDS
-  const button = objective ? BUTTON[step] : undefined
-  const due = objectiveTime >= NUDGE_POINT_SECONDS
-  if (button === 'myPets') {
-    // A HUD target, nothing in the world: pulse My Pets (and its Unlock card) right away.
-    firstSessionHud.pulse = PULSE_AT_ONCE[step] || due ? button : null
-    setArrow(false)
-  } else if (objective && PLACE[step]) {
-    const place = PLACE[step]!
-    const show = place.atOnce || due
-    firstSessionHud.pulse = null
-    setArrow(show)
-    if (show) showArrowTo(place.at(), 'firstSession')
-  } else {
-    firstSessionHud.pulse = button && due && panelOpen ? button : null
-    // Point at the pet until its panel is open; the step's button pulses after that.
-    const wantArrow = !!button && due && !panelOpen
-    setArrow(wantArrow)
-    if (wantArrow) {
-      const pet = getLocalPet()
-      if (pet !== null && Transform.has(pet)) showArrowTo(Transform.get(pet).position, 'firstSession')
-    }
-  }
-
-  if (objective && step !== 'freeTime' && !repeated && objectiveTime >= NUDGE_REPEAT_SECONDS) {
+  if (heard && !paused) objectiveTime += dt
+  if (heard && step !== 'freeTime' && !repeated && objectiveTime >= NUDGE_REPEAT_SECONDS && canInterrupt()) {
     repeated = true
-    clientState.toasts.push({ message: `Caretaker: ${objective}`, kind: 'info' })
+    say([objective])
   }
+
+  // No arrows: the player finds things. Only the right button pulses — the pet
+  // panel's once it is open, My Pets right away.
+  const button = heard ? BUTTON[step] : undefined
+  firstSessionHud.chapter = CHAPTER[step]
+  firstSessionHud.pulse = button && (button === 'myPets' || clientState.petPanelOpen) ? button : null
 }
 
 export function setupFirstSession(): void {
