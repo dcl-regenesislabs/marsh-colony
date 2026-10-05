@@ -704,7 +704,7 @@ function PetPanel() {
       </UiEntity>
       {/* Care actions (flat, colored per stat) */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} pulse={firstSessionHud.pulseFeed} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
+        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} pulse={firstSessionHud.pulse === 'feed'} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
         <PillButton
           id="care_bath"
           label="Bath"
@@ -713,6 +713,7 @@ function PetPanel() {
           width={chipW}
           height={chipH}
           disabled={locked}
+          pulse={firstSessionHud.pulse === 'bath'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Pick the pet up and carry it to the tub (place it there to bathe).
@@ -730,7 +731,7 @@ function PetPanel() {
           height={chipH}
           fontSize={pet.sleeping && (lockLeft > 0 || sleepLeft > 0) ? S(14) : S(17)}
           disabled={!pet.sleeping && busy}
-          pulse={!pet.sleeping && tired && !busy}
+          pulse={(!pet.sleeping && tired && !busy) || firstSessionHud.pulse === 'sleep'}
           margin={{ left: S(3), right: S(3) }}
           onClick={() => {
             // An exhausted pet needs 30 seconds to settle before it can wake.
@@ -762,6 +763,7 @@ function PetPanel() {
           height={chipH}
           fontSize={tired ? S(15) : S(17)}
           disabled={locked}
+          pulse={firstSessionHud.pulse === 'play'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Out of energy: playing is what drains it, so the way back is bed.
@@ -4225,7 +4227,7 @@ const Root = () => {
             {/* Hide the top bar while any panel / passport / dialog is open, so it never
                 overlaps them (same gate the bottom nav uses). */}
             {!bigUiOpen() && <TopBars />}
-            {!bigUiOpen() && !clientState.dialog.open && <FirstSessionBar />}
+            {!bigUiOpen() && !clientState.dialog.open && !clientState.fetch.active && <FirstSessionBar />}
             <BottomNav />
             <FetchOverlay />
             <PepitoRockChargeOverlay />

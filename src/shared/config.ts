@@ -508,6 +508,9 @@ export const SICKNESS_CURE_COINS = 9
  * slots, 50 + 75) a guarantee rather than a hope. Tune in playtest.
  */
 export const FIRST_SESSION_CURE_GIFT = 30
+/** First session: hygiene after the Pepito chase, low enough that the Bath beat
+ *  is earned (and pays — Bath only pays coins below CARE_PAY_STAT_THRESHOLD). */
+export const FIRST_SESSION_MUDDY_HYGIENE = 35
 export const SICKNESS_CURE_COOLDOWN_MS = 8000
 // The server issues a short-lived cure authorization only after the player
 // reaches the Care Center. This leaves time for the theft/chase and prevents a

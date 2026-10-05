@@ -42,6 +42,9 @@ export const Messages = {
   buySlot: Schemas.Map({}),
   // DEBUG cheat: grow the active pet straight to Adult + Lv5 (unlocks breeding).
   debugGrowAdult: Schemas.Map({}),
+  // First session only: the player has played Fetch for a while without wearing
+  // the pet out — tire it so the "rest on the bed" beat can't strand them.
+  firstSessionTire: Schemas.Map({}),
   // Shop: buy one rarity potion (boosts the next breeding roll it is used on).
   buyPotion: Schemas.Map({}),
   // Spend a spin ticket on the wheel.

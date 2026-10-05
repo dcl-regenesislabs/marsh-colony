@@ -15,7 +15,8 @@
 // escalate the longer the player sits on it (see NUDGE_*).
 
 import { engine, Transform } from '@dcl/sdk/ecs'
-import { clientState } from './state'
+import { clientState, actions } from './state'
+import { PLAY_MIN_ENERGY } from '../shared/config'
 import { showArrowTo, hideArrow, getLocalPet } from './pet'
 
 export function firstSessionActive(): boolean {
@@ -32,7 +33,10 @@ export type FirstSessionStep =
   | 'feeding' // the Feed errand / minigame owns the screen; the first round ends with poison
   | 'sick' // sickness arc: Caretaker, Care Center, Pepito, rock throw, cure (existing flows guide it)
   | 'cured' // breathing beat: the cured pet dances (cureCelebration), nothing asked
-  | 'bath' // chapter 3 starts: the chase left it muddy (Phase 4 continues here)
+  | 'bath' // chapter 3 starts: the chase left it muddy
+  | 'play' // fetch until it is worn out (the server tires it if the player stalls)
+  | 'rest' // let it sleep on the bed
+  | 'egg2' // chapter 4: a second egg (Phase 5 continues here)
 
 /** Chapter shown on the bar ("Chapter 1/6"), per step. */
 const CHAPTER: Record<FirstSessionStep, number> = {
@@ -42,15 +46,34 @@ const CHAPTER: Record<FirstSessionStep, number> = {
   feeding: 2,
   sick: 2,
   cured: 2,
-  bath: 3
+  bath: 3,
+  play: 3,
+  rest: 3,
+  egg2: 4
 }
 export const FIRST_SESSION_CHAPTERS = 6
 
 /** What the Caretaker asks for while the step is waiting on the player. */
 const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   feed: 'Your pet is hungry! Tap it and choose Feed.',
-  bath: "It's covered in mud from the chase! Tap it and choose Bath."
+  bath: "It's covered in mud from the chase! Tap it and choose Bath.",
+  play: "It's feeling better. Let's play! Tap it and choose Play.",
+  rest: "It's worn out. Let it rest on the bed. Tap it and choose Sleep.",
+  egg2: 'While it naps, open My Pets and buy a new slot. Then come see me for a second egg.'
 }
+
+/** The pet-panel button each step asks for (arrow to the pet, then this pulses). */
+export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep'
+const BUTTON: Partial<Record<FirstSessionStep, FirstSessionPulse>> = {
+  feed: 'feed',
+  bath: 'bath',
+  play: 'play',
+  rest: 'sleep'
+}
+
+/** Fetch rounds, or seconds, in 'play' before the server tires the pet itself. */
+const PLAY_FALLBACK_ROUNDS = 4
+const PLAY_FALLBACK_SECONDS = 120
 
 /** Breathing room after a reward before the next instruction shows up. */
 const BREATHE_SECONDS = 10
@@ -73,8 +96,8 @@ export const firstSessionHud = {
   shownFor: 0,
   /** The Caretaker is repeating himself: the bar throbs. */
   emphasize: false,
-  /** Pulse the Feed button in the pet panel. */
-  pulseFeed: false
+  /** Pet-panel button to pulse, if any. */
+  pulse: null as FirstSessionPulse | null
 }
 
 let step: FirstSessionStep = 'intro'
@@ -90,6 +113,12 @@ export function takeFirstSessionPoison(): boolean {
   poisonTaken = true
   return true
 }
+/** Counter values when the current step started, to spot the new action. */
+let bathsAtStart = 0
+let playsAtStart = 0
+/** Seconds spent in 'play'; and whether the tire fallback was already asked for. */
+let playTime = 0
+let tireAsked = false
 let breatheLeft = 0
 let objectiveTime = 0
 let repeated = false
@@ -103,6 +132,10 @@ function goTo(next: FirstSessionStep, breathe = 0): void {
   step = next
   breatheLeft = breathe
   resetNudges()
+  const c = clientState.player?.counters ?? {}
+  bathsAtStart = c['bathCount'] ?? 0
+  playsAtStart = c['playCount'] ?? 0
+  playTime = 0
   // TODO(analytics): report `first_session_step` to PostHog here.
   console.log('[FirstSession] step ->', next)
 }
@@ -163,6 +196,28 @@ function advance(dt: number): void {
       if (breatheLeft <= 0) goTo('bath')
       return
     case 'bath':
+      if ((p?.counters['bathCount'] ?? 0) > bathsAtStart) goTo('play', 6)
+      return
+    case 'play': {
+      const pet = clientState.activePet
+      if (pet && pet.energy < PLAY_MIN_ENERGY) {
+        goTo('rest')
+        return
+      }
+      if (breatheLeft <= 0) playTime += dt
+      const rounds = (p?.counters['playCount'] ?? 0) - playsAtStart
+      // Fallback: it has played enough (or the player stalls). The server takes
+      // its energy down once, then the step above moves on to 'rest'.
+      if (!tireAsked && !clientState.fetch.active && (rounds >= PLAY_FALLBACK_ROUNDS || playTime >= PLAY_FALLBACK_SECONDS)) {
+        tireAsked = true
+        actions.firstSessionTire()
+      }
+      return
+    }
+    case 'rest':
+      if (clientState.activePet?.sleeping) goTo('egg2', BREATHE_SECONDS)
+      return
+    case 'egg2':
       return
   }
 }
@@ -174,7 +229,7 @@ function firstSessionSystem(dt: number): void {
 
   const objective = breatheLeft > 0 ? '' : OBJECTIVE[step] ?? ''
   // The Caretaker talking in person, or a panel taking the screen, pauses the clock.
-  const paused = clientState.dialog.open
+  const paused = clientState.dialog.open || clientState.fetch.active
   if (objective && !paused) objectiveTime += dt
 
   // Opening the pet panel is progress toward "choose Feed": restart the ladder
@@ -189,10 +244,12 @@ function firstSessionSystem(dt: number): void {
   firstSessionHud.chapter = CHAPTER[step]
   firstSessionHud.shownFor = objectiveTime
   firstSessionHud.emphasize = !!objective && objectiveTime >= NUDGE_REPEAT_SECONDS
-  firstSessionHud.pulseFeed = step === 'feed' && panelOpen && objectiveTime >= NUDGE_POINT_SECONDS
+  const button = objective ? BUTTON[step] : undefined
+  const pointing = !!button && objectiveTime >= NUDGE_POINT_SECONDS
+  firstSessionHud.pulse = pointing && panelOpen ? button! : null
 
-  // Point at the pet until its panel is open; the Feed button pulses after that.
-  const wantArrow = step === 'feed' && !panelOpen && objectiveTime >= NUDGE_POINT_SECONDS
+  // Point at the pet until its panel is open; the step's button pulses after that.
+  const wantArrow = pointing && !panelOpen
   setArrow(wantArrow)
   if (wantArrow) {
     const pet = getLocalPet()

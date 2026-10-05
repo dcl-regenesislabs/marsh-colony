@@ -277,6 +277,15 @@ export function server(): void {
     broadcastPresence() // its size/level changed — mirror it for everyone
   })
 
+  room.onMessage('firstSessionTire', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    // Ignored outside a first session, and only ever applied once per visit.
+    if (!S.isFirstSession(ctx.from) || !S.firstSessionTire(p)) return
+    await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+  })
+
   room.onMessage('buyPotion', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)

@@ -529,6 +529,9 @@ export const actions = {
   debugGrowAdult(): void {
     room.send('debugGrowAdult', {})
   },
+  firstSessionTire(): void {
+    room.send('firstSessionTire', {})
+  },
   buyPotion(): void {
     room.send('buyPotion', {})
   },

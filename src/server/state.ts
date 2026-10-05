@@ -976,6 +976,8 @@ export function cureSickness(p: PlayerData): Notify[] {
   if (takeFirstSessionGift(p.address, 'cureGift')) {
     p.currency += C.FIRST_SESSION_CURE_GIFT
     notes.push({ kind: 'reward', message: `The Caretaker gave you ${C.FIRST_SESSION_CURE_GIFT} coins for your bravery!` })
+    // ...and the chase left it muddy, so the next beat (Bath) is really needed.
+    pet.hygiene = Math.min(pet.hygiene, C.FIRST_SESSION_MUDDY_HYGIENE)
   }
   return notes
 }
@@ -1209,6 +1211,17 @@ export function debugGrowAdult(p: PlayerData): Notify[] {
   const bump = C.slotPrice(p.petSlots) + C.slotPrice(p.petSlots + 1)
   p.currency = Math.max(p.currency, bump)
   return [{ kind: 'shop', message: `DEBUG: ${pet.name} is now Adult (Lv ${pet.petLevel}) — breeding unlocked.` }]
+}
+
+/** First session only, once per visit: the Fetch beat ran long without wearing
+ *  the pet out, so tire it now — the next beat is putting it to bed. */
+export function firstSessionTire(p: PlayerData): boolean {
+  const pet = activePet(p)
+  if (!pet || pet.sleeping) return false
+  if (!takeFirstSessionGift(p.address, 'tire')) return false
+  tickPlayer(p)
+  pet.energy = Math.min(pet.energy, C.PLAY_MIN_ENERGY - 2)
+  return true
 }
 
 /** Roll a weighted reward from the pool and apply it. Shared by spin + meteor. */
