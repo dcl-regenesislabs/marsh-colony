@@ -3039,20 +3039,20 @@ function DesktopThrowGuidance(props: { instruction: string; charge: number; visi
  *  that opens the pet's panel, while an objective needs it (firstSession.ts). */
 function PetActionsHint() {
   if (!firstSessionHud.pointPetActions || bigUiOpen()) return <UiEntity />
-  const k = attentionPulse()
+  // Static, exactly like Fetch's "Hold to throw" bubble.
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(petActionsBubbleBottomRaw), right: S(petActionsBubbleRightRaw) }, width: Math.round(S(280) * k), height: Math.round(S(187) * k), pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(petActionsBubbleBottomRaw), right: S(petActionsBubbleRightRaw) }, width: S(280), height: S(187), pointerFilter: 'none' }}>
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
           uiBackground={{ texture: { src: 'assets/images/revamp/bubble.png' }, textureMode: 'stretch' }}
         />
         <Label
           value="Pet Actions"
-          fontSize={Math.round(S(20) * k)}
+          fontSize={S(20)}
           color={{ r: 0.25, g: 0.18, b: 0.14, a: 1 }}
           textAlign="middle-center"
-          uiTransform={{ positionType: 'absolute', position: { top: Math.round(S(55) * k), left: Math.round(S(20) * k) }, width: Math.round(S(240) * k), height: Math.round(S(50) * k) }}
+          uiTransform={{ positionType: 'absolute', position: { top: S(55), left: S(20) }, width: S(240), height: S(50) }}
         />
       </UiEntity>
     </UiEntity>

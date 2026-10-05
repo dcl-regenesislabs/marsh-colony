@@ -406,7 +406,7 @@ function advance(dt: number): void {
       return
     }
     case 'rest':
-      if (clientState.activePet?.sleeping) goTo('slot', BREATHE_SECONDS)
+      if (clientState.activePet?.sleeping) goTo('slot', 3) // short: the nap itself is the pause
       return
     case 'slot':
       if (p && p.pets.length < p.petSlots) goTo('adopt2')

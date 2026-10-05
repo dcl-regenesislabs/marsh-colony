@@ -42,7 +42,7 @@ export const DEBUG_GROW_ENABLED = true
  *  (FirstSessionTask in ui.tsx), which this flag does not affect. */
 export const GAME_TOASTS_ENABLED = false
 
-export const DEBUG_FORCE_FIRST_SESSION = false
+export const DEBUG_FORCE_FIRST_SESSION = true
 
 // ---------------------------------------------------------------------------
 // Pet speech — what the pet says over its head to nudge the player into a care
