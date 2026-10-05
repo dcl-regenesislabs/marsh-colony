@@ -115,7 +115,10 @@ export const CURE_DIALOG: string[] = [
 ]
 
 export function openCureDialog(onDone?: () => void, onPage?: (page: number) => void): void {
-  openDialog('Caretaker', CURE_DIALOG, 'Thank you!', onDone, false, onPage)
+  // First session: the Caretaker also hands over his one-time gift (paid by the
+  // server on the cure itself, see cureSickness).
+  const pages = clientState.firstSession ? [...CURE_DIALOG, 'And take some coins for your bravery. You will need them soon!'] : CURE_DIALOG
+  openDialog('Caretaker', pages, 'Thank you!', onDone, false, onPage)
 }
 
 /** Shown after Pepito has stolen the medicine and before the throw control is

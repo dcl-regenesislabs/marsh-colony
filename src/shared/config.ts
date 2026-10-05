@@ -502,6 +502,12 @@ export const FEED_EAT_CINEMATIC_S = 6.6
 /** Caretaker's medicine is a completed care beat, not a repeatable HUD tap. */
 export const SICKNESS_CURE_XP = 14
 export const SICKNESS_CURE_COINS = 9
+/**
+ * First session only: the Caretaker's one-time gift when the first sickness is
+ * cured ("take this for your bravery"). Keeps the visit's coin budget (two pet
+ * slots, 50 + 75) a guarantee rather than a hope. Tune in playtest.
+ */
+export const FIRST_SESSION_CURE_GIFT = 30
 export const SICKNESS_CURE_COOLDOWN_MS = 8000
 // The server issues a short-lived cure authorization only after the player
 // reaches the Care Center. This leaves time for the theft/chase and prevents a

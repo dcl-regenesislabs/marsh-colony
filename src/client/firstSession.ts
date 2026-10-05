@@ -29,20 +29,27 @@ export type FirstSessionStep =
   | 'intro' // Caretaker intro → adopt → carry the egg → hatch → keep (existing flow)
   | 'meet' // breathing beat: the pet greets you, nothing asked
   | 'feed' // "Feed your pet": tap it, choose Feed
-  | 'feeding' // the Feed errand / minigame owns the screen (Phase 3 continues here)
+  | 'feeding' // the Feed errand / minigame owns the screen; the first round ends with poison
+  | 'sick' // sickness arc: Caretaker, Care Center, Pepito, rock throw, cure (existing flows guide it)
+  | 'cured' // breathing beat: the cured pet dances (cureCelebration), nothing asked
+  | 'bath' // chapter 3 starts: the chase left it muddy (Phase 4 continues here)
 
 /** Chapter shown on the bar ("Chapter 1/6"), per step. */
 const CHAPTER: Record<FirstSessionStep, number> = {
   intro: 1,
   meet: 1,
   feed: 2,
-  feeding: 2
+  feeding: 2,
+  sick: 2,
+  cured: 2,
+  bath: 3
 }
 export const FIRST_SESSION_CHAPTERS = 6
 
 /** What the Caretaker asks for while the step is waiting on the player. */
 const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
-  feed: 'Your pet is hungry! Tap it and choose Feed.'
+  feed: 'Your pet is hungry! Tap it and choose Feed.',
+  bath: "It's covered in mud from the chase! Tap it and choose Bath."
 }
 
 /** Breathing room after a reward before the next instruction shows up. */
@@ -71,6 +78,18 @@ export const firstSessionHud = {
 }
 
 let step: FirstSessionStep = 'intro'
+/** The first Feed round's forced poison has been handed out (once per visit). */
+let poisonTaken = false
+/** Seconds the Feed flow has been over while still in 'feeding'. */
+let feedOverFor = 0
+
+/** First session only, once: the Feed round being submitted must end with the
+ *  pet poisoned (fruitGame.ts). Returns false for everyone else. */
+export function takeFirstSessionPoison(): boolean {
+  if (!firstSessionActive() || poisonTaken) return false
+  poisonTaken = true
+  return true
+}
 let breatheLeft = 0
 let objectiveTime = 0
 let repeated = false
@@ -107,7 +126,7 @@ function setArrow(on: boolean): void {
 // ---------------------------------------------------------------------------
 let lastPanelOpen = false
 
-function advance(): void {
+function advance(dt: number): void {
   const p = clientState.player
   switch (step) {
     case 'intro':
@@ -122,7 +141,28 @@ function advance(): void {
     case 'feed':
       if (clientState.feedTask.active || clientState.feedGame.active) goTo('feeding')
       return
-    case 'feeding':
+    case 'feeding': {
+      if (clientState.activePet?.sick) {
+        goTo('sick')
+        return
+      }
+      // The round is over but no sickness came back (e.g. nothing caught, so
+      // nothing was eaten): don't strand the player, move on to chapter 3.
+      const feedOver = !clientState.feedTask.active && !clientState.feedGame.active
+      feedOverFor = feedOver ? feedOverFor + dt : 0
+      if (feedOver && feedOverFor > 3 && !clientState.sicknessErrand.active) goTo('bath', BREATHE_SECONDS)
+      return
+    }
+    case 'sick':
+      // Cured: the server cleared the flag (the dance and the gift come with it).
+      if (clientState.activePet && !clientState.activePet.sick && !clientState.sicknessErrand.active && !clientState.dialog.open) {
+        goTo('cured', BREATHE_SECONDS)
+      }
+      return
+    case 'cured':
+      if (breatheLeft <= 0) goTo('bath')
+      return
+    case 'bath':
       return
   }
 }
@@ -130,7 +170,7 @@ function advance(): void {
 function firstSessionSystem(dt: number): void {
   if (!firstSessionActive()) return
   if (breatheLeft > 0) breatheLeft -= dt
-  advance()
+  advance(dt)
 
   const objective = breatheLeft > 0 ? '' : OBJECTIVE[step] ?? ''
   // The Caretaker talking in person, or a panel taking the screen, pauses the clock.

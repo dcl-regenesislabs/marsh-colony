@@ -188,6 +188,17 @@ export function isFreshPlayer(address: string): boolean {
 const firstSessionPlayers = new Set<string>()
 // DEBUG_FORCE_FIRST_SESSION players: fresh and in-memory only, never saved.
 const ephemeralPlayers = new Set<string>()
+// First-session one-off gifts already handed out this visit ("<address>:<gift>").
+const firstSessionGifts = new Set<string>()
+
+/** Grant a first-session one-off at most once per visit. False if not owed. */
+function takeFirstSessionGift(address: string, gift: string): boolean {
+  if (!firstSessionPlayers.has(address)) return false
+  const key = `${address}:${gift}`
+  if (firstSessionGifts.has(key)) return false
+  firstSessionGifts.add(key)
+  return true
+}
 
 export function isFirstSession(address: string): boolean {
   return firstSessionPlayers.has(address)
@@ -196,6 +207,7 @@ export function isFirstSession(address: string): boolean {
 /** The visit is over (server.ts departure): the next one is a normal session. */
 export function endFirstSession(address: string): void {
   firstSessionPlayers.delete(address)
+  for (const key of [...firstSessionGifts]) if (key.startsWith(`${address}:`)) firstSessionGifts.delete(key)
   freshPlayers.delete(address)
   // A debug player is thrown away so the next entry starts fresh again.
   if (ephemeralPlayers.delete(address)) players.delete(address)
@@ -960,6 +972,11 @@ export function cureSickness(p: PlayerData): Notify[] {
   pet.sick = false
   applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS, { caretakerXp: C.CARETAKER_XP_CURE })
   notes.push({ kind: 'success', message: `${pet.name} is cured!` })
+  // First session: the Caretaker rewards the first cure (once per visit).
+  if (takeFirstSessionGift(p.address, 'cureGift')) {
+    p.currency += C.FIRST_SESSION_CURE_GIFT
+    notes.push({ kind: 'reward', message: `The Caretaker gave you ${C.FIRST_SESSION_CURE_GIFT} coins for your bravery!` })
+  }
   return notes
 }
 
