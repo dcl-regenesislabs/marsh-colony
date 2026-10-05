@@ -11,7 +11,8 @@
 //
 // The Caretaker is the only voice that teaches, always through the normal
 // dialog (tagged "Chapter x/6"). Each objective is said once when the screen is
-// free, and once more if the player sits on it (NUDGE_REPEAT_SECONDS). No guide
+// free; after the dialog it stays on screen as a sticky toast until it is done
+// (FirstSessionTask in ui.tsx), and throbs if the player sits on it. No new guide
 // arrows: the player finds things; only the right button pulses.
 
 import {
@@ -32,7 +33,7 @@ import { getEggPending, setFirstSessionBreedPartner } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
-import { openDialog, pushToast } from './state'
+import { openDialog } from './state'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 
@@ -200,7 +201,7 @@ function eatMushroom(): void {
   if (step !== 'grow' || mushroomEaten || clientState.dialog.open) return
   const pet = clientState.activePet
   if (!pet || pet.id !== firstPetId) {
-    pushToast('Pick your first pet in My Pets first!')
+    say(['That mushroom is for your first pet. Pick it in My Pets first!'])
     return
   }
   mushroomEaten = true
@@ -254,7 +255,7 @@ const PLAY_FALLBACK_SECONDS = 120
 const BREATHE_SECONDS = 10
 
 // Counted from when the Caretaker said the objective (dialog closed, not in Fetch).
-/** The Caretaker repeats himself once if the player sits on the objective. */
+/** If the player sits on the objective this long, its toast throbs once. */
 const NUDGE_REPEAT_SECONDS = 50
 
 // ---------------------------------------------------------------------------
@@ -262,6 +263,11 @@ const NUDGE_REPEAT_SECONDS = 50
 // ---------------------------------------------------------------------------
 export const firstSessionHud = {
   chapter: 1,
+  /** The sticky objective toast: what to do now, '' when nothing is asked.
+   *  It appears once the Caretaker's dialog is closed and stays until done. */
+  task: '',
+  /** Bumped when the player sits on it: the toast throbs for a moment. */
+  nudgedAt: 0,
   /** Button to pulse for the current objective, if any. */
   pulse: null as FirstSessionPulse | null
 }
@@ -507,6 +513,7 @@ function firstSessionSystem(dt: number): void {
   updateMushroom(dt) // also hides it for everyone who is not on the 'grow' step
   if (!firstSessionActive()) {
     firstSessionHud.pulse = null
+    firstSessionHud.task = ''
     return
   }
   if (stepIndex === 0 && clientState.player) reportStep('intro') // the visit starts
@@ -529,13 +536,16 @@ function firstSessionSystem(dt: number): void {
   }
   const heard = !!objective && said === objective
 
-  // Waiting on the player: if they sit on it, he repeats himself once.
+  // Waiting on the player: if they sit on it, the sticky toast throbs once.
   const paused = clientState.dialog.open || clientState.fetch.active
   if (heard && !paused) objectiveTime += dt
-  if (heard && step !== 'freeTime' && !repeated && objectiveTime >= NUDGE_REPEAT_SECONDS && canInterrupt()) {
+  if (heard && !repeated && objectiveTime >= NUDGE_REPEAT_SECONDS) {
     repeated = true
-    say([objective])
+    firstSessionHud.nudgedAt = Date.now() // the sticky toast throbs instead of another dialog
   }
+
+  // Once the dialog is closed, the objective stays on screen until it is done.
+  firstSessionHud.task = heard && !clientState.dialog.open ? objective : ''
 
   // No arrows: the player finds things. Only the right button pulses — the pet
   // panel's once it is open, My Pets right away.

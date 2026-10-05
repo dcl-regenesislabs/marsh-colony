@@ -38,7 +38,7 @@ import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTIO
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { firstSessionHud, firstSessionStep } from './firstSession'
+import { firstSessionHud, firstSessionStep, FIRST_SESSION_CHAPTERS } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -2647,7 +2647,9 @@ function actionHudLayout() {
 }
 
 function toastIsVisible(now: number): boolean {
-  return !bigUiOpen() && !!clientState.currentToast && clientState.currentToast.until > now
+  if (bigUiOpen()) return false
+  if (firstSessionHud.task) return true // the first session's sticky objective sits in the toast row
+  return !!clientState.currentToast && clientState.currentToast.until > now
 }
 
 function Toasts() {
@@ -2719,6 +2721,66 @@ function Toasts() {
               uiBackground={{ color: withAlpha(TOAST_CREAM, alpha) }}
             >
               <Label value={t.message} fontSize={S(15)} color={withAlpha(PET_UI.ink, alpha)} textAlign="middle-center" uiTransform={{ width: '100%', height: h - S(24) }} />
+            </UiEntity>
+          </UiEntity>
+        </UiEntity>
+      </ScreenInsetArea>
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// First session: the sticky objective toast. Same pill and spot as the game
+// toasts (which are suspended, see GAME_TOASTS_ENABLED), but it does not time
+// out: it slides in when the Caretaker's dialog closes and stays until the
+// objective is done, so a player who skipped the dialog still knows what to do.
+// ---------------------------------------------------------------------------
+const TASK_THROB_MS = 2400
+let taskShown = ''
+let taskShownAt = 0
+
+function FirstSessionTask() {
+  const hud = firstSessionHud
+  const now = Date.now()
+  if (!hud.task || bigUiOpen()) {
+    if (!hud.task) taskShown = ''
+    return <UiEntity />
+  }
+  if (hud.task !== taskShown) {
+    taskShown = hud.task
+    taskShownAt = now
+  }
+  const layout = actionHudLayout()
+  const elapsed = now - taskShownAt
+  const e = elapsed < TOAST_ENTER_MS ? easeOutCubic(elapsed / TOAST_ENTER_MS) : 1
+  const k = now - hud.nudgedAt < TASK_THROB_MS ? attentionPulse() : 1
+  const w = Math.round(S(500) * k)
+  const h = Math.round(S(TOAST_HEIGHT) * k)
+  const slide = (w + S(20)) * (1 - e)
+  const border = S(TOAST_BORDER)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <ScreenInsetArea>
+        <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+          <UiEntity
+            uiTransform={{
+              positionType: 'absolute',
+              position: layout.toastPosition,
+              margin: { left: -slide + layout.toastMargin.left, top: layout.toastMargin.top },
+              width: w,
+              height: h,
+              padding: border,
+              borderRadius: h / 2,
+              pointerFilter: 'none'
+            }}
+            uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, e) }}
+          >
+            <UiEntity
+              uiTransform={{ width: '100%', height: '100%', borderRadius: h / 2 - border, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: S(44), right: S(44) } }}
+              uiBackground={{ color: withAlpha(TOAST_CREAM, e) }}
+            >
+              <Label value={`CHAPTER ${hud.chapter}/${FIRST_SESSION_CHAPTERS}`} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
+              <Label value={hud.task} fontSize={S(15)} color={withAlpha(PET_UI.ink, e)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: h - S(40) }} />
             </UiEntity>
           </UiEntity>
         </UiEntity>
@@ -4233,6 +4295,7 @@ const Root = () => {
         <DialogBox />
         {/* Toasts are the only global notification surface. */}
         {!hideHudForPepitoTheft && <Toasts />}
+        {!hideHudForPepitoTheft && <FirstSessionTask />}
       </UiEntity>
     )
   return (

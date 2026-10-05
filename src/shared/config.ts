@@ -37,6 +37,11 @@ export const DEBUG_GROW_ENABLED = true
  * so the real save is left untouched and each reload starts over. Must be
  * `false` to ship.
  */
+/** Game toast notifications (pushToast + server notes). Off: playtests found
+ *  them too heavy. The first session has its own sticky objective toast
+ *  (FirstSessionTask in ui.tsx), which this flag does not affect. */
+export const GAME_TOASTS_ENABLED = false
+
 export const DEBUG_FORCE_FIRST_SESSION = false
 
 // ---------------------------------------------------------------------------

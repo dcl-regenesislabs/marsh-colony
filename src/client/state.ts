@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { GAME_TOASTS_ENABLED, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -424,6 +424,7 @@ export function presenceFor(address: string): PresenceEntry | undefined {
 }
 
 export function pushToast(message: string, kind: string = 'info'): void {
+  if (!GAME_TOASTS_ENABLED) return // suspended (see config)
   clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }
