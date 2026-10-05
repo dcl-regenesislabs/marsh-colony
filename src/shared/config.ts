@@ -30,6 +30,15 @@ export const DEV_SKIP_SERVER_GATE = false
  */
 export const DEBUG_GROW_ENABLED = true
 
+/**
+ * DEBUG: treat EVERY scene entry as a brand-new player's first session, so the
+ * custom first session can be tested on an account that already has a save.
+ * The server hands out a fresh in-memory player and never writes it to Storage,
+ * so the real save is left untouched and each reload starts over. Must be
+ * `false` to ship.
+ */
+export const DEBUG_FORCE_FIRST_SESSION = false
+
 // ---------------------------------------------------------------------------
 // Pet speech — what the pet says over its head to nudge the player into a care
 // action. The bubble is NOT on a timer: `need` names the stat that drives the

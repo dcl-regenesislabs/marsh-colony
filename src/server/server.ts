@@ -428,6 +428,7 @@ export function server(): void {
         sessionStart.delete(addr)
         S.setCarriedState(addr, false)
         S.setEggCarriedState(addr, false)
+        S.endFirstSession(addr) // the next visit is a normal one, wherever this one stopped
       }
     }
 

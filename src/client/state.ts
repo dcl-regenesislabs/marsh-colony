@@ -57,6 +57,9 @@ export const clientState: {
   lastSpin: { reward: SpinReward; index: number; at: number } | null
   dialog: DialogState
   introShown: boolean
+  // The server says this is the player's very first visit (see firstSession.ts).
+  // Latched for the visit: once true it stays true until the scene reloads.
+  firstSession: boolean
   // Whether the pet control panel (stats + care) is open. Closed by default so
   // it doesn't cover the screen; opens by clicking the pet, closes with the X.
   petPanelOpen: boolean
@@ -183,6 +186,7 @@ export const clientState: {
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
   introShown: false,
+  firstSession: false,
   petPanelOpen: false,
   viewingPetAddress: null,
   incomingSwap: null,
@@ -280,6 +284,7 @@ export function applySnapshot(snap: PlayerSnapshot): void {
   // optimistic. A different hatchling, or one after the grace period, wins.
   if (decision && !staleDecisionSnapshot) clientState.pendingHatchlingDecision = null
   clientState.player = snap.player
+  if (snap.firstSession) clientState.firstSession = true
   if (staleDecisionSnapshot) {
     clientState.player.hatchling = null
     if (decision.action === 'keep') {

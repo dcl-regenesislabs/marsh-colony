@@ -178,6 +178,29 @@ export function isFreshPlayer(address: string): boolean {
   return freshPlayers.has(address)
 }
 
+// ---------------------------------------------------------------------------
+// Custom first session. A player is in it for the whole of their FIRST visit
+// (no save existed when the visit started) and never again: the flag lives in
+// memory only and is dropped when the visit ends, so the next visit is the
+// normal game wherever the first one stopped. Progress through it is tracked
+// in PostHog, not saved.
+// ---------------------------------------------------------------------------
+const firstSessionPlayers = new Set<string>()
+// DEBUG_FORCE_FIRST_SESSION players: fresh and in-memory only, never saved.
+const ephemeralPlayers = new Set<string>()
+
+export function isFirstSession(address: string): boolean {
+  return firstSessionPlayers.has(address)
+}
+
+/** The visit is over (server.ts departure): the next one is a normal session. */
+export function endFirstSession(address: string): void {
+  firstSessionPlayers.delete(address)
+  freshPlayers.delete(address)
+  // A debug player is thrown away so the next entry starts fresh again.
+  if (ephemeralPlayers.delete(address)) players.delete(address)
+}
+
 export type Notify = { kind: string; message: string }
 
 function now(): number {
@@ -353,14 +376,19 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
     return cached
   }
   let data: PlayerData | null = null
-  try {
-    data = await Storage.player.get<PlayerData>(address, STORAGE_KEY)
-  } catch (e) {
-    console.log('[Server] Storage load failed for', address, e)
+  if (C.DEBUG_FORCE_FIRST_SESSION) {
+    ephemeralPlayers.add(address) // skip the real save entirely, both ways
+  } else {
+    try {
+      data = await Storage.player.get<PlayerData>(address, STORAGE_KEY)
+    } catch (e) {
+      console.log('[Server] Storage load failed for', address, e)
+    }
   }
   if (!data || !data.address) {
     data = newPlayer(address)
     freshPlayers.add(address) // no prior saved state -> new user (for analytics)
+    firstSessionPlayers.add(address) // ...and this visit is their first session
   } else {
     // Migrate/sanitize loaded data, then apply offline decay.
     data = sanitize(address, data)
@@ -496,6 +524,7 @@ function checkJourney(p: PlayerData, notes: Notify[]): void {
 export async function savePlayer(address: string): Promise<void> {
   const p = players.get(address)
   if (!p) return
+  if (ephemeralPlayers.has(address)) return // DEBUG_FORCE_FIRST_SESSION: never touch the real save
   recordCollection(p)
   try {
     await Storage.player.set<PlayerData>(address, STORAGE_KEY, p)
@@ -1264,7 +1293,7 @@ export function presenceFor(p: PlayerData): PresenceEntry | null {
   }
 }
 
-export function snapshotFor(p: PlayerData): { player: PlayerData; activePet: PetData | null } {
+export function snapshotFor(p: PlayerData): { player: PlayerData; activePet: PetData | null; firstSession: boolean } {
   recordCollection(p)
-  return { player: p, activePet: activePet(p) }
+  return { player: p, activePet: activePet(p), firstSession: firstSessionPlayers.has(p.address) }
 }
