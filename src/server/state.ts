@@ -1139,7 +1139,8 @@ export function switchPet(p: PlayerData, petId: string): Notify[] {
 }
 
 // ---------------------------------------------------------------------------
-// Ark donation — hand an Adult pet to the Captain (never the player's last one).
+// Ark donation — hand an Adult pet to the Captain. It may be the player's last
+// one: they are left with no pet and adopt again at the Caretaker.
 // The pet leaves the roster for good (the album keeps it: collections only
 // grow), the donor is paid Caretaker XP + coins by rarity (C.ARK_REWARDS),
 // and the shared counter is advanced by the caller (server/ark.ts).
@@ -1155,7 +1156,6 @@ export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): D
   const pet = p.pets[idx]
   if (!nearCaptain) return fail('Talk to the Captain at the Ark to donate a pet.')
   if (C.petStage(pet.size) !== 'ADULT') return fail('Only Adult pets can board the Ark.')
-  if (p.pets.length < 2) return fail('Keep at least one pet in your colony.')
   if (pet.sleeping) return fail(`${pet.name} is asleep — let it wake up first.`)
   if (pet.sick) return fail(`${pet.name} is sick — cure it at the Care Center first.`)
   const key = p.address.toLowerCase()

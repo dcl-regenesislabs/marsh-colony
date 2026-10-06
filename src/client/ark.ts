@@ -1,38 +1,78 @@
-// The Ark ship itself: its dome door, the shared "X / 100 pets aboard" counter
-// floating above it, and the placeholder lift-off used by the launch cinematic.
+// The Ark ship itself: its dome door, the shared "5/100" pets-aboard counter on
+// the sign above the door, and the placeholder lift-off used by the launch cinematic.
 // The sequencing (who walks where, cameras, UI) lives in arkCinematics.ts.
 //
-// ark01.glb ships a single "OpenDoor" clip (closed -> open), so "close" is that
-// clip played in reverse (negative speed) from the held-open pose. The door now
-// stays closed and only opens for a pet boarding the ship.
+// ark01.glb ships a single "OpenDoor" clip (closed -> open, 0.5 s). A STOPPED
+// clip shows the door open in the explorer, so the clip is never stopped: it is
+// always playing, frozen on its first frame (closed) by a near-zero speed. To
+// open it runs forward and holds its last frame; to close it runs backward,
+// then is re-pinned to frame 0. The door only opens for a pet boarding the ship.
 
-import { engine, Animator, Billboard, BillboardMode, Entity, TextShape, Transform, VisibilityComponent } from '@dcl/sdk/ecs'
+import { engine, Animator, Entity, TextShape, Transform, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState } from './state'
 
 const ARK_DOOR_CLIP = 'OpenDoor'
 const ARK_DOOR_SPEED = 1 // playback speed (raise to open/close faster)
+const ARK_DOOR_CLIP_S = 0.5 // OpenDoor's length in ark01.glb
+const ARK_DOOR_SETTLE_S = 0.15 // slack after the reverse play before pinning it closed
+// Freezes the clip while keeping it "playing". Not exactly 0 so no explorer can
+// read it as "unset"; at this rate the door would take days to creep open.
+const ARK_DOOR_HOLD_SPEED = 0.000001
 
-// Counter above the dome. The dome tops out ~13 m above the ship's pivot.
-const COUNTER_HEIGHT = 15.5
-const COUNTER_FONT_SIZE = 3 // in-world TextShape size (see scoreboard.ts — not metres)
-const COUNTER_SCALE = 3 // blown up so it reads from the Captain and the plaza
+// The counter sits on `textshape_base`, an unrendered plane placed in Creator
+// Hub above the door: its position + rotation anchor the text, its scale is the
+// area the text has to fit in (so it is NOT inherited — that would squash it).
+const COUNTER_FONT_SIZE = 5 // in-world TextShape size (see scoreboard.ts — not metres)
+const COUNTER_FACE_OUT = 0.03 // metres off the plane, so it never z-fights a surface behind it
+const COUNTER_DROP = 0.07 // metres below the plane's centre: the glyphs sit high in their line box
+// A TextShape shows through from both sides and reads correctly from its own -Z
+// side (mirrored from +Z). The plane's +Z points out of the ship, so the text is
+// turned 180° to read from there.
 
 let ark: Entity | null = null
 let home: { position: Vector3; rotation: Quaternion } | null = null
 let counter: Entity | null = null
 let counterHidden = false
 let doorOpen = false
+let closingLeft = 0 // seconds until a closing door is pinned shut (0 = not closing)
+let repinNextFrame = false // second half of pinArkDoorClosed's stop -> play edge
 
-/** Drive the single OpenDoor clip forward (open) or backward (close). loop:false
- *  freezes it on the last frame it reaches, so the door holds open/closed. */
+function doorState(e: Entity) {
+  return Animator.getMutable(e).states.find((s) => s.clip === ARK_DOOR_CLIP)
+}
+
+/** Run the clip forward (open) or backward (close) from where it is. loop:false
+ *  holds the last frame it reaches, so an open door stays open. */
 function playArkDoor(e: Entity, open: boolean): void {
-  const st = Animator.getMutable(e).states.find((s) => s.clip === ARK_DOOR_CLIP)
+  const st = doorState(e)
   if (!st) return
   st.loop = false
+  st.shouldReset = false // already playing (pinned at frame 0 / held open): just change direction
   st.speed = open ? ARK_DOOR_SPEED : -ARK_DOOR_SPEED
-  st.shouldReset = open // open: restart from frame 0; close: run backward from the held-open pose
+  st.playing = true
+  repinNextFrame = false
+  closingLeft = open ? 0 : ARK_DOOR_CLIP_S / ARK_DOOR_SPEED + ARK_DOOR_SETTLE_S
+}
+
+/** Snap the door to the clip's first frame (closed) and freeze it there. A reset
+ *  only happens on a stopped -> playing edge, so this stops the clip now and
+ *  the system restarts it, frozen, on the next frame. */
+function pinArkDoorClosed(e: Entity): void {
+  const st = doorState(e)
+  if (!st) return
+  st.playing = false
+  repinNextFrame = true
+}
+
+function finishPinArkDoorClosed(e: Entity): void {
+  repinNextFrame = false
+  const st = doorState(e)
+  if (!st) return
+  st.loop = false
+  st.speed = ARK_DOOR_HOLD_SPEED
+  st.shouldReset = true
   st.playing = true
 }
 
@@ -75,10 +115,15 @@ export function setArkCounterHidden(hidden: boolean): void {
   counterHidden = hidden
 }
 
-function makeCounter(at: Vector3): Entity {
+/** Build the counter on the Creator Hub anchor (null until it has loaded). */
+function makeCounter(): Entity | null {
+  const base = engine.getEntityOrNullByName(EntityNames.textshape_base)
+  if (!base || !Transform.has(base)) return null
+  const t = Transform.get(base)
+  const rotation = Quaternion.multiply(t.rotation, Quaternion.fromEulerDegrees(0, 180, 0))
+  const out = Vector3.rotate(Vector3.create(0, -COUNTER_DROP, COUNTER_FACE_OUT), t.rotation)
   const e = engine.addEntity()
-  Transform.create(e, { position: Vector3.create(at.x, at.y + COUNTER_HEIGHT, at.z), scale: Vector3.create(COUNTER_SCALE, COUNTER_SCALE, COUNTER_SCALE) })
-  Billboard.create(e, { billboardMode: BillboardMode.BM_Y })
+  Transform.create(e, { position: Vector3.add(t.position, out), rotation })
   TextShape.create(e, {
     text: '',
     fontSize: COUNTER_FONT_SIZE,
@@ -90,23 +135,30 @@ function makeCounter(at: Vector3): Entity {
 }
 
 export function setupArk(): void {
-  engine.addSystem(() => {
+  engine.addSystem((dt: number) => {
     if (!ark) {
       const e = engine.getEntityOrNullByName(EntityNames.ark01_glb)
       if (!e || !Transform.has(e)) return // composite not loaded yet — try again next frame
       ark = e
       const t = Transform.get(e)
       home = { position: Vector3.clone(t.position), rotation: Quaternion.create(t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w) }
-      // Attach the Animator to the GLB entity, paused at frame 0 (door closed).
+      // Attach the Animator to the GLB entity, playing but frozen on frame 0 (door closed).
       Animator.createOrReplace(e, {
-        states: [{ clip: ARK_DOOR_CLIP, playing: false, loop: false, speed: ARK_DOOR_SPEED, shouldReset: true }]
+        states: [{ clip: ARK_DOOR_CLIP, playing: true, loop: false, speed: ARK_DOOR_HOLD_SPEED, shouldReset: true }]
       })
-      counter = makeCounter(home.position)
+    }
+    if (!counter) counter = makeCounter()
+
+    if (repinNextFrame) {
+      finishPinArkDoorClosed(ark)
+    } else if (closingLeft > 0) {
+      closingLeft -= dt
+      if (closingLeft <= 0 && !doorOpen) pinArkDoorClosed(ark)
     }
 
     if (counter) {
       const s = clientState.ark.status
-      const text = counterHidden ? '' : `${s.donated} / ${s.goal}\nPETS ABOARD`
+      const text = counterHidden ? '' : `${s.donated}/${s.goal}`
       if (TextShape.get(counter).text !== text) TextShape.getMutable(counter).text = text
     }
   })

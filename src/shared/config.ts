@@ -756,8 +756,9 @@ export const CARETAKER_XP_ALBUM_ENTRY = 20 // first time a species+rarity enters
 // The Ark: an Adult pet can be sent aboard the Captain's ship for good. It is a
 // shared colony goal (every creature aboard counts for everyone) and pays the
 // player Caretaker XP + coins, scaled by rarity — a Legendary pays the most.
-// The pet leaves the player's roster for good, so it must be Adult and never
-// the player's last pet. Filling the Ark to ARK_GOAL launches it (see below).
+// The pet leaves the player's roster for good, so it must be Adult. It can be
+// the player's last pet (the Captain warns first). Filling the Ark to ARK_GOAL
+// launches it (see below).
 // ---------------------------------------------------------------------------
 export const ARK_REWARDS: Record<Rarity, { coins: number; xp: number }> = {
   common: { coins: 60, xp: 40 },

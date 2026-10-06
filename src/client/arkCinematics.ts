@@ -56,6 +56,9 @@ const LAUNCH_SHAKE = 0.08
 /** Shows the tuner + a "Test walk" button that replays the hand-over without
  *  donating. Set false to ship. */
 export const ARK_HANDOVER_TUNER_ENABLED = false
+/** DEBUG: "Test launch" buttons that play the lift-off + card locally, without
+ *  filling the Ark (nothing is sent to the server). Set false to ship. */
+export const ARK_LAUNCH_DEBUG_ENABLED = false
 export type ArkTuneKey = 'camX' | 'camY' | 'camZ' | 'lookLift' | 'rampLift'
 const TUNE_DEFAULTS: Record<ArkTuneKey, number> = {
   camX: HANDOVER_CAM_POS.x,
@@ -303,6 +306,8 @@ function tickHandover(dt: number): void {
             // The floating +XP/+coins is the usual feedback; the card is only for
             // the first donation, to show the wearable it earned.
             if (h.result.firstWearableId) clientState.ark.thanks = h.result
+            // Gave away their last pet: point them back to the Caretaker.
+            if ((clientState.player?.pets.length ?? 0) === 0) pushToast('Visit the Caretaker at the Care Center to adopt a new companion!')
           }
           handover = null
         }
@@ -375,6 +380,19 @@ const launchHandled = new Set<number>() // eventIds already queued/shown this se
 
 type Launch = { views: ArkLaunchView[]; phase: 'approach' | 'rumble' | 'lift' | 'card' | 'releasing'; timer: number; look: Entity }
 let launch: Launch | null = null
+
+/** DEBUG: play the launch as a donor (earns the current event's wearable) or as
+ *  a bystander. Local only — fake negative eventIds are never acknowledged, so
+ *  the real counter, grants and launchSeen are untouched. */
+export function debugPlayArkLaunch(asDonor: boolean): void {
+  if (launch || handover) return
+  enqueueArkLaunch({
+    eventId: asDonor ? -1 : -2,
+    launchedAt: Date.now(),
+    donatedByMe: asDonor ? 3 : 0,
+    wearableId: C.arkLaunchWearable(clientState.ark.status.eventId).id
+  })
+}
 
 /** Queue a launch to play (live broadcast, or replay from the snapshot). */
 export function enqueueArkLaunch(view: ArkLaunchView): void {
@@ -470,6 +488,7 @@ export function closeArkLaunchCard(): void {
   l.phase = 'releasing'
   clientState.ark.launchCard = null
   for (const v of l.views) {
+    if (v.eventId < 0) continue // debugPlayArkLaunch: not a real launch, nothing to acknowledge
     launchHandled.add(v.eventId)
     actions.ackArkLaunch(v.eventId)
   }

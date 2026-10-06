@@ -38,10 +38,6 @@ export function startArkRedeem(): void {
     pushToast('Only Adult pets can board the Ark.')
     return
   }
-  if (p.pets.length < 2) {
-    pushToast('Keep at least one pet in your colony.')
-    return
-  }
   if (pet.sick) {
     pushToast(`${pet.name} is sick — cure it at the Care Center first.`)
     return
