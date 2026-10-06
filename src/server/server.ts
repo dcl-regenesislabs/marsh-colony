@@ -160,8 +160,7 @@ export function server(): void {
       rarity: pet?.rarity ?? 'common',
       xp: out.xp,
       coins: out.coins,
-      firstWearableId: '',
-      lastPet: out.lastPet
+      firstWearableId: ''
     }
     if (!pet) {
       room.send('arkDonateResult', { json: JSON.stringify(result) }, { to: [ctx.from] })
@@ -176,7 +175,7 @@ export function server(): void {
     await Ark.deliverPendingWearables(p)
     await S.savePlayer(ctx.from)
     room.send('arkDonateResult', { json: JSON.stringify(result) }, { to: [ctx.from] })
-    forwardNotes(ctx.from, out.notes) // level-ups / journey; the result panel covers the donation itself
+    forwardNotes(ctx.from, out.notes) // "boarded the Ark" toast + any level-up / journey step
     pushSnapshot(p)
     broadcastPresence()
     broadcastColony()

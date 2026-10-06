@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { ARK_DONATION_GOAL, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { ARK_GOAL, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -166,6 +166,11 @@ export const clientState: {
   serverReady: boolean
   // Shared Mars colony population, broadcast by the server (same for everyone).
   colonyPopulation: number
+  // Sending a pet to the Ark (arkRedeem.ts): 'toCaptain' is the walk behind the
+  // guide arrow after "Send to Ark" in the pet panel; 'confirm' is the Captain's
+  // "Board the Ark?" card (also reached from the Captain's own pet picker). On
+  // confirm the donation + boarding cinematic take over (`ark` below).
+  arkRedeem: { active: boolean; phase: 'toCaptain' | 'confirm'; petId: string }
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
   // XP leaderboard (top 5), polled by the physical scoreboard (requestLeaderboardXp).
@@ -219,10 +224,11 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
+  arkRedeem: { active: false, phase: 'toCaptain', petId: '' },
   leaderboard: [],
   leaderboardXp: [],
   ark: {
-    status: { eventId: 1, donated: 0, goal: ARK_DONATION_GOAL },
+    status: { eventId: 1, donated: 0, goal: ARK_GOAL },
     leaderboard: null,
     pendingDonation: null,
     thanks: null,

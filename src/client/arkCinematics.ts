@@ -15,7 +15,7 @@ import { Animator, ColliderLayer, engine, Entity, GltfContainer, InputModifier, 
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { ArkDonateResult, ArkLaunchView, PetData } from '../shared/types'
-import { actions, clientState, pushToast, showHint } from './state'
+import { actions, clientState, pushToast, showReward } from './state'
 import { applyCreatureSkin } from './creatureSkins'
 import { getLocalPet } from './pet'
 import { arkHome, resetArk, setArkCounterHidden, setArkDoor, setArkLift, setArkVisible } from './ark'
@@ -298,7 +298,12 @@ function tickHandover(dt: number): void {
         () => {},
         () => {
           clientState.ark.cinematic = 'none'
-          if (!h.debug) clientState.ark.thanks = h.result
+          if (!h.debug) {
+            showReward(h.result.xp, h.result.coins)
+            // The floating +XP/+coins is the usual feedback; the card is only for
+            // the first donation, to show the wearable it earned.
+            if (h.result.firstWearableId) clientState.ark.thanks = h.result
+          }
           handover = null
         }
       )
@@ -308,14 +313,9 @@ function tickHandover(dt: number): void {
   }
 }
 
-/** The thanks card was dismissed. A donor who just gave away their last pet is
- *  pointed back to the Caretaker to adopt a new one. */
+/** The first-donation card was dismissed. */
 export function closeArkThanks(): void {
-  const r = clientState.ark.thanks
   clientState.ark.thanks = null
-  if (r?.lastPet && (clientState.player?.pets.length ?? 0) === 0) {
-    showHint('arkLastPet', 'Visit the Caretaker at the Care Center to adopt a new companion!')
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -362,8 +362,7 @@ export function debugPlayArkHandover(): void {
     rarity: pet?.rarity ?? 'common',
     xp: 0,
     coins: 0,
-    firstWearableId: '',
-    lastPet: false
+    firstWearableId: ''
   }
   startHandover(result, pet ? { ...pet, size: C.SIZE_MAX } : null, null, true)
 }
@@ -405,6 +404,7 @@ function canStartLaunch(): boolean {
     !s.fetch.active &&
     !s.pepitoChase.active &&
     !s.breed.active &&
+    !(s.arkRedeem.active && s.arkRedeem.phase === 'confirm') &&
     !sicknessCinematicOwnsFlow() &&
     !uiPanelOpen() &&
     s.screenFade.alpha <= 0

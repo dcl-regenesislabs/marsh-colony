@@ -753,6 +753,21 @@ export const CARETAKER_XP_HATCH = 15 // keeping a BRED offspring (not a plain ad
 export const CARETAKER_XP_ALBUM_ENTRY = 20 // first time a species+rarity enters the album
 
 // ---------------------------------------------------------------------------
+// The Ark: an Adult pet can be sent aboard the Captain's ship for good. It is a
+// shared colony goal (every creature aboard counts for everyone) and pays the
+// player Caretaker XP + coins, scaled by rarity — a Legendary pays the most.
+// The pet leaves the player's roster for good, so it must be Adult and never
+// the player's last pet. Filling the Ark to ARK_GOAL launches it (see below).
+// ---------------------------------------------------------------------------
+export const ARK_REWARDS: Record<Rarity, { coins: number; xp: number }> = {
+  common: { coins: 60, xp: 40 },
+  rare: { coins: 150, xp: 100 },
+  legendary: { coins: 400, xp: 300 }
+}
+/** Pets needed to launch the Ark (may be raised — see issue #248's scope note). */
+export const ARK_GOAL = 100
+
+// ---------------------------------------------------------------------------
 // Journey ("Your Journey" / Goals panel) — one-time rewards for each step the art
 // promises. Paid once, server-side, the first time the step's condition is met.
 // The Ark step (wearable) lands with the Ark feature.
@@ -786,17 +801,9 @@ export function journeyStepDone(id: JourneyStepId, p: { pets: unknown[]; counter
 
 // ---------------------------------------------------------------------------
 // The Ark — community goal (issue #248). Players hand an ADULT pet to the
-// Captain; when ARK_DONATION_GOAL pets are aboard the Ark launches, every donor
+// Captain; when ARK_GOAL pets are aboard the Ark launches, every donor
 // of that event earns the launch wearable, and a new event starts right away.
 // ---------------------------------------------------------------------------
-/** Pets needed to launch the Ark (may be raised — see the issue's scope note). */
-export const ARK_DONATION_GOAL = 100
-/** Rarer pets pay more. XP is CARETAKER_XP_HATCH x 1 / 1.5 / 2; coins are placeholders. */
-export const ARK_DONATION_REWARD: Record<Rarity, { xp: number; coins: number }> = {
-  common: { xp: CARETAKER_XP_HATCH, coins: 50 },
-  rare: { xp: Math.round(CARETAKER_XP_HATCH * 1.5), coins: 100 },
-  legendary: { xp: CARETAKER_XP_HATCH * 2, coins: 200 }
-}
 /** Captain.glb's spot in main.composite — the server validates a donation is
  *  made next to it, and the client stages the hand-over from here. */
 export const ARK_CAPTAIN_POSITION = { x: 162, z: 221 }

@@ -41,6 +41,12 @@ export async function ensureArkLoaded(): Promise<void> {
   // Another handler may have finished loading while we awaited.
   if (world) return
   world = { ...emptyWorld(), ...(stored ?? {}) }
+  // The first Ark build stored only `{ total }` under this key: carry that count
+  // into the current event (short of the goal, so a real donation launches it).
+  const legacyTotal = (stored as { total?: number } | null)?.total
+  if (typeof legacyTotal === 'number' && typeof (stored as Partial<ArkWorld>).donated !== 'number') {
+    world.donated = Math.max(0, Math.min(legacyTotal, C.ARK_GOAL - 1))
+  }
 }
 
 async function saveArk(): Promise<void> {
@@ -54,7 +60,7 @@ async function saveArk(): Promise<void> {
 }
 
 export function arkStatus(): ArkStatus {
-  return { eventId: world?.eventId ?? 1, donated: world?.donated ?? 0, goal: C.ARK_DONATION_GOAL }
+  return { eventId: world?.eventId ?? 1, donated: world?.donated ?? 0, goal: C.ARK_GOAL }
 }
 
 /** Count one donated pet toward the current event. When it completes the goal,
@@ -69,7 +75,7 @@ export async function recordArkDonation(address: string, name: string): Promise<
   w.totals[key] = { name, count: total.count + 1 }
   w.donated += 1
   let launch: ArkLaunchRecord | null = null
-  if (w.donated >= C.ARK_DONATION_GOAL) {
+  if (w.donated >= C.ARK_GOAL) {
     launch = { eventId: w.eventId, launchedAt: Date.now(), donors: w.donors }
     w.launches.push(launch)
     if (w.launches.length > C.ARK_LAUNCH_HISTORY) w.launches.splice(0, w.launches.length - C.ARK_LAUNCH_HISTORY)

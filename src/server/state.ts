@@ -1139,14 +1139,15 @@ export function switchPet(p: PlayerData, petId: string): Notify[] {
 }
 
 // ---------------------------------------------------------------------------
-// Ark donation — hand an Adult pet to the Captain. The pet leaves the roster for
-// good (the album keeps it: collections only grow), the donor is paid by rarity,
+// Ark donation — hand an Adult pet to the Captain (never the player's last one).
+// The pet leaves the roster for good (the album keeps it: collections only
+// grow), the donor is paid Caretaker XP + coins by rarity (C.ARK_REWARDS),
 // and the shared counter is advanced by the caller (server/ark.ts).
 // ---------------------------------------------------------------------------
-export type DonateOutcome = { notes: Notify[]; pet: PetData | null; xp: number; coins: number; firstDonation: boolean; lastPet: boolean }
+export type DonateOutcome = { notes: Notify[]; pet: PetData | null; xp: number; coins: number; firstDonation: boolean }
 
 export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): DonateOutcome {
-  const fail = (message: string): DonateOutcome => ({ notes: [{ kind: 'error', message }], pet: null, xp: 0, coins: 0, firstDonation: false, lastPet: false })
+  const fail = (message: string): DonateOutcome => ({ notes: [{ kind: 'error', message }], pet: null, xp: 0, coins: 0, firstDonation: false })
   if (p.hatchling) return fail('Finish with your new pet first.')
   const idx = p.pets.findIndex((x) => x.id === petId)
   if (idx === -1) return fail('That pet is no longer in your roster.')
@@ -1154,6 +1155,7 @@ export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): D
   const pet = p.pets[idx]
   if (!nearCaptain) return fail('Talk to the Captain at the Ark to donate a pet.')
   if (C.petStage(pet.size) !== 'ADULT') return fail('Only Adult pets can board the Ark.')
+  if (p.pets.length < 2) return fail('Keep at least one pet in your colony.')
   if (pet.sleeping) return fail(`${pet.name} is asleep — let it wake up first.`)
   if (pet.sick) return fail(`${pet.name} is sick — cure it at the Care Center first.`)
   const key = p.address.toLowerCase()
@@ -1169,14 +1171,14 @@ export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): D
   const firstDonation = (p.counters['arkCount'] ?? 0) === 0
   p.pets.splice(idx, 1)
   if (p.activePetId === pet.id) p.activePetId = p.pets[0]?.id ?? ''
-  const reward = C.ARK_DONATION_REWARD[pet.rarity] ?? C.ARK_DONATION_REWARD.common
-  const notes: Notify[] = []
+  const reward = C.ARK_REWARDS[pet.rarity] ?? C.ARK_REWARDS.common
+  const notes: Notify[] = [{ kind: 'reward', message: `${pet.name} boarded the Ark! +${reward.coins} coins` }]
   grantCaretakerXp(p, reward.xp, notes)
   p.currency += reward.coins
   bump(p, 'arkCount')
   checkAchievements(p, notes)
   checkJourney(p, notes)
-  return { notes, pet, xp: reward.xp, coins: reward.coins, firstDonation, lastPet: p.pets.length === 0 }
+  return { notes, pet, xp: reward.xp, coins: reward.coins, firstDonation }
 }
 
 /** Buy one rarity potion — a pure coin sink; it is spent on a breeding roll. */

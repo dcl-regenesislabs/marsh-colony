@@ -27,6 +27,7 @@ import { setupMeteor } from './meteor'
 import { setupDebugGrow } from './debugGrow'
 import { setupArk } from './ark'
 import { enqueueArkLaunch, onArkDonateResult, setupArkCinematics } from './arkCinematics'
+import { setupArkRedeem } from './arkRedeem'
 import { setupPenDoor } from './penDoor'
 import { setupLeaderboardHeads } from './leaderboardHeads'
 import { setupScoreboard } from './scoreboard'
@@ -316,6 +317,7 @@ export function setupClient(): void {
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupCaptain() // the Captain by the Ark's ramp: hand over Adult pets (issue #248)
   setupArk() // Ark ship: dome door on demand, "X / 100" counter, placeholder lift-off
+  setupArkRedeem() // "Send to Ark" from the pet panel: walk to the Captain, then confirm
   setupArkCinematics() // pet boarding the Ark + the launch everyone sees
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   setupLeaderboardHeads() // spinning face-heads of the top 6 players on the LeaderBoard01 model

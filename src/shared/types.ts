@@ -132,7 +132,6 @@ export interface ArkDonateResult {
   xp: number
   coins: number
   firstWearableId: string // '' unless this was the player's first donation
-  lastPet: boolean // the player has no pets left after this donation
 }
 
 export interface ArkLeaderboardRow {
