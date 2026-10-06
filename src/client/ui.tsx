@@ -326,13 +326,13 @@ function CoinsBar(props: { height: number }) {
   )
 }
 
-// The shared Mars population and the milestone we're all building toward.
-// Broadcast by the server, so every player sees the same number.
+// The shared goal: creatures sent aboard the Ark by the whole colony, out of
+// the Ark's target. Broadcast by the server, so every player sees the same number.
 function PetsCountBar(props: { height: number }) {
   const h = props.height
   const w = Math.round(h * BAR_PETS_ASPECT)
-  const pop = clientState.colonyPopulation
-  const goal = Cfg.COLONY_GOAL
+  const pop = clientState.arkTotal
+  const goal = Cfg.ARK_GOAL
   const textW = Math.round(w * 0.65)
   return (
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_PETS_UVS }}>
