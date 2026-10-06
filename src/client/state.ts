@@ -3,8 +3,8 @@
 
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
-import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
+import { ARK_DONATION_GOAL, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -170,6 +170,19 @@ export const clientState: {
   leaderboard: LeaderboardEntry[]
   // XP leaderboard (top 5), polled by the physical scoreboard (requestLeaderboardXp).
   leaderboardXp: LeaderboardEntry[]
+  // The Ark community goal (arkCinematics.ts). `status` is the shared counter;
+  // `pendingDonation` is the pet we asked the server to take (waiting on its
+  // answer); `thanks` is the result card shown after the hand-over cinematic;
+  // `cinematic` hides the HUD while a hand-over/launch owns the camera, and
+  // `launchCard` is the "the Ark has lifted off" card at the end of a launch.
+  ark: {
+    status: ArkStatus
+    leaderboard: ArkLeaderboard | null
+    pendingDonation: PetData | null
+    thanks: ArkDonateResult | null
+    cinematic: 'none' | 'handover' | 'launch'
+    launchCard: ArkLaunchView[] | null
+  }
 } = {
   myAddress: '',
   player: null,
@@ -207,7 +220,15 @@ export const clientState: {
   serverReady: false,
   colonyPopulation: 0,
   leaderboard: [],
-  leaderboardXp: []
+  leaderboardXp: [],
+  ark: {
+    status: { eventId: 1, donated: 0, goal: ARK_DONATION_GOAL },
+    leaderboard: null,
+    pendingDonation: null,
+    thanks: null,
+    cinematic: 'none',
+    launchCard: null
+  }
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
@@ -541,6 +562,15 @@ export const actions = {
   },
   breed(partnerPetId: string, name = '', usePotion = false): void {
     room.send('breed', { partnerPetId, name, usePotion })
+  },
+  donatePet(petId: string): void {
+    room.send('donatePet', { petId })
+  },
+  ackArkLaunch(eventId: number): void {
+    room.send('ackArkLaunch', { eventId })
+  },
+  requestArkLeaderboard(): void {
+    room.send('requestArkLeaderboard', {})
   }
 }
 

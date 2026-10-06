@@ -61,8 +61,35 @@ import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 import { pepitoStealHidesHud } from './pepitoSteal'
 import { areCriticalUiAssetsReady } from './uiAssets'
+import {
+  ARK_HANDOVER_TUNER_ENABLED,
+  closeArkLaunchCard,
+  closeArkThanks,
+  debugPlayArkHandover,
+  getArkHandoverTuning,
+  nudgeArkHandover,
+  requestArkDonation,
+  resetArkHandoverTuning,
+  toggleArkHandoverPause,
+  type ArkTuneKey
+} from './arkCinematics'
 
-export type Panel = 'none' | 'adopt' | 'shop' | 'roster' | 'inventory' | 'spin' | 'goals' | 'daily' | 'meteor' | 'breedName' | 'jukebox' | 'leaderboard' | 'album'
+export type Panel =
+  | 'none'
+  | 'adopt'
+  | 'shop'
+  | 'roster'
+  | 'inventory'
+  | 'spin'
+  | 'goals'
+  | 'daily'
+  | 'meteor'
+  | 'breedName'
+  | 'jukebox'
+  | 'leaderboard'
+  | 'album'
+  | 'arkDonate'
+  | 'arkRanking'
 export type ShopTabId = 'food' | 'slots'
 type MobileNameInput = 'adopt' | 'breed'
 type MobileMagnifierPhase = 'idle' | 'opening' | 'closing'
@@ -89,7 +116,10 @@ const uiState = {
   // Album page = rarity tier being viewed (0 common, 1 rare, 2 legendary).
   albumPage: 0,
   // Choose a Partner (breeding) page — same 4-per-row paging as My Pets.
-  breedPickerPage: 0
+  breedPickerPage: 0,
+  // Ark (Captain) panel: pet-picker page, and the pet picked for the confirm step.
+  arkPage: 0,
+  arkSelectedId: ''
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
@@ -202,6 +232,16 @@ export const ui = {
     uiState.panel = 'leaderboard'
     actions.requestLeaderboard() // fetch fresh standings each time it opens
   },
+  // The Captain's panel: pick an Adult pet to send aboard the Ark.
+  openArkDonate(): void {
+    uiState.panel = 'arkDonate'
+    uiState.arkPage = 0
+    uiState.arkSelectedId = ''
+  },
+  openArkRanking(): void {
+    uiState.panel = 'arkRanking'
+    actions.requestArkLeaderboard() // fetch fresh standings each time it opens
+  },
   // Auto-open the daily reward only when the screen is idle (no clashing popup).
   tryAutoOpenDaily(): void {
     if (uiState.panel === 'none' && !clientState.dialog.open) uiState.panel = 'daily'
@@ -239,6 +279,10 @@ export const ui = {
 export function debugForcePanel(panel: Panel): void {
   uiState.panel = panel
 }
+/** True while any nav panel is up — the Ark launch waits for it to close. */
+export function uiPanelOpen(): boolean {
+  return uiState.panel !== 'none'
+}
 export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 'pick' | 'name'; breedUsePotion: boolean; rosterPage: number; albumPage: number }>): void {
   Object.assign(uiState, patch)
 }
@@ -254,6 +298,7 @@ function bigUiOpen(): boolean {
     clientState.petPanelOpen ||
     clientState.viewingPetAddress !== null ||
     clientState.incomingSwap !== null ||
+    clientState.ark.thanks !== null ||
     (clientState.breed.active && clientState.breed.phase === 'pickB') // Choose a Partner
   )
 }
@@ -4033,6 +4078,369 @@ function BreedPickerPanel() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// The Ark (issue #248) — the Captain's donation panel (pick an Adult pet, then
+// confirm), the donor ranking, the thanks card after the boarding cinematic and
+// the "lifted off" card at the end of a launch. Logic: arkCinematics.ts.
+// ---------------------------------------------------------------------------
+let arkNotice = { text: '', until: 0 }
+function showArkNotice(text: string) {
+  arkNotice = { text, until: Date.now() + 2500 }
+}
+
+function rarityColor(r: Rarity): Color {
+  const c = Cfg.RARITY_COLOR[r] ?? Cfg.RARITY_COLOR.common
+  return { r: c.r, g: c.g, b: c.b, a: 1 }
+}
+
+/** Why a pet can't board right now ('' = it can). Mirrors server/state.ts donatePet. */
+function arkBlockReason(pet: PetData): string {
+  if (Cfg.petStage(pet.size) !== 'ADULT') return 'Not Adult'
+  if (pet.sleeping) return 'Sleeping'
+  if (pet.sick) return 'Sick'
+  return ''
+}
+
+function ArkProgress(props: { width: number }) {
+  const s = clientState.ark.status
+  const frac = s.goal > 0 ? Math.max(0, Math.min(1, s.donated / s.goal)) : 0
+  const barH = S(14)
+  return (
+    <UiEntity uiTransform={{ width: props.width, flexDirection: 'column', alignItems: 'center' }}>
+      <Label value={`Ark progress: ${s.donated} / ${s.goal} pets aboard`} fontSize={S(16)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      <UiEntity uiTransform={{ width: props.width, height: barH, borderRadius: barH / 2, margin: { top: S(4) } }} uiBackground={{ color: { r: 0.87, g: 0.8, b: 0.71, a: 1 } }}>
+        <UiEntity uiTransform={{ width: Math.max(barH, Math.round(props.width * frac)), height: barH, borderRadius: barH / 2 }} uiBackground={{ color: LOC.blue }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function ArkPetCard(props: { key?: string; pet: PetData }) {
+  const pet = props.pet
+  const blocked = arkBlockReason(pet)
+  const img = Cfg.speciesImage(pet.species)
+  const cardW = S(ROSTER_CARD_W)
+  const cardH = Math.round(cardW / PET_CARD_ASPECT)
+  const disc = rosterPx(78)
+  return (
+    <PetGridCard
+      pad={rosterPx(13)}
+      selected={false}
+      width={cardW}
+      height={cardH}
+      onClick={() => {
+        if (blocked) {
+          showArkNotice(blocked === 'Not Adult' ? 'Only Adult pets can board the Ark.' : `${pet.name} is ${blocked.toLowerCase()} right now.`)
+          return
+        }
+        uiState.arkSelectedId = pet.id
+      }}
+    >
+      <UiEntity
+        uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
+        uiBackground={img ? { texture: { src: img }, textureMode: 'stretch', color: blocked ? { r: 1, g: 1, b: 1, a: 0.5 } : undefined } : { color: speciesColor(pet.species) }}
+      />
+      <Label value={pet.name} fontSize={rosterPx(17)} color={blocked ? PET_UI.muted : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
+      <Label
+        value={blocked || Cfg.rarityLabel(pet.rarity)}
+        fontSize={rosterPx(13)}
+        color={blocked ? PET_UI.muted : rarityColor(pet.rarity)}
+        textAlign="middle-center"
+        uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }}
+      />
+    </PetGridCard>
+  )
+}
+
+function ArkConfirm(props: { pet: PetData; width: number }) {
+  const pet = props.pet
+  const p = clientState.player
+  const reward = Cfg.ARK_DONATION_REWARD[pet.rarity] ?? Cfg.ARK_DONATION_REWARD.common
+  const firstDonation = (p?.counters['arkCount'] ?? 0) === 0
+  const lastPet = (p?.pets.length ?? 0) <= 1
+  const img = Cfg.speciesImage(pet.species)
+  const disc = S(96)
+  const btnW = S(190)
+  const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  const sending = !!clientState.ark.pendingDonation
+  return (
+    <UiEntity uiTransform={{ width: props.width, flexDirection: 'column', alignItems: 'center' }}>
+      <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { top: S(6) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(pet.species) }} />
+      <Label value={`Send ${pet.name} to the Ark?`} fontSize={S(22)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(32), margin: { top: S(8) } }} />
+      <Label value={`${Cfg.rarityLabel(pet.rarity)}  ·  +${reward.xp} Caretaker XP  ·  +${reward.coins} coins`} fontSize={S(16)} color={rarityColor(pet.rarity)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      {firstDonation && (
+        <Label value={`First donation bonus: ${Cfg.ARK_FIRST_DONATION_WEARABLE.name} wearable`} fontSize={S(15)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(22), margin: { top: S(4) } }} />
+      )}
+      {lastPet && (
+        <Label
+          value="This is your last companion — you'll need to adopt a new one at the Care Center."
+          fontSize={S(15)}
+          color={LOC.orange}
+          textAlign="middle-center"
+          textWrap="wrap"
+          uiTransform={{ width: '100%', height: S(42), margin: { top: S(4) } }}
+        />
+      )}
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
+        <PillButton id="ark_back" label="Back" shape="half" color="gray" width={btnW} height={btnH} margin={{ right: S(10) }} onClick={() => (uiState.arkSelectedId = '')} />
+        <PillButton
+          id="ark_send"
+          label={sending ? 'Sending…' : 'Send to the Ark'}
+          shape="half"
+          color="green"
+          width={btnW}
+          height={btnH}
+          disabled={sending}
+          pulse
+          margin={{ left: S(10) }}
+          onClick={() => {
+            requestArkDonation(pet)
+            ui.close()
+          }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function ArkDonatePanel() {
+  const p = clientState.player
+  const pets = [...(p?.pets ?? [])]
+  // Pets that can board first, so the ones you can actually pick lead the list.
+  pets.sort((a, b) => Number(arkBlockReason(b) === '') - Number(arkBlockReason(a) === ''))
+  const selected = pets.find((x) => x.id === uiState.arkSelectedId) ?? null
+  const width = S(720)
+  const innerW = width - S(60)
+  const pageCount = Math.max(1, Math.ceil(pets.length / ROSTER_PAGE_SIZE))
+  const page = Math.min(Math.max(0, uiState.arkPage), pageCount - 1)
+  uiState.arkPage = page
+  const shown = pets.slice(page * ROSTER_PAGE_SIZE, (page + 1) * ROSTER_PAGE_SIZE)
+  const btnW = S(170)
+  const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  const noticeOn = Date.now() < arkNotice.until
+  return (
+    <PetHudModal title="Board the Ark" subtitle="Hand an Adult pet to the Captain. Rarer pets earn more XP and coins." width={width} height={S(620)} onClose={() => ui.close()}>
+      <ArkProgress width={innerW - S(80)} />
+      {selected ? (
+        <ArkConfirm pet={selected} width={innerW} />
+      ) : (
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+          {shown.length === 0 ? (
+            <Label
+              value="You have no pets yet — adopt one at the Care Center and raise it to Adult."
+              fontSize={S(17)}
+              color={PET_UI.muted}
+              textAlign="middle-center"
+              textWrap="wrap"
+              uiTransform={{ width: '100%', height: S(60), margin: { top: S(60) } }}
+            />
+          ) : (
+            <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(14) } }}>
+              {shown.map((pet) => (
+                <ArkPetCard key={pet.id} pet={pet} />
+              ))}
+            </UiEntity>
+          )}
+          <CardPager idPrefix="ark" page={page} pageCount={pageCount} onPage={(n) => (uiState.arkPage = n)} />
+          <Label
+            value={noticeOn ? arkNotice.text : 'Tap a pet to send it aboard.'}
+            fontSize={S(15)}
+            color={noticeOn ? LOC.orange : PET_UI.muted}
+            textAlign="middle-center"
+            uiTransform={{ width: '100%', height: S(24), margin: { top: S(4) } }}
+          />
+          <PillButton id="ark_ranking" label="Ranking" shape="half" color="pink" width={btnW} height={btnH} margin={{ top: S(6) }} onClick={() => ui.openArkRanking()} />
+        </UiEntity>
+      )}
+    </PetHudModal>
+  )
+}
+
+function ArkRankingRow(props: { key?: string; rank: number; name: string; count: number; isMe: boolean }) {
+  const ink = props.isMe ? LOC.white : PET_UI.ink
+  const iconS = S(22)
+  return (
+    <UiEntity
+      uiTransform={{ width: LB_ROW_W, height: S(36), flexDirection: 'row', alignItems: 'center', margin: { bottom: S(3) }, padding: { left: S(12), right: S(14) }, borderRadius: S(12) }}
+      uiBackground={{ color: props.isMe ? LOC.blue : LOC.tile }}
+    >
+      <Label value={`${props.rank}`} fontSize={S(17)} color={ink} textAlign="middle-center" uiTransform={{ width: LB_RANK_W, height: S(24) }} />
+      <Label value={props.name} fontSize={S(16)} color={ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ flex: 1, height: S(24) }} />
+      <UiEntity uiTransform={{ width: LB_COINS_W, height: S(26), flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <UiEntity uiTransform={{ width: iconS, height: iconS }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: NAV_PAW_UVS }} />
+        <Label value={`${props.count}`} fontSize={S(16)} color={ink} textAlign="middle-left" uiTransform={{ width: S(10 + `${props.count}`.length * 10), height: S(24), margin: { left: S(6) } }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function ArkRankingPanel() {
+  const lb = clientState.ark.leaderboard
+  const me = clientState.myAddress.toLowerCase()
+  const meInTop = !!lb && lb.rows.some((r) => r.address.toLowerCase() === me)
+  const btnW = S(170)
+  const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  return (
+    <PetHudModal title="Ark Ranking" subtitle="Top pet donors across every launch." width={S(640)} height={S(620)} onClose={() => ui.close()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+        {!lb ? (
+          <Label value="Loading standings…" fontSize={S(18)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(20) } }} />
+        ) : lb.rows.length === 0 ? (
+          <Label value="No donations yet — be the first to board a pet!" fontSize={S(18)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(20) } }} />
+        ) : (
+          lb.rows.map((r, i) => <ArkRankingRow key={r.address} rank={i + 1} name={r.name} count={r.count} isMe={r.address.toLowerCase() === me} />)
+        )}
+        {lb && lb.me && !meInTop && <ArkRankingRow key="me" rank={lb.me.rank} name="You" count={lb.me.count} isMe />}
+        <PillButton id="ark_rank_back" label="Back" shape="half" color="gray" width={btnW} height={btnH} margin={{ top: S(10) }} onClick={() => ui.openArkDonate()} />
+      </UiEntity>
+    </PetHudModal>
+  )
+}
+
+function WearablePreview(props: { key?: string; wearableId: string }) {
+  const w = Cfg.arkWearableById(props.wearableId)
+  if (!w) return <UiEntity />
+  const tile = S(110)
+  return (
+    <UiEntity uiTransform={{ width: tile + S(40), flexDirection: 'column', alignItems: 'center', margin: { left: S(8), right: S(8) } }}>
+      <UiEntity uiTransform={{ width: tile, height: tile, borderRadius: S(18), alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: LOC.tile }}>
+        <UiEntity uiTransform={{ width: tile - S(16), height: tile - S(16) }} uiBackground={{ texture: { src: w.image }, textureMode: 'stretch' }} />
+      </UiEntity>
+      <Label value={w.name} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: S(40), margin: { top: S(4) } }} />
+    </UiEntity>
+  )
+}
+
+function ArkThanksPanel() {
+  const r = clientState.ark.thanks
+  if (!r) return <UiEntity />
+  const btnW = S(190)
+  const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  const height = r.firstWearableId ? S(560) : S(400)
+  return (
+    <PetHudModal title="Thank you!" subtitle={`${r.petName} boarded the Ark.`} width={S(620)} height={height} onClose={() => closeArkThanks()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+        <Label value={`+${r.xp} Caretaker XP  ·  +${r.coins} coins`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30) }} />
+        <ArkProgress width={S(420)} />
+        {r.firstWearableId !== '' && (
+          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(10) } }}>
+            <Label value="First donation! You'll receive this wearable:" fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+            <WearablePreview wearableId={r.firstWearableId} />
+          </UiEntity>
+        )}
+        {r.lastPet && (
+          <Label
+            value="That was your last companion — visit the Caretaker at the Care Center to adopt a new one."
+            fontSize={S(15)}
+            color={LOC.orange}
+            textAlign="middle-center"
+            textWrap="wrap"
+            uiTransform={{ width: '100%', height: S(42), margin: { top: S(6) } }}
+          />
+        )}
+        <PillButton id="ark_thanks_ok" label="Great!" shape="half" color="green" width={btnW} height={btnH} pulse margin={{ top: S(10) }} onClick={() => closeArkThanks()} />
+      </UiEntity>
+    </PetHudModal>
+  )
+}
+
+// DEBUG (ARK_HANDOVER_TUNER_ENABLED): live tuning for the hand-over shot and the
+// pet's height on the ramp. Outside the cinematic it's just a "Test walk" button
+// that replays it without donating; values are logged on every change.
+const ARK_TUNE_ROWS: { key: ArkTuneKey; label: string; step: number }[] = [
+  { key: 'camX', label: 'Cam X', step: 0.5 },
+  { key: 'camY', label: 'Cam Y', step: 0.5 },
+  { key: 'camZ', label: 'Cam Z', step: 0.5 },
+  { key: 'lookLift', label: 'Look Y', step: 0.1 },
+  { key: 'rampLift', label: 'Ramp Y', step: 0.05 }
+]
+
+function ArkTunerRow(props: { key?: string; tuneKey: ArkTuneKey; label: string; step: number; value: number }) {
+  return (
+    <UiEntity uiTransform={{ width: '100%', height: S(38), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', margin: { bottom: S(4) } }}>
+      <TactileButton id={`ark_tune_${props.tuneKey}_minus`} label="-" width={S(54)} height={S(34)} bg={C.cardAlt} fontSize={S(16)} onClick={() => nudgeArkHandover(props.tuneKey, -props.step)} />
+      <Label value={`${props.label}: ${props.value.toFixed(2)}`} fontSize={S(14)} color={C.text} textAlign="middle-center" uiTransform={{ width: S(130), height: S(34) }} />
+      <TactileButton id={`ark_tune_${props.tuneKey}_plus`} label="+" width={S(54)} height={S(34)} bg={C.cardAlt} fontSize={S(16)} onClick={() => nudgeArkHandover(props.tuneKey, props.step)} />
+    </UiEntity>
+  )
+}
+
+function ArkHandoverTuner() {
+  if (!ARK_HANDOVER_TUNER_ENABLED) return null
+  const t = getArkHandoverTuning()
+  const box = { positionType: 'absolute' as const, position: { top: S(104), left: S(16) }, padding: S(10), borderRadius: S(12), pointerFilter: 'block' as const }
+  const bg = { color: { r: 0.05, g: 0.05, b: 0.08, a: 0.9 } }
+  if (!t.running) {
+    if (clientState.ark.cinematic !== 'none') return null
+    return (
+      <UiEntity uiTransform={{ ...box, flexDirection: 'column', alignItems: 'center' }} uiBackground={bg}>
+        <Label value="DEBUG · ARK WALK" fontSize={S(13)} color={C.gold} textAlign="middle-center" uiTransform={{ width: S(170), height: S(22) }} />
+        <TactileButton id="ark_tune_play" label="Test walk" width={S(150)} height={S(34)} bg={C.greenDark} fontSize={S(14)} onClick={() => debugPlayArkHandover()} />
+      </UiEntity>
+    )
+  }
+  return (
+    <UiEntity uiTransform={{ ...box, width: S(270), flexDirection: 'column', alignItems: 'center' }} uiBackground={bg}>
+      <Label value="DEBUG · ARK WALK (world)" fontSize={S(14)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      {ARK_TUNE_ROWS.map((r) => (
+        <ArkTunerRow key={r.key} tuneKey={r.key} label={r.label} step={r.step} value={t.values[r.key]} />
+      ))}
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', margin: { top: S(4) } }}>
+        <TactileButton id="ark_tune_pause" label={t.paused ? 'Resume' : 'Pause'} width={S(118)} height={S(32)} bg={C.blue} fontSize={S(13)} onClick={() => toggleArkHandoverPause()} />
+        <TactileButton id="ark_tune_reset" label="Reset" width={S(118)} height={S(32)} bg={C.pink} fontSize={S(13)} onClick={() => resetArkHandoverTuning()} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function ArkLaunchCard() {
+  const views = clientState.ark.launchCard
+  if (!views) return <UiEntity />
+  const donated = views.filter((v) => v.donatedByMe > 0)
+  const pets = donated.reduce((n, v) => n + v.donatedByMe, 0)
+  const btnW = S(190)
+  const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  return (
+    <PetHudModal
+      title="The Ark has lifted off!"
+      subtitle={`Carrying ${Cfg.ARK_DONATION_GOAL} companions to a new colony among the stars.`}
+      width={S(680)}
+      height={donated.length > 0 ? S(520) : S(360)}
+      onClose={() => closeArkLaunchCard()}
+    >
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+        {donated.length > 0 ? (
+          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+            <Label
+              value={`Thanks for sending ${pets} of them — you'll receive ${donated.length > 1 ? 'these wearables' : 'this wearable'}:`}
+              fontSize={S(17)}
+              color={PET_UI.ink}
+              textAlign="middle-center"
+              textWrap="wrap"
+              uiTransform={{ width: '100%', height: S(48) }}
+            />
+            <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(6) } }}>
+              {donated.map((v) => (
+                <WearablePreview key={`launch-${v.eventId}`} wearableId={v.wearableId} />
+              ))}
+            </UiEntity>
+          </UiEntity>
+        ) : (
+          <Label
+            value="Donate an Adult pet to the Captain to earn a reward on the next launch!"
+            fontSize={S(17)}
+            color={PET_UI.ink}
+            textAlign="middle-center"
+            textWrap="wrap"
+            uiTransform={{ width: '100%', height: S(56), margin: { top: S(10) } }}
+          />
+        )}
+        <PillButton id="ark_launch_ok" label="Amazing!" shape="half" color="green" width={btnW} height={btnH} pulse margin={{ top: S(10) }} onClick={() => closeArkLaunchCard()} />
+      </UiEntity>
+    </PetHudModal>
+  )
+}
+
 // Screen-space effects for the breeding cinematic (pet.ts updateBreed drives the
 // state via getBreedFx): a violet magic orb that swirls + swells over the nest, a
 // one-shot burst at the climax, and full-screen light blinks. The camera is locked
@@ -4178,6 +4586,13 @@ const Root = () => {
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <BreedFxOverlay />
       </UiEntity>
+    ) : clientState.ark.cinematic !== 'none' ? (
+      // A pet boarding the Ark / the Ark launching owns the camera: no HUD, only
+      // the "lifted off" card once the ship is gone.
+      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+        <ArkLaunchCard />
+        <ArkHandoverTuner />
+      </UiEntity>
     ) : (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         {!hideHudForPepitoTheft && (
@@ -4213,6 +4628,10 @@ const Root = () => {
             {uiState.panel === 'jukebox' && <JukeboxPanel />}
             {uiState.panel === 'album' && <AlbumPanel />}
             {uiState.panel === 'leaderboard' && <LeaderboardPanel />}
+            {uiState.panel === 'arkDonate' && <ArkDonatePanel />}
+            {uiState.panel === 'arkRanking' && <ArkRankingPanel />}
+            <ArkThanksPanel />
+            {!bigUiOpen() && <ArkHandoverTuner />}
           </UiEntity>
         )}
         <DialogBox />
