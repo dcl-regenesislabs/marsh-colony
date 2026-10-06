@@ -4117,33 +4117,53 @@ function ArkErrandOverlay() {
   )
 }
 
-/** At the Captain: are you sure? Thanks for helping save the colony. */
+/** At the Captain: are you sure? Thanks for helping save the colony. Same
+ *  brown-framed card, ink and pills as Inventory / Goals / Pet Actions. */
 function ArkConfirmPanel() {
   const r = clientState.arkRedeem
   const pet = clientState.activePet
   if (!r.active || r.phase !== 'confirm' || !pet) return <UiEntity />
   const reward = Cfg.ARK_REWARDS[pet.rarity] ?? Cfg.ARK_REWARDS.common
+  const panelW = S(700)
+  const panelH = Math.round(PET_ACTIONS_TEX_H * (panelW / PET_ACTIONS_TEX_W))
+  const contentW = panelW - S(30) * 2
   const btnW = S(220)
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  const icon = S(34)
+  const rewardItem = (src: string, text: string) => (
+    <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { left: S(14), right: S(14) } }}>
+      <UiEntity uiTransform={{ width: icon, height: icon }} uiBackground={{ texture: { src }, textureMode: 'stretch' }} />
+      <Label value={text} fontSize={S(24)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ height: icon, margin: { left: S(8) } }} />
+    </UiEntity>
+  )
   return (
-    <PetHudModal title="Board the Ark?" subtitle={`${pet.name} · ${Cfg.rarityLabel(pet.rarity)}`} width={S(640)} height={S(470)} onClose={() => cancelArkRedeem()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
-        <Label
-          value={`I will keep ${pet.name} safe aboard the Ark, for good. Thank you for helping save the colony!`}
-          fontSize={S(18)}
-          color={C.text}
-          textAlign="middle-center"
-          textWrap="wrap"
-          uiTransform={{ width: S(540), height: S(80) }}
-        />
-        <Label value={`+${reward.xp} XP   ·   +${reward.coins} coins`} fontSize={S(24)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(6) } }} />
-        <Label value={`Creatures aboard the Ark: ${clientState.arkTotal} / ${Cfg.ARK_GOAL}`} fontSize={S(15)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(26), margin: { top: S(6) } }} />
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(16) } }}>
-          <PillButton id="ark_cancel" label="Not yet" shape="half" color="pink" width={btnW} height={btnH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => cancelArkRedeem()} />
-          <PillButton id="ark_confirm" label="Send aboard" shape="half" color="green" width={btnW} height={btnH} fontSize={S(19)} pulse onClick={() => confirmArkRedeem()} />
-        </UiEntity>
+    <PetHudCard width={panelW} height={panelH} onClose={() => cancelArkRedeem()}>
+      <Label value="Board the Ark?" fontSize={S(40)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(54), margin: { top: S(18) } }} />
+      <Label
+        value={`${pet.name} · ${Cfg.rarityLabel(pet.rarity)}`}
+        fontSize={S(18)}
+        color={PET_UI.muted}
+        textAlign="middle-center"
+        uiTransform={{ width: contentW, height: S(26) }}
+      />
+      <Label
+        value={`I will keep ${pet.name} safe aboard the Ark, for good. Thank you for helping save the colony!`}
+        fontSize={S(19)}
+        color={PET_UI.ink}
+        textAlign="middle-center"
+        textWrap="wrap"
+        uiTransform={{ width: contentW - S(60), height: S(70), margin: { top: S(16) } }}
+      />
+      <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', margin: { top: S(10) } }}>
+        {rewardItem(REWARD_XP_ICON, `+${reward.xp} XP`)}
+        {rewardItem(REWARD_COIN_ICON, `+${reward.coins} coins`)}
       </UiEntity>
-    </PetHudModal>
+      <Label value={`Creatures aboard the Ark: ${clientState.arkTotal} / ${Cfg.ARK_GOAL}`} fontSize={S(16)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: contentW, height: S(26), margin: { top: S(12) } }} />
+      <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(18) } }}>
+        <PillButton id="ark_cancel" label="Not yet" shape="half" color="pink" width={btnW} height={btnH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => cancelArkRedeem()} />
+        <PillButton id="ark_confirm" label="Send aboard" shape="half" color="green" width={btnW} height={btnH} fontSize={S(19)} pulse onClick={() => confirmArkRedeem()} />
+      </UiEntity>
+    </PetHudCard>
   )
 }
 
