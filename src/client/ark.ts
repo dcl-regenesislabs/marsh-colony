@@ -11,6 +11,12 @@ const ARK_DOOR_SPEED = 1 // playback speed (raise to open/close faster)
 const ARK_CYCLE_S = 5 // seconds the door holds each state before toggling
 
 let installed = false
+/** A pet is boarding: keep the door open until it is inside. */
+let holdOpen = false
+
+export function holdArkDoorOpen(on: boolean): void {
+  holdOpen = on
+}
 let doorOpen = false
 let timer = 0
 
@@ -41,6 +47,14 @@ export function setupArk(): void {
       return
     }
 
+    if (holdOpen) {
+      if (!doorOpen) {
+        doorOpen = true
+        playArkDoor(ark, true)
+      }
+      timer = 0
+      return
+    }
     timer += dt
     if (timer >= ARK_CYCLE_S) {
       timer = 0

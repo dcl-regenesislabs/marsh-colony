@@ -82,6 +82,10 @@ export const Messages = {
   presence: Schemas.Map({ json: Schemas.String }),
   // Broadcast of the shared Mars colony population (total pets the server knows).
   colony: Schemas.Map({ population: Schemas.Int }),
+  // Send an Adult pet aboard the Ark (removes it, pays XP + coins by rarity).
+  redeemPet: Schemas.Map({ petId: Schemas.String }),
+  // Creatures aboard the Ark across the whole colony (shared goal).
+  ark: Schemas.Map({ total: Schemas.Int }),
   // Toast / notification.
   notify: Schemas.Map({ kind: Schemas.String, message: Schemas.String }),
   // Spin wheel result (SpinReward JSON + landing index for animation).

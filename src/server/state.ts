@@ -159,6 +159,33 @@ async function upsertLeaderIndex(p: PlayerData): Promise<void> {
   }
 }
 
+// The Ark's shared count (Storage.world): creatures sent aboard by every player.
+const ARK_KEY = 'ark-v1'
+let arkTotal: number | null = null
+
+export async function arkCount(): Promise<number> {
+  if (arkTotal !== null) return arkTotal
+  try {
+    const stored = await Storage.get<{ total: number }>(ARK_KEY)
+    arkTotal = stored?.total ?? 0
+  } catch (e) {
+    console.log('[Server] ark count load failed', e)
+    arkTotal = 0
+  }
+  return arkTotal
+}
+
+export async function addArkRedemption(): Promise<number> {
+  const total = (await arkCount()) + 1
+  arkTotal = total
+  try {
+    await Storage.set(ARK_KEY, { total })
+  } catch (e) {
+    console.log('[Server] ark count save failed', e)
+  }
+  return total
+}
+
 /** Top players across the colony, highest first (from the persisted index).
  *  `sortBy` picks the ranking metric — 'coins' for the HUD panel, 'xp' for the
  *  physical scoreboard. Every row carries all metrics regardless. */
@@ -704,6 +731,28 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   grantCaretakerXp(p, C.CARETAKER_XP_BREED, notes)
   checkJourney(p, notes)
   return { notes, rarity, species: child.species, name: child.name }
+}
+
+/** Send an Adult pet aboard the Ark: it leaves the roster for good and pays
+ *  Caretaker XP + coins by rarity. Never the player's last pet. */
+export function redeemPet(p: PlayerData, petId: string): { ok: boolean; notes: Notify[]; coins: number; xp: number } {
+  tickPlayer(p)
+  const fail = (message: string) => ({ ok: false, notes: [{ kind: 'error', message }], coins: 0, xp: 0 })
+  const pet = p.pets.find((x) => x.id === petId)
+  if (!pet) return fail('That pet is not in your colony')
+  if (C.petStage(pet.size) !== 'ADULT') return fail('Only Adult pets can board the Ark')
+  if (p.pets.length < 2) return fail('Keep at least one pet in your colony')
+  if (pet.sleeping) return fail(`${pet.name} is asleep`)
+  p.pets = p.pets.filter((x) => x.id !== pet.id)
+  if (p.activePetId === pet.id) p.activePetId = p.pets[0].id
+  const reward = C.ARK_REWARDS[pet.rarity] ?? C.ARK_REWARDS.common
+  const notes: Notify[] = [{ kind: 'reward', message: `${pet.name} boarded the Ark! +${reward.coins} coins` }]
+  p.currency += reward.coins
+  grantCaretakerXp(p, reward.xp, notes)
+  bump(p, 'arkCount')
+  checkAchievements(p, notes)
+  checkJourney(p, notes)
+  return { ok: true, notes, coins: reward.coins, xp: reward.xp }
 }
 
 /** Shared tail for a completed (non-sleep) care action: apply the stat effects,

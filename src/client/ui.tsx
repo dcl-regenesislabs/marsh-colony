@@ -8,6 +8,7 @@
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
+import { cancelArkRedeem, confirmArkRedeem, startArkRedeem } from './arkRedeem'
 import type { CareAction, PetData, Rarity } from '../shared/types'
 import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
@@ -254,6 +255,7 @@ function bigUiOpen(): boolean {
     clientState.petPanelOpen ||
     clientState.viewingPetAddress !== null ||
     clientState.incomingSwap !== null ||
+    (clientState.arkRedeem.active && clientState.arkRedeem.phase === 'confirm') ||
     (clientState.breed.active && clientState.breed.phase === 'pickB') // Choose a Partner
   )
 }
@@ -616,6 +618,7 @@ function PetPanel() {
   const chipW = Math.floor((contentW - S(30)) / 4) // 4 care buttons across, with slack
   const chipH = S(60)
   const halfW = Math.round((contentW - S(8)) / 2)
+  const thirdW = Math.round((contentW - S(16)) / 3)
   const unlocked = Cfg.petStage(pet.size) === 'ADULT'
   const otherPets = clientState.player?.pets.filter((x) => x.id !== pet.id) ?? []
   const partner = otherPets.find((x) => Cfg.petStage(x.size) === 'ADULT')
@@ -736,17 +739,19 @@ function PetPanel() {
           })}
         />
       </UiEntity>
-      {/* Pet + Breed, side by side and equal size. */}
+      {/* Pet, Breed and Send to Ark, side by side and equal size. Breed and the
+          Ark are for Adults only. */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="wide" color="pink" width={halfW} height={S(54)} disabled={locked} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
+        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="wide" color="pink" width={thirdW} height={S(54)} fontSize={S(16)} disabled={locked} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
         <PillButton
           id="breed_teaser"
           label={unlocked ? 'Breed' : 'Breed  ·  Adult'}
           shape="wide"
           color={unlocked ? 'purple' : 'gray'}
-          width={halfW}
+          width={thirdW}
           height={S(54)}
-          margin={{ left: S(4) }}
+          fontSize={S(16)}
+          margin={{ left: S(4), right: S(4) }}
           pulse={unlocked}
           onClick={() => {
             if (!unlocked) {
@@ -764,6 +769,23 @@ function PetPanel() {
             // New flow: carry this pet to the breeding nest, place it, pick the
             // partner there, then breed (name/potion modal → egg cinematic).
             startBreedErrand()
+          }}
+        />
+        <PillButton
+          id="ark_send"
+          label={unlocked ? 'Send to Ark' : 'Ark  ·  Adult'}
+          shape="wide"
+          color={unlocked ? 'blue' : 'gray'}
+          width={thirdW}
+          height={S(54)}
+          fontSize={S(16)}
+          margin={{ left: S(4) }}
+          onClick={() => {
+            if (!unlocked) {
+              pushToast('Only Adult pets can board the Ark.')
+              return
+            }
+            startArkRedeem()
           }}
         />
       </UiEntity>
@@ -4078,6 +4100,53 @@ function BreedFxOverlay() {
 // Guide overlay while an adopted egg waits at the Caretaker: BACK cancels the
 // adoption, the banner reinforces the arrow. Hidden while a carry flow owns the
 // screen (updateGetEgg yields the arrow to it), so the two never stack.
+/** Walking a pet to the Ark: BACK cancels, and a line says where to go. */
+function ArkErrandOverlay() {
+  const r = clientState.arkRedeem
+  if (!r.active || r.phase !== 'toCaptain') return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <BackButton onClick={() => cancelArkRedeem()} />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: S(90), left: '50%' }, margin: { left: -S(240) }, width: S(480), height: S(58), alignItems: 'center', justifyContent: 'center', borderRadius: S(29), pointerFilter: 'none' }}
+        uiBackground={{ color: C.panelBg }}
+      >
+        <Label value="Follow the arrow to the Captain at the Ark!" fontSize={S(20)} color={C.text} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: S(30) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** At the Captain: are you sure? Thanks for helping save the colony. */
+function ArkConfirmPanel() {
+  const r = clientState.arkRedeem
+  const pet = clientState.activePet
+  if (!r.active || r.phase !== 'confirm' || !pet) return <UiEntity />
+  const reward = Cfg.ARK_REWARDS[pet.rarity] ?? Cfg.ARK_REWARDS.common
+  const btnW = S(220)
+  const btnH = Math.round(btnW / PILL_HALF_ASPECT)
+  return (
+    <PetHudModal title="Board the Ark?" subtitle={`${pet.name} · ${Cfg.rarityLabel(pet.rarity)}`} width={S(640)} height={S(470)} onClose={() => cancelArkRedeem()}>
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+        <Label
+          value={`I will keep ${pet.name} safe aboard the Ark, for good. Thank you for helping save the colony!`}
+          fontSize={S(18)}
+          color={C.text}
+          textAlign="middle-center"
+          textWrap="wrap"
+          uiTransform={{ width: S(540), height: S(80) }}
+        />
+        <Label value={`+${reward.xp} XP   ·   +${reward.coins} coins`} fontSize={S(24)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(6) } }} />
+        <Label value={`Creatures aboard the Ark: ${clientState.arkTotal} / ${Cfg.ARK_GOAL}`} fontSize={S(15)} color={LOC.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(26), margin: { top: S(6) } }} />
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(16) } }}>
+          <PillButton id="ark_cancel" label="Not yet" shape="half" color="pink" width={btnW} height={btnH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => cancelArkRedeem()} />
+          <PillButton id="ark_confirm" label="Send aboard" shape="half" color="green" width={btnW} height={btnH} fontSize={S(19)} pulse onClick={() => confirmArkRedeem()} />
+        </UiEntity>
+      </UiEntity>
+    </PetHudModal>
+  )
+}
+
 function GetEggOverlay() {
   if (!getEggPending() || clientState.carryEgg.active || clientState.carryPet.active) return <UiEntity />
   return (
@@ -4193,6 +4262,7 @@ const Root = () => {
             <BreedButtons />
             <FeedErrandOverlay />
             <GetEggOverlay />
+            <ArkErrandOverlay />
             {/* Rendered after the HUD chrome (side buttons, bottom nav) so they paint
                 on top of it instead of the nav icons poking through over them. Moot
                 now that bigUiOpen() hides the nav while these are open, but keeps
@@ -4203,6 +4273,7 @@ const Root = () => {
             {uiState.panel === 'adopt' && <AdoptPanel />}
             {clientState.breed.active && clientState.breed.phase === 'pickB' && <BreedPickerPanel />}
             {uiState.panel === 'breedName' && <BreedNamePanel />}
+            <ArkConfirmPanel />
             {uiState.panel === 'shop' && <ShopPanel />}
             {uiState.panel === 'roster' && <RosterPanel />}
             {uiState.panel === 'inventory' && <InventoryPanel />}

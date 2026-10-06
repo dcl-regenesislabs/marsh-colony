@@ -753,6 +753,21 @@ export const CARETAKER_XP_HATCH = 15 // keeping a BRED offspring (not a plain ad
 export const CARETAKER_XP_ALBUM_ENTRY = 20 // first time a species+rarity enters the album
 
 // ---------------------------------------------------------------------------
+// The Ark: an Adult pet can be sent aboard the Captain's ship for good. It is a
+// shared colony goal (every creature aboard counts for everyone) and pays the
+// player Caretaker XP + coins, scaled by rarity — a Legendary pays the most.
+// The pet leaves the player's roster for good, so it must be Adult and never
+// the player's last pet.
+// ---------------------------------------------------------------------------
+export const ARK_REWARDS: Record<Rarity, { coins: number; xp: number }> = {
+  common: { coins: 60, xp: 40 },
+  rare: { coins: 150, xp: 100 },
+  legendary: { coins: 400, xp: 300 }
+}
+/** Shared goal shown in the Captain's panel: creatures aboard across the colony. */
+export const ARK_GOAL = 100
+
+// ---------------------------------------------------------------------------
 // Journey ("Your Journey" / Goals panel) — one-time rewards for each step the art
 // promises. Paid once, server-side, the first time the step's condition is met.
 // The Ark step (wearable) lands with the Ark feature.

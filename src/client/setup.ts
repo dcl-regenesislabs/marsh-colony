@@ -26,6 +26,7 @@ import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
 import { setupDebugGrow } from './debugGrow'
 import { setupArk } from './ark'
+import { setupArkRedeem } from './arkRedeem'
 import { setupPenDoor } from './penDoor'
 import { setupLeaderboardHeads } from './leaderboardHeads'
 import { setupScoreboard } from './scoreboard'
@@ -168,6 +169,11 @@ function registerHandlers(): void {
     clientState.colonyPopulation = data.population
   })
 
+  // Creatures aboard the Ark across the colony (shared goal).
+  room.onMessage('ark', (data) => {
+    clientState.arkTotal = data.total
+  })
+
   // Coins leaderboard — the response to our requestLeaderboard (panel open).
   room.onMessage('leaderboard', (data) => {
     markServerAlive()
@@ -273,6 +279,7 @@ export function setupClient(): void {
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupCaptain() // space Caretaker aboard the ark: tap for a small teaser dialog
   setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
+  setupArkRedeem() // send an Adult pet aboard the Ark: walk to the Captain, confirm, board
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   setupLeaderboardHeads() // spinning face-heads of the top 6 players on the LeaderBoard01 model
   setupScoreboard() // physical XP scoreboard text rows on LeaderBoard01 (top-5 by XP)

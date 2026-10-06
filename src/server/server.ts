@@ -69,6 +69,13 @@ function broadcastColony(): void {
   room.send('colony', { population })
 }
 
+/** Creatures aboard the Ark, for everyone (or one player on join). */
+async function broadcastArk(to?: string): Promise<void> {
+  const total = await S.arkCount()
+  if (to) room.send('ark', { total }, { to: [to] })
+  else room.send('ark', { total })
+}
+
 function broadcastPresence(): void {
   const entries: PresenceEntry[] = []
   for (const p of S.allCached()) {
@@ -99,6 +106,7 @@ export function server(): void {
     pushSnapshot(p)
     broadcastPresence()
     broadcastColony() // a player joined -> their pets count toward the colony
+    void broadcastArk(ctx.from)
   })
 
   // Coins leaderboard — computed on demand (when the client opens the panel) and
@@ -306,6 +314,21 @@ export function server(): void {
     // and it only joins the colony once kept (keepPet broadcasts then).
     if (rarity) room.send('breedResult', { rarity, species: species ?? '', name: name ?? '' }, { to: [ctx.from] })
     pushSnapshot(p)
+  })
+
+  room.onMessage('redeemPet', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    const res = S.redeemPet(p, data.petId)
+    if (res.ok) await S.addArkRedemption()
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, res.notes)
+    pushSnapshot(p)
+    if (res.ok) {
+      broadcastPresence() // the pet left this player's roster
+      broadcastColony()
+      void broadcastArk()
+    }
   })
 
   room.onMessage('claimDaily', async (_data, ctx) => {

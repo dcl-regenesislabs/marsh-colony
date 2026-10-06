@@ -684,7 +684,7 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null || clientState.arkRedeem.active
 }
 
 /**
@@ -1980,6 +1980,69 @@ function breedSpot(off: Vector3): Vector3 {
   return Vector3.create(n.x + off.x, n.y + off.y, n.z + off.z)
 }
 
+// ---------------------------------------------------------------------------
+// The Ark: the active pet walks the given path (up the ramp, through the door),
+// shrinks away inside, and is hidden. arkRedeem.ts drives the errand around it.
+// ---------------------------------------------------------------------------
+const ARK_WALK_SPEED = 2.6 // m/s
+const ARK_VANISH_S = 0.6
+let arkBoard: { path: Vector3[]; i: number; vanish: number; scale: Vector3; onDone: () => void } | null = null
+
+export function boardArk(path: Vector3[], onDone: () => void): void {
+  if (!localPet) {
+    onDone()
+    return
+  }
+  const t = Transform.getMutable(localPet)
+  t.parent = engine.RootEntity
+  arkBoard = { path, i: 0, vanish: -1, scale: Vector3.clone(t.scale), onDone }
+  setClip(localPet, 'walk')
+  if (localTag) setTagVisible(localTag, false)
+}
+
+/** The redeem failed server-side: bring the pet back next to the player. */
+export function restorePetAfterArk(): void {
+  arkBoard = null
+  if (!localPet) return
+  VisibilityComponent.createOrReplace(localPet, { visible: true })
+  const t = Transform.getMutable(localPet)
+  t.position = flat(followTarget())
+  mode = clientState.followEnabled ? 'follow' : 'wander'
+  if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
+}
+
+function updateArkBoarding(dt: number): boolean {
+  const b = arkBoard
+  if (!b || !localPet) return false
+  const t = Transform.getMutable(localPet)
+  if (b.i < b.path.length) {
+    const target = b.path[b.i]
+    const pos = t.position
+    const d = Vector3.subtract(target, pos)
+    const dist = Vector3.length(d)
+    const step = ARK_WALK_SPEED * dt
+    if (dist <= step) {
+      t.position = target
+      b.i++
+    } else {
+      t.position = Vector3.add(pos, Vector3.scale(d, step / dist))
+      t.rotation = yawToward(pos, target, yawOffsetForSpecies(clientState.activePet?.species ?? ''))
+    }
+    t.scale = b.scale
+    setClip(localPet, 'walk')
+    return true
+  }
+  // Inside: shrink away, then hide and hand back.
+  b.vanish = b.vanish < 0 ? 0 : b.vanish + dt
+  const k = Math.max(0, 1 - b.vanish / ARK_VANISH_S)
+  t.scale = Vector3.scale(b.scale, k)
+  if (k > 0) return true
+  VisibilityComponent.createOrReplace(localPet, { visible: false })
+  arkBoard = null
+  b.onDone()
+  return true
+}
+
 /** Breed step 1 — pick the active Adult up and send the player to the nest. */
 export function startBreedErrand(): void {
   const a = clientState.activePet
@@ -2289,7 +2352,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg' | 'ark'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -2314,6 +2377,7 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
   if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
   if (arrowOwner === 'getEgg') return pendingEgg !== null
+  if (arrowOwner === 'ark') return clientState.arkRedeem.active && clientState.arkRedeem.phase === 'toCaptain'
   return false
 }
 
@@ -2783,6 +2847,7 @@ function updateBreedTune(dt: number): void {
 function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
+  if (updateArkBoarding(dt)) return
 
   if (!growthCinematic) startGrowthCinematic()
   if (growthCinematic) {

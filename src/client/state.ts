@@ -166,6 +166,10 @@ export const clientState: {
   serverReady: boolean
   // Shared Mars colony population, broadcast by the server (same for everyone).
   colonyPopulation: number
+  // Creatures aboard the Ark across the colony (shared goal, server broadcast).
+  arkTotal: number
+  // Sending a pet to the Ark: walk to the Captain, confirm, then it boards.
+  arkRedeem: { active: boolean; phase: 'toCaptain' | 'confirm' | 'boarding'; petId: string }
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
   // XP leaderboard (top 5), polled by the physical scoreboard (requestLeaderboardXp).
@@ -206,6 +210,8 @@ export const clientState: {
   lastServerMsgAt: 0,
   serverReady: false,
   colonyPopulation: 0,
+  arkTotal: 0,
+  arkRedeem: { active: false, phase: 'toCaptain', petId: '' },
   leaderboard: [],
   leaderboardXp: []
 }
@@ -456,6 +462,9 @@ export const actions = {
     const p = getPlayer()
     console.log('[Client] -> requestState')
     room.send('requestState', { guestName: p?.name ?? 'Guest' })
+  },
+  redeemPet(petId: string): void {
+    room.send('redeemPet', { petId })
   },
   requestLeaderboard(): void {
     room.send('requestLeaderboard', {})
