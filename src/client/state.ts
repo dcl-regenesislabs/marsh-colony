@@ -3,8 +3,8 @@
 
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
-import type { CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
+import { ARK_GOAL, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -164,12 +164,28 @@ export const clientState: {
   // (ui.tsx Root) blocks all UI/input until this flips, so nothing starts
   // before the server has answered with our persisted state.
   serverReady: boolean
-  // Shared Mars colony population, broadcast by the server (same for everyone).
-  colonyPopulation: number
+  // Sending a pet to the Ark (arkRedeem.ts): 'toCaptain' is the walk behind the
+  // guide arrow after "Send to Ark" in the pet panel; 'confirm' is the Captain's
+  // "Board the Ark?" card (also reached from the Captain's own pet picker). On
+  // confirm the donation + boarding cinematic take over (`ark` below).
+  arkRedeem: { active: boolean; phase: 'toCaptain' | 'confirm'; petId: string }
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
   // XP leaderboard (top 5), polled by the physical scoreboard (requestLeaderboardXp).
   leaderboardXp: LeaderboardEntry[]
+  // The Ark community goal (arkCinematics.ts). `status` is the shared counter;
+  // `pendingDonation` is the pet we asked the server to take (waiting on its
+  // answer); `thanks` is the result card shown after the hand-over cinematic;
+  // `cinematic` hides the HUD while a hand-over/launch owns the camera, and
+  // `launchCard` is the "the Ark has lifted off" card at the end of a launch.
+  ark: {
+    status: ArkStatus
+    leaderboard: ArkLeaderboard | null
+    pendingDonation: PetData | null
+    thanks: ArkDonateResult | null
+    cinematic: 'none' | 'handover' | 'launch'
+    launchCard: ArkLaunchView[] | null
+  }
 } = {
   myAddress: '',
   player: null,
@@ -205,9 +221,17 @@ export const clientState: {
   streak: { count: 1, lastDay: 0, claimedDay: 0 },
   lastServerMsgAt: 0,
   serverReady: false,
-  colonyPopulation: 0,
+  arkRedeem: { active: false, phase: 'toCaptain', petId: '' },
   leaderboard: [],
-  leaderboardXp: []
+  leaderboardXp: [],
+  ark: {
+    status: { eventId: 1, donated: 0, goal: ARK_GOAL },
+    leaderboard: null,
+    pendingDonation: null,
+    thanks: null,
+    cinematic: 'none',
+    launchCard: null
+  }
 }
 
 /** Stamp that the server just talked to us. Called from every server handler. */
@@ -541,6 +565,15 @@ export const actions = {
   },
   breed(partnerPetId: string, name = '', usePotion = false): void {
     room.send('breed', { partnerPetId, name, usePotion })
+  },
+  donatePet(petId: string): void {
+    room.send('donatePet', { petId })
+  },
+  ackArkLaunch(eventId: number): void {
+    room.send('ackArkLaunch', { eventId })
+  },
+  requestArkLeaderboard(): void {
+    room.send('requestArkLeaderboard', {})
   }
 }
 

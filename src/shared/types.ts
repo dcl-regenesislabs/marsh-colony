@@ -85,9 +85,65 @@ export interface PlayerData {
   // "page:<rarity>"). Seeded WITHOUT paying on the first load after the feature
   // ships, so existing collections don't get a retroactive windfall.
   albumClaims?: string[]
+  // Ark (community goal): launches already shown to this player + the wearables
+  // they earned. Optional so saves from before the Ark still load.
+  ark?: ArkPlayerData
   // Bookkeeping
   createdAt: number
   lastUpdated: number
+}
+
+/** A wearable the player earned on the Ark. `key` is 'first' (first donation) or
+ *  'launch:<eventId>'; `delivered` flips once the Rewards campaign confirms it. */
+export interface ArkWearableGrant {
+  key: string
+  wearableId: string
+  delivered: boolean
+  at: number
+}
+
+export interface ArkPlayerData {
+  launchSeen: number // highest launch eventId this player has acknowledged (0 = none)
+  grants: ArkWearableGrant[]
+}
+
+/** Shared progress of the current Ark event (same for every player). */
+export interface ArkStatus {
+  eventId: number
+  donated: number
+  goal: number
+}
+
+/** One launch, as seen by one player (drives the launch cinematic + UI). */
+export interface ArkLaunchView {
+  eventId: number
+  launchedAt: number
+  donatedByMe: number // 0 = this player didn't donate to that launch
+  wearableId: string // the launch reward (only earned when donatedByMe > 0)
+}
+
+/** Server answer to a donatePet request. */
+export interface ArkDonateResult {
+  ok: boolean
+  message: string // error text when !ok
+  petName: string
+  species: string
+  rarity: Rarity
+  xp: number
+  coins: number
+  firstWearableId: string // '' unless this was the player's first donation
+}
+
+export interface ArkLeaderboardRow {
+  address: string
+  name: string
+  count: number
+}
+
+/** Top Ark donors across every launch, plus the requester's own standing. */
+export interface ArkLeaderboard {
+  rows: ArkLeaderboardRow[]
+  me: { rank: number; count: number } | null
 }
 
 /** Lightweight broadcast entry so every client can render every player's pet. */
@@ -117,6 +173,8 @@ export interface LeaderboardEntry {
 export interface PlayerSnapshot {
   player: PlayerData
   activePet: PetData | null
+  // Ark launches this player donated to but hasn't seen yet (they were away).
+  arkUnseen?: ArkLaunchView[]
 }
 
 /** A pending pet-swap offer, sent to the target so they can review + decide. */

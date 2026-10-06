@@ -1,11 +1,16 @@
-// The space Caretaker aboard the ark (Captain.glb). Taps open a small teaser
-// dialog and swap its Idle/Talk clips while talking — mirrors caretaker.ts, but
-// with no intro lock (it's an optional, flavour NPC).
+// The space Caretaker at the foot of the Ark's ramp (Captain.glb). Players hand
+// their Adult pets to the Captain to fill the Ark (issue #248): the first tap of
+// a session explains the goal, later taps go straight to the donation panel.
+// Swaps its Idle/Talk clips while talking — mirrors caretaker.ts, but with no
+// intro lock (it's an optional NPC).
 
 import { engine, Entity, Transform, Animator, AudioSource, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
 import { EntityNames } from '../../assets/scene/entity-names'
-import { clientState, openDialog, CAPTAIN_NPC_NAME } from './state'
-import { canStartPetInteraction } from './pet'
+import { ARK_CAPTAIN_CLICK_DISTANCE } from '../shared/config'
+import { clientState, openDialog, pushToast, CAPTAIN_NPC_NAME } from './state'
+import { canQueueCareAction } from './pet'
+import { playerName } from './ui/dialog'
+import { ui } from './ui'
 
 const TALK_SOUND = 'assets/sounds/AlienNod.mp3'
 let talkSfx: Entity | null = null
@@ -33,6 +38,16 @@ function setClip(e: Entity, clip: string): void {
 }
 
 let clickHandlerSet = false
+let introShownThisSession = false
+
+function captainIntro(): string[] {
+  const s = clientState.ark.status
+  return [
+    `Welcome aboard, ${playerName()}! This Ark will carry our companions to a new colony among the stars.`,
+    'Bring me an Adult pet and it will board the Ark. Rarer pets earn you more XP and coins — and your very first donation earns you the Caretaker Head wearable!',
+    `When ${s.goal} pets are aboard, the Ark launches and everyone who sent a pet receives a special wearable. ${s.donated} / ${s.goal} aboard so far!`
+  ]
+}
 
 /** Captain.glb supplies its own collider; attach the pointer event to the model
  *  entity itself so its collider shape receives the tap/click. */
@@ -40,22 +55,28 @@ function ensureClickHandler(captain: Entity): void {
   if (clickHandlerSet) return
   clickHandlerSet = true
   pointerEventsSystem.onPointerDown(
-    { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to the Captain', maxDistance: 16, showHighlight: true } },
+    { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to the Captain', maxDistance: ARK_CAPTAIN_CLICK_DISTANCE, showHighlight: true } },
     () => {
       // Never open over an existing dialog (openDialog replaces clientState.dialog
-      // wholesale, dropping the other dialog's onDone), and never over an active
-      // activity (Pepito chase / feed / carry / sickness errand) — a stray tap
-      // there would hide that flow's own controls behind the dialog. Mirrors
-      // caretakerPet.ts's guard.
-      if (clientState.dialog.open || !canStartPetInteraction()) return
+      // wholesale, dropping the other dialog's onDone), an Ark cinematic, or a
+      // donation still waiting on the server.
+      if (clientState.dialog.open || clientState.ark.cinematic !== 'none' || clientState.ark.pendingDonation) return
+      // Nor over an active activity (Pepito chase / feed / carry / breeding /
+      // sickness errand) — its pet would board the Ark mid-flow. A sleeping
+      // active pet is fine: the player can still donate another one.
+      if (!canQueueCareAction() && !clientState.activePet?.sleeping) {
+        pushToast('Finish what your pet is doing first!')
+        return
+      }
       playTalkSound()
-      openDialog(
-        CAPTAIN_NPC_NAME,
-        [
-          'The Legendary species are vanishing. Our mission: fill this ark with 100 Legendary pets to save them. Breed a Legendary, bring it to me, and I\'ll reward you with a wearable you can wear across other scenes too.'
-        ],
-        "Let's do it!"
-      )
+      if (introShownThisSession) {
+        ui.openArkDonate()
+        return
+      }
+      openDialog(CAPTAIN_NPC_NAME, captainIntro(), 'Choose a pet', () => {
+        introShownThisSession = true
+        ui.openArkDonate()
+      })
     }
   )
 }

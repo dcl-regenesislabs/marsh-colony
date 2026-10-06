@@ -87,14 +87,6 @@ export const PET_SPEECH_REPEAT_SECONDS = 45
 export const PET_SPEECH_IDLE_SECONDS = 120
 
 // ---------------------------------------------------------------------------
-// Colony — the shared Mars population everyone is building toward. Teaser for
-// now: the server counts pets across the players it knows about and broadcasts
-// the total, so every client shows the same number. Real persistent aggregation
-// (Storage.world) comes with the colony ring.
-// ---------------------------------------------------------------------------
-export const COLONY_GOAL = 100 // target population for the current milestone
-
-// ---------------------------------------------------------------------------
 // Pet roster — species a player can ADOPT. Derived / breeding-only species
 // (see SPROUT_DERIVATIVES) are deliberately NOT in this list: the server
 // validates adoption against it (server/state.ts), so they can only ever be
@@ -753,6 +745,22 @@ export const CARETAKER_XP_HATCH = 15 // keeping a BRED offspring (not a plain ad
 export const CARETAKER_XP_ALBUM_ENTRY = 20 // first time a species+rarity enters the album
 
 // ---------------------------------------------------------------------------
+// The Ark: an Adult pet can be sent aboard the Captain's ship for good. It is a
+// shared colony goal (every creature aboard counts for everyone) and pays the
+// player Caretaker XP + coins, scaled by rarity — a Legendary pays the most.
+// The pet leaves the player's roster for good, so it must be Adult. It can be
+// the player's last pet (the Captain warns first). Filling the Ark to ARK_GOAL
+// launches it (see below).
+// ---------------------------------------------------------------------------
+export const ARK_REWARDS: Record<Rarity, { coins: number; xp: number }> = {
+  common: { coins: 60, xp: 40 },
+  rare: { coins: 150, xp: 100 },
+  legendary: { coins: 400, xp: 300 }
+}
+/** Pets needed to launch the Ark (may be raised — see issue #248's scope note). */
+export const ARK_GOAL = 100
+
+// ---------------------------------------------------------------------------
 // Journey ("Your Journey" / Goals panel) — one-time rewards for each step the art
 // promises. Paid once, server-side, the first time the step's condition is met.
 // The Ark step (wearable) lands with the Ark feature.
@@ -778,9 +786,58 @@ export function journeyStepDone(id: JourneyStepId, p: { pets: unknown[]; counter
     case 'breed':
       return (c['breedCount'] ?? 0) > 0
     case 'ark':
-      // TODO(Ark): hook to the Ark redemption counter once that feature lands.
+      // Bumped by every pet donated to the Ark (server/state.ts donatePet). The
+      // step's reward is the first-donation wearable, so it has no coin row above.
       return (c['arkCount'] ?? 0) > 0
   }
+}
+
+// ---------------------------------------------------------------------------
+// The Ark — community goal (issue #248). Players hand an ADULT pet to the
+// Captain; when ARK_GOAL pets are aboard the Ark launches, every donor
+// of that event earns the launch wearable, and a new event starts right away.
+// ---------------------------------------------------------------------------
+/** Captain.glb's spot in main.composite — the server validates a donation is
+ *  made next to it, and the client stages the hand-over from here. */
+export const ARK_CAPTAIN_POSITION = { x: 162, z: 221 }
+/** How close the Captain can be talked to (client click range). */
+export const ARK_CAPTAIN_CLICK_DISTANCE = 8
+/** Server-side reach for a donation: the click range plus slack for the steps a
+ *  player takes while the picker / confirm card is open. */
+export const ARK_DONATE_RADIUS = 10
+/** Launch records kept for donors who were away (each holds <= GOAL donors). */
+export const ARK_LAUNCH_HISTORY = 10
+export const ARK_LEADERBOARD_SIZE = 10
+
+export interface ArkWearable {
+  id: string
+  name: string
+  urn: string // '' until the Rewards campaign exists -> delivery stays pending
+  image: string // UI preview (placeholder art until the real thumbnails land)
+}
+/** Earned on a player's first donation. */
+export const ARK_FIRST_DONATION_WEARABLE: ArkWearable = {
+  id: 'caretaker_head',
+  name: 'Caretaker Head',
+  urn: '',
+  image: 'assets/images/revamp/caretaker.png'
+}
+/** Launch rewards, rotating one per event (event 1 -> [0], event 5 -> [0] again). */
+export const ARK_LAUNCH_WEARABLES: ArkWearable[] = [
+  { id: 'ark_launch_1', name: 'Ark Captain Hat', urn: '', image: 'assets/images/revamp/capitan.png' },
+  { id: 'ark_launch_2', name: 'Star Voyager Helmet', urn: '', image: 'assets/images/revamp/capitan.png' },
+  { id: 'ark_launch_3', name: 'Colony Pioneer Badge', urn: '', image: 'assets/images/revamp/capitan.png' },
+  { id: 'ark_launch_4', name: 'Cosmic Caretaker Cape', urn: '', image: 'assets/images/revamp/capitan.png' }
+]
+
+export function arkLaunchWearable(eventId: number): ArkWearable {
+  const n = ARK_LAUNCH_WEARABLES.length
+  return ARK_LAUNCH_WEARABLES[(((eventId - 1) % n) + n) % n]
+}
+
+export function arkWearableById(id: string): ArkWearable | null {
+  if (id === ARK_FIRST_DONATION_WEARABLE.id) return ARK_FIRST_DONATION_WEARABLE
+  return ARK_LAUNCH_WEARABLES.find((w) => w.id === id) ?? null
 }
 
 // ---------------------------------------------------------------------------

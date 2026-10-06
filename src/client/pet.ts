@@ -684,7 +684,14 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null || clientState.arkRedeem.active || arkOwnsFlow()
+}
+
+/** An Ark donation is waiting on the server, or an Ark cinematic (boarding /
+ *  launch) owns the camera and the input freeze. arkRedeem.active alone is not
+ *  enough: it is cleared the moment the player confirms, before any of this. */
+function arkOwnsFlow(): boolean {
+  return clientState.ark.pendingDonation !== null || clientState.ark.cinematic !== 'none'
 }
 
 /**
@@ -881,6 +888,12 @@ function registerPetOpenClick(entity: Entity): void {
 /** A completed care action can resolve while another flow still owns the pet.
  * Queue the reveal until that shared activity gate releases it; a sleeping pet
  * must also remain in its sleep mode even if an item changed its growth stage. */
+/** True while the growth reveal owns the camera + input freeze — the Ark
+ *  cinematics wait for it instead of swapping the camera out from under it. */
+export function growthCinematicActive(): boolean {
+  return growthCinematic !== null
+}
+
 function canStartGrowthCinematic(): boolean {
   return !clientState.activePet?.sleeping &&
     !otherActivityActive() &&
@@ -2289,7 +2302,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg' | 'ark'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -2314,6 +2327,7 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'carryPet') return clientState.carryPet.active
   if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
   if (arrowOwner === 'getEgg') return pendingEgg !== null
+  if (arrowOwner === 'ark') return clientState.arkRedeem.active && clientState.arkRedeem.phase === 'toCaptain'
   return false
 }
 

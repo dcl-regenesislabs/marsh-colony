@@ -70,6 +70,12 @@ export const Messages = {
   requestLeaderboard: Schemas.Map({}),
   // Ask the server for the XP-sorted leaderboard (drives the physical scoreboard).
   requestLeaderboardXp: Schemas.Map({}),
+  // Ark: hand one of my Adult pets to the Captain (validated + rewarded server-side).
+  donatePet: Schemas.Map({ petId: Schemas.String }),
+  // Ark: I've watched the launch cinematic for this event (stop replaying it).
+  ackArkLaunch: Schemas.Map({ eventId: Schemas.Int }),
+  // Ark: ask for the top-donors ranking (sent when the ranking panel opens).
+  requestArkLeaderboard: Schemas.Map({}),
 
   // ---- Server -> Client ----
   // Coins leaderboard (LeaderboardEntry[] JSON), sent to the requesting client.
@@ -80,8 +86,6 @@ export const Messages = {
   stateSnapshot: Schemas.Map({ json: Schemas.String }),
   // Broadcast of all pet presence entries (PresenceEntry[] JSON) for social rendering.
   presence: Schemas.Map({ json: Schemas.String }),
-  // Broadcast of the shared Mars colony population (total pets the server knows).
-  colony: Schemas.Map({ population: Schemas.Int }),
   // Toast / notification.
   notify: Schemas.Map({ kind: Schemas.String, message: Schemas.String }),
   // Spin wheel result (SpinReward JSON + landing index for animation).
@@ -93,7 +97,15 @@ export const Messages = {
   // Incoming swap offer for the target: JSON { fromAddress, fromName, offeredPet, wantedPetName }.
   swapOffer: Schemas.Map({ json: Schemas.String }),
   // Swap outcome forwarded to the proposer.
-  swapResult: Schemas.Map({ accepted: Schemas.Boolean, message: Schemas.String })
+  swapResult: Schemas.Map({ accepted: Schemas.Boolean, message: Schemas.String }),
+  // Ark progress (ArkStatus JSON), broadcast whenever it changes.
+  ark: Schemas.Map({ json: Schemas.String }),
+  // Outcome of my donatePet (ArkDonateResult JSON), sent to the donor only.
+  arkDonateResult: Schemas.Map({ json: Schemas.String }),
+  // The Ark just launched (ArkLaunchView JSON, personalized per player).
+  arkLaunch: Schemas.Map({ json: Schemas.String }),
+  // Top Ark donors (ArkLeaderboard JSON), sent to the requester.
+  arkLeaderboard: Schemas.Map({ json: Schemas.String })
 }
 
 export const room = registerMessages(Messages)

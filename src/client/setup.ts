@@ -13,7 +13,7 @@
 import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { room } from '../shared/messages'
-import type { LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
+import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, SICKNESS_CURE_COINS, SICKNESS_CURE_XP, type SpinReward } from '../shared/config'
 import { actions, applyPresence, applySnapshot, clientState, markServerAlive, pushToast, resolveMyAddress, showReward } from './state'
 import { evaluateStreak, petXpReward, seedLocalPlayer, simTick } from './sim'
@@ -26,6 +26,8 @@ import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
 import { setupDebugGrow } from './debugGrow'
 import { setupArk } from './ark'
+import { applyArkStatus, enqueueArkLaunch, onArkDonateResult, setupArkCinematics } from './arkCinematics'
+import { setupArkRedeem } from './arkRedeem'
 import { setupPenDoor } from './penDoor'
 import { setupLeaderboardHeads } from './leaderboardHeads'
 import { setupScoreboard } from './scoreboard'
@@ -130,6 +132,9 @@ function registerHandlers(): void {
       // sickness during this session gets the post-Feed cinematic; a returning
       // player simply resumes the Caretaker errand below.
       if (hadSnapshot && !activePetWasSick && clientState.activePet?.sick) queueSicknessCinematic()
+      // Ark launches this player donated to while away: replayed before anything
+      // else (arkCinematics.ts waits for a calm moment, dedupes by eventId).
+      for (const v of snap.arkUnseen ?? []) enqueueArkLaunch(v)
       // Decide whether to show the intro on the FIRST snapshot ONLY, and only
       // here — this used to also be guessed from a timer (elapsed >= 2.5s) in case
       // the server was slow, but that guess could fire showIntro() BEFORE this
@@ -160,12 +165,6 @@ function registerHandlers(): void {
     } catch (e) {
       console.log('[Client] bad presence', e)
     }
-  })
-
-  // Shared colony population — same number for every player.
-  room.onMessage('colony', (data) => {
-    markServerAlive()
-    clientState.colonyPopulation = data.population
   })
 
   // Coins leaderboard — the response to our requestLeaderboard (panel open).
@@ -229,6 +228,45 @@ function registerHandlers(): void {
     pushToast(data.message)
   })
 
+  // Ark: shared progress toward the launch (drives the counter above the ship).
+  room.onMessage('ark', (data) => {
+    markServerAlive()
+    try {
+      applyArkStatus(JSON.parse(data.json) as ArkStatus)
+    } catch (e) {
+      console.log('[Client] bad ark status', e)
+    }
+  })
+
+  // Ark: the server took (or refused) our pet — start the hand-over cinematic.
+  room.onMessage('arkDonateResult', (data) => {
+    markServerAlive()
+    try {
+      onArkDonateResult(JSON.parse(data.json) as ArkDonateResult)
+    } catch (e) {
+      console.log('[Client] bad ark donate result', e)
+    }
+  })
+
+  // Ark: the goal was reached — play the launch for everyone in the scene.
+  room.onMessage('arkLaunch', (data) => {
+    markServerAlive()
+    try {
+      enqueueArkLaunch(JSON.parse(data.json) as ArkLaunchView)
+    } catch (e) {
+      console.log('[Client] bad ark launch', e)
+    }
+  })
+
+  room.onMessage('arkLeaderboard', (data) => {
+    markServerAlive()
+    try {
+      clientState.ark.leaderboard = JSON.parse(data.json) as ArkLeaderboard
+    } catch (e) {
+      console.log('[Client] bad ark leaderboard', e)
+    }
+  })
+
   // Daily meteor: the server rolled and persisted it — show what we got.
   room.onMessage('meteorResult', (data) => {
     markServerAlive()
@@ -271,8 +309,10 @@ export function setupClient(): void {
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupMeteor() // meteor reward drop (falls, settles, clickable)
   setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
-  setupCaptain() // space Caretaker aboard the ark: tap for a small teaser dialog
-  setupArk() // Ark dome door opens/closes on a loop (OpenDoor clip fwd/reverse)
+  setupCaptain() // the Captain by the Ark's ramp: hand over Adult pets (issue #248)
+  setupArk() // Ark ship: dome door on demand, "X / 100" counter, placeholder lift-off
+  setupArkRedeem() // "Send to Ark" from the pet panel: walk to the Captain, then confirm
+  setupArkCinematics() // pet boarding the Ark + the launch everyone sees
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   setupLeaderboardHeads() // spinning face-heads of the top 6 players on the LeaderBoard01 model
   setupScoreboard() // physical XP scoreboard text rows on LeaderBoard01 (top-5 by XP)

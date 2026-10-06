@@ -91,7 +91,7 @@ export function openCaretakerTips(): void {
 export const LEGENDARY_CREATURE_DIALOG: string[] = [
   'This is a rare LEGENDARY creature — the finest the colony has to offer.',
   'The secret? Keep your creatures thriving. When all four needs stay full, breeding two of them gives a far greater chance of hatching a LEGENDARY.',
-  "When you do, we will contact you and exchange it for something I can't reveal now. Be a good caretaker and provide the colony with exceptional creatures."
+  'Once it grows up, take it to the Captain by the Ark — a Legendary earns the biggest reward when it boards. Be a good caretaker and provide the colony with exceptional creatures.'
 ]
 
 export function openLegendaryCreatureDialog(): void {

@@ -5,8 +5,10 @@ import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
 import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
-import { DEBUG_GROW_ENABLED } from '../shared/config'
+import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE, DEBUG_GROW_ENABLED } from '../shared/config'
+import type { ArkDonateResult } from '../shared/types'
 import * as S from './state'
+import * as Ark from './ark'
 import { trackEvent } from '../shared/analytics'
 
 const TICK_INTERVAL = 5 // seconds between decay/persist passes
@@ -33,7 +35,43 @@ function forwardNotes(address: string, notes: S.Notify[]): void {
 }
 
 function pushSnapshot(p: PlayerData): void {
-  room.send('stateSnapshot', { json: JSON.stringify(S.snapshotFor(p)) }, { to: [p.address] })
+  const snap = { ...S.snapshotFor(p), arkUnseen: Ark.unseenArkLaunchesFor(p) }
+  room.send('stateSnapshot', { json: JSON.stringify(snap) }, { to: [p.address] })
+}
+
+/** Donations happen at the Captain, by the Ark's ramp — same server-side
+ *  position check as the Feed tree / Care Center. */
+function isNearCaptain(address: string): boolean {
+  const wanted = address.toLowerCase()
+  for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+    if (identity.address.toLowerCase() !== wanted) continue
+    const transform = Transform.getOrNull(entity)
+    if (!transform) return false
+    return Math.hypot(transform.position.x - ARK_CAPTAIN_POSITION.x, transform.position.z - ARK_CAPTAIN_POSITION.z) <= ARK_DONATE_RADIUS
+  }
+  return false
+}
+
+function broadcastArk(): void {
+  room.send('ark', { json: JSON.stringify(Ark.arkStatus()) })
+}
+
+/** The goal was just reached: record every loaded donor's launch wearable, then
+ *  play the launch for everyone in the scene right now — each player gets their
+ *  own view (did I donate? which wearable?). Donors who are away get it replayed
+ *  from their snapshot when they return (Ark.unseenArkLaunchesFor). */
+async function announceArkLaunch(launch: Ark.ArkLaunchRecord): Promise<void> {
+  // Sent before anything is awaited, so it reaches clients ahead of the
+  // rolled-over counter the caller broadcasts next.
+  for (const addr of connected) {
+    room.send('arkLaunch', { json: JSON.stringify(Ark.launchViewFor(launch, addr)) }, { to: [addr] })
+  }
+  for (const p of S.allCached()) {
+    if ((launch.donors[p.address.toLowerCase()] ?? 0) === 0) continue
+    Ark.reconcileArkGrants(p)
+    await Ark.deliverPendingWearables(p)
+    await S.savePlayer(p.address)
+  }
 }
 
 /** Read the authoritative player transform instead of accepting a client claim
@@ -62,13 +100,6 @@ function isAtFeedTree(address: string): boolean {
   return false
 }
 
-/** The shared colony population: every pet raised across the colony. */
-function broadcastColony(): void {
-  let population = 0
-  for (const p of S.allCached()) population += p.pets.length
-  room.send('colony', { population })
-}
-
 function broadcastPresence(): void {
   const entries: PresenceEntry[] = []
   for (const p of S.allCached()) {
@@ -80,6 +111,7 @@ function broadcastPresence(): void {
 
 export function server(): void {
   console.log('[Server] MyDearPet authoritative server starting')
+  void Ark.ensureArkLoaded() // warm the Ark record so the first snapshots carry it
 
   // -- Message handlers -----------------------------------------------------
   room.onMessage('requestState', async (data, ctx) => {
@@ -96,9 +128,75 @@ export function server(): void {
       sessionStart.set(ctx.from, Date.now()) // start the clock for session-duration
       trackEvent('session started', ctx.from, { is_new_user: S.isFreshPlayer(ctx.from) })
     }
+    // Ark: a donor who was away when their launch happened gets its wearable
+    // grant now (and the snapshot below carries the launch to replay).
+    await Ark.ensureArkLoaded()
+    Ark.reconcileArkGrants(p)
+    if (firstThisSession && (await Ark.deliverPendingWearables(p))) await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+    room.send('ark', { json: JSON.stringify(Ark.arkStatus()) }, { to: [ctx.from] })
+    broadcastPresence()
+  })
+
+  // Ark: hand an Adult pet to the Captain. Validation + rewards are in
+  // S.donatePet; the shared counter (and a possible launch) in Ark.
+  room.onMessage('donatePet', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    await Ark.ensureArkLoaded()
+    const out = S.donatePet(p, data.petId, isNearCaptain(ctx.from))
+    const pet = out.pet
+    const result: ArkDonateResult = {
+      ok: !!pet,
+      message: pet ? '' : out.notes[0]?.message ?? 'Could not donate that pet.',
+      petName: pet?.name ?? '',
+      species: pet?.species ?? '',
+      rarity: pet?.rarity ?? 'common',
+      xp: out.xp,
+      coins: out.coins,
+      firstWearableId: ''
+    }
+    if (!pet) {
+      room.send('arkDonateResult', { json: JSON.stringify(result) }, { to: [ctx.from] })
+      return
+    }
+    if (out.firstDonation) {
+      Ark.grantFirstDonationWearable(p)
+      result.firstWearableId = ARK_FIRST_DONATION_WEARABLE.id
+    }
+    const launch = await Ark.recordArkDonation(ctx.from, S.displayName(ctx.from))
+    if (launch) Ark.reconcileArkGrants(p)
+    await Ark.deliverPendingWearables(p)
+    await S.savePlayer(ctx.from)
+    room.send('arkDonateResult', { json: JSON.stringify(result) }, { to: [ctx.from] })
+    forwardNotes(ctx.from, out.notes) // "boarded the Ark" toast + any level-up / journey step
     pushSnapshot(p)
     broadcastPresence()
-    broadcastColony() // a player joined -> their pets count toward the colony
+    // Launch first, counter second: the status below already belongs to the NEXT
+    // event (0 / goal), and clients hold it back until the launch has played.
+    if (launch) await announceArkLaunch(launch)
+    broadcastArk()
+  })
+
+  // The launch cinematic was watched — stop replaying it for this player.
+  room.onMessage('ackArkLaunch', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    await Ark.ensureArkLoaded() // the ack is bounded by the launches that actually happened
+    Ark.ackArkLaunch(p, data.eventId)
+    await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+  })
+
+  // Ark donor ranking — same on-demand + rate-limited shape as the leaderboards.
+  const lastArkLeaderReq = new Map<string, number>()
+  room.onMessage('requestArkLeaderboard', async (_data, ctx) => {
+    if (!ctx) return
+    const now = Date.now()
+    if (now - (lastArkLeaderReq.get(ctx.from) ?? 0) < 2000) return
+    lastArkLeaderReq.set(ctx.from, now)
+    await Ark.ensureArkLoaded()
+    room.send('arkLeaderboard', { json: JSON.stringify(Ark.arkLeaderboardFor(ctx.from)) }, { to: [ctx.from] })
   })
 
   // Coins leaderboard — computed on demand (when the client opens the panel) and
@@ -143,7 +241,6 @@ export function server(): void {
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)
     broadcastPresence()
-    broadcastColony() // one more pet in the colony
   })
 
   room.onMessage('discardPet', async (_data, ctx) => {
@@ -398,7 +495,6 @@ export function server(): void {
         void S.savePlayer(p.address)
       }
       broadcastPresence()
-      broadcastColony()
 
       // Departures: anyone we marked `connected` who no longer has a
       // PlayerIdentityData entity has left the scene -> emit `session ended`
