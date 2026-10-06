@@ -38,7 +38,7 @@ import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible,
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { firstSessionHud, firstSessionStep, FIRST_SESSION_CHAPTERS } from './firstSession'
+import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -156,6 +156,11 @@ function syncMobileMagnifierSystem(): void {
 
 export const ui = {
   openAdopt(): void {
+    // First session: after the second pet, the third one comes from breeding.
+    if (firstSessionAdoptLocked()) {
+      uiState.panel = 'none'
+      return
+    }
     // One hatchling at a time: finish (keep/discard) the current one first.
     if (hasPendingHatchling()) {
       pushToast('Place or discard your current pet first.')

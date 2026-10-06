@@ -308,6 +308,26 @@ let breatheLeft = 0
 let objectiveTime = 0
 let repeated = false
 
+/** Steps where the third creature must come from breeding, not adoption. */
+const BREED_ONLY: Partial<Record<FirstSessionStep, boolean>> = {
+  freeTime: true,
+  switch: true,
+  grow: true,
+  nest: true,
+  slot3: true,
+  breed: true,
+  breeding: true,
+  hatch3: true
+}
+
+/** First session, after the second pet: adopting is closed so the third
+ *  creature comes from breeding. Opening Adopt gets a Caretaker line instead. */
+export function firstSessionAdoptLocked(): boolean {
+  if (!firstSessionActive() || !BREED_ONLY[step]) return false
+  say(["Not another egg this time! Your next creature will be born from breeding. Let's get your first pet ready for it."])
+  return true
+}
+
 export function firstSessionStep(): FirstSessionStep {
   return step
 }
