@@ -26,7 +26,7 @@ import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
 import { setupDebugGrow } from './debugGrow'
 import { setupArk } from './ark'
-import { enqueueArkLaunch, onArkDonateResult, setupArkCinematics } from './arkCinematics'
+import { applyArkStatus, enqueueArkLaunch, onArkDonateResult, setupArkCinematics } from './arkCinematics'
 import { setupArkRedeem } from './arkRedeem'
 import { setupPenDoor } from './penDoor'
 import { setupLeaderboardHeads } from './leaderboardHeads'
@@ -167,12 +167,6 @@ function registerHandlers(): void {
     }
   })
 
-  // Shared colony population — same number for every player.
-  room.onMessage('colony', (data) => {
-    markServerAlive()
-    clientState.colonyPopulation = data.population
-  })
-
   // Coins leaderboard — the response to our requestLeaderboard (panel open).
   room.onMessage('leaderboard', (data) => {
     markServerAlive()
@@ -238,7 +232,7 @@ function registerHandlers(): void {
   room.onMessage('ark', (data) => {
     markServerAlive()
     try {
-      clientState.ark.status = JSON.parse(data.json) as ArkStatus
+      applyArkStatus(JSON.parse(data.json) as ArkStatus)
     } catch (e) {
       console.log('[Client] bad ark status', e)
     }

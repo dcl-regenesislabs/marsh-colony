@@ -13,7 +13,7 @@ import { Vector3 } from '@dcl/sdk/math'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { petStage } from '../shared/config'
 import { clientState, pushToast } from './state'
-import { canStartPetInteraction, hideArrow, setFollow, showArrowTo } from './pet'
+import { canStartPetInteraction, growthCinematicActive, hideArrow, setFollow, showArrowTo } from './pet'
 import { objectPosition } from './objects'
 import { requestArkDonation } from './arkCinematics'
 
@@ -66,6 +66,8 @@ export function cancelArkRedeem(): void {
 
 /** The Captain's card: "Send aboard". */
 export function confirmArkRedeem(): void {
+  // A growth reveal owns the camera right now: keep the card up, try again after.
+  if (growthCinematicActive()) return
   const r = clientState.arkRedeem
   const pet = r.active && r.phase === 'confirm' ? clientState.player?.pets.find((x) => x.id === r.petId) : undefined
   reset()

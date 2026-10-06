@@ -118,10 +118,15 @@ export function unseenArkLaunchesFor(p: PlayerData): ArkLaunchView[] {
   return world.launches.filter((l) => l.eventId > seen && (l.donors[key] ?? 0) > 0).map((l) => launchViewFor(l, key))
 }
 
-/** The player watched these launches; stop replaying them. */
+/** The player watched these launches; stop replaying them. `eventId` comes from
+ *  the client, so it is capped at the last launch that really happened — an
+ *  inflated value would otherwise mute every future launch for that player. */
 export function ackArkLaunch(p: PlayerData, eventId: number): void {
+  if (!world || !Number.isFinite(eventId)) return
+  const lastLaunched = world.eventId - 1
+  const seen = Math.min(Math.floor(eventId), lastLaunched)
   const ark = arkData(p)
-  if (eventId > ark.launchSeen) ark.launchSeen = eventId
+  if (seen > ark.launchSeen) ark.launchSeen = seen
 }
 
 export function arkLeaderboardFor(address: string): ArkLeaderboard {

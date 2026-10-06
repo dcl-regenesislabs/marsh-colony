@@ -6,6 +6,7 @@
 
 import { engine, Entity, Transform, Animator, AudioSource, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
 import { EntityNames } from '../../assets/scene/entity-names'
+import { ARK_CAPTAIN_CLICK_DISTANCE } from '../shared/config'
 import { clientState, openDialog, pushToast, CAPTAIN_NPC_NAME } from './state'
 import { canQueueCareAction } from './pet'
 import { playerName } from './ui/dialog'
@@ -54,7 +55,7 @@ function ensureClickHandler(captain: Entity): void {
   if (clickHandlerSet) return
   clickHandlerSet = true
   pointerEventsSystem.onPointerDown(
-    { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to the Captain', maxDistance: 16, showHighlight: true } },
+    { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to the Captain', maxDistance: ARK_CAPTAIN_CLICK_DISTANCE, showHighlight: true } },
     () => {
       // Never open over an existing dialog (openDialog replaces clientState.dialog
       // wholesale, dropping the other dialog's onDone), an Ark cinematic, or a

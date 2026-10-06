@@ -164,8 +164,6 @@ export const clientState: {
   // (ui.tsx Root) blocks all UI/input until this flips, so nothing starts
   // before the server has answered with our persisted state.
   serverReady: boolean
-  // Shared Mars colony population, broadcast by the server (same for everyone).
-  colonyPopulation: number
   // Sending a pet to the Ark (arkRedeem.ts): 'toCaptain' is the walk behind the
   // guide arrow after "Send to Ark" in the pet panel; 'confirm' is the Captain's
   // "Board the Ark?" card (also reached from the Captain's own pet picker). On
@@ -223,7 +221,6 @@ export const clientState: {
   streak: { count: 1, lastDay: 0, claimedDay: 0 },
   lastServerMsgAt: 0,
   serverReady: false,
-  colonyPopulation: 0,
   arkRedeem: { active: false, phase: 'toCaptain', petId: '' },
   leaderboard: [],
   leaderboardXp: [],

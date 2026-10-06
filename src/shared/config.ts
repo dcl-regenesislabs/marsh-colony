@@ -87,14 +87,6 @@ export const PET_SPEECH_REPEAT_SECONDS = 45
 export const PET_SPEECH_IDLE_SECONDS = 120
 
 // ---------------------------------------------------------------------------
-// Colony — the shared Mars population everyone is building toward. Teaser for
-// now: the server counts pets across the players it knows about and broadcasts
-// the total, so every client shows the same number. Real persistent aggregation
-// (Storage.world) comes with the colony ring.
-// ---------------------------------------------------------------------------
-export const COLONY_GOAL = 100 // target population for the current milestone
-
-// ---------------------------------------------------------------------------
 // Pet roster — species a player can ADOPT. Derived / breeding-only species
 // (see SPROUT_DERIVATIVES) are deliberately NOT in this list: the server
 // validates adoption against it (server/state.ts), so they can only ever be
@@ -808,7 +800,11 @@ export function journeyStepDone(id: JourneyStepId, p: { pets: unknown[]; counter
 /** Captain.glb's spot in main.composite — the server validates a donation is
  *  made next to it, and the client stages the hand-over from here. */
 export const ARK_CAPTAIN_POSITION = { x: 162, z: 221 }
-export const ARK_DONATE_RADIUS = 16 // matches the Captain's click maxDistance
+/** How close the Captain can be talked to (client click range). */
+export const ARK_CAPTAIN_CLICK_DISTANCE = 8
+/** Server-side reach for a donation: the click range plus slack for the steps a
+ *  player takes while the picker / confirm card is open. */
+export const ARK_DONATE_RADIUS = 10
 /** Launch records kept for donors who were away (each holds <= GOAL donors). */
 export const ARK_LAUNCH_HISTORY = 10
 export const ARK_LEADERBOARD_SIZE = 10

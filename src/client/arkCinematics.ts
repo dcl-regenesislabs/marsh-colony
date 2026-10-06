@@ -14,10 +14,10 @@
 import { Animator, ColliderLayer, engine, Entity, GltfContainer, InputModifier, MainCamera, Transform, VirtualCamera, VisibilityComponent } from '@dcl/sdk/ecs'
 import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
-import type { ArkDonateResult, ArkLaunchView, PetData } from '../shared/types'
-import { actions, clientState, pushToast, showReward } from './state'
+import type { ArkDonateResult, ArkLaunchView, ArkStatus, PetData } from '../shared/types'
+import { actions, clientState, hasPendingHatchling, pushToast, showReward } from './state'
 import { applyCreatureSkin } from './creatureSkins'
-import { getLocalPet } from './pet'
+import { getLocalPet, growthCinematicActive } from './pet'
 import { arkHome, resetArk, setArkCounterHidden, setArkDoor, setArkLift, setArkVisible } from './ark'
 import { sicknessCinematicOwnsFlow } from './sicknessCinematic'
 import { uiPanelOpen } from './ui'
@@ -152,7 +152,7 @@ let pendingSince = 0
 
 /** Ask the server to take `pet`. The cinematic starts on its answer. */
 export function requestArkDonation(pet: PetData): void {
-  if (clientState.ark.pendingDonation || handover) return
+  if (clientState.ark.pendingDonation || handover || launch || growthCinematicActive()) return
   clientState.ark.pendingDonation = pet
   pendingSince = Date.now()
   // Remember where the pet is standing so the clone starts there (only the
@@ -400,10 +400,27 @@ export function enqueueArkLaunch(view: ArkLaunchView): void {
   if (launchQueue.some((v) => v.eventId === view.eventId)) return
   if (launch && launch.views.some((v) => v.eventId === view.eventId)) return
   launchQueue.push(view)
+  // The Ark this player is about to watch lift off is a FULL one: hold the
+  // counter at goal/goal until the cinematic has played (see applyArkStatus).
+  if (!heldStatus) heldStatus = clientState.ark.status
+  clientState.ark.status = { ...heldStatus, donated: heldStatus.goal }
 }
 
-/** Wait for a calm moment: never over a minigame, another cinematic, a dialog
- *  or an open panel — the launch then takes over the screen. */
+// The newest real status received while a launch is queued / playing. The
+// server rolls into the next event (0 / goal) the instant the goal is reached,
+// so showing that right away would empty the door sign and the HUD before the
+// player has seen the Ark leave.
+let heldStatus: ArkStatus | null = null
+
+/** Server progress update: applied now, or after the pending launch has played. */
+export function applyArkStatus(status: ArkStatus): void {
+  if (launch || launchQueue.length > 0) heldStatus = status
+  else clientState.ark.status = status
+}
+
+/** Wait for a calm moment: never over a minigame, an errand or carry, a pending
+ *  keep/discard, another cinematic, a dialog or an open panel — the launch then
+ *  takes over the screen. */
 function canStartLaunch(): boolean {
   const s = clientState
   return (
@@ -422,8 +439,15 @@ function canStartLaunch(): boolean {
     !s.fetch.active &&
     !s.pepitoChase.active &&
     !s.breed.active &&
+    !s.carryPet.active &&
+    !s.carryEgg.active &&
+    !s.feedTask.active &&
+    !s.sicknessErrand.active &&
+    !hasPendingHatchling() &&
+    !s.pendingHatchlingDecision &&
     !(s.arkRedeem.active && s.arkRedeem.phase === 'confirm') &&
     !sicknessCinematicOwnsFlow() &&
+    !growthCinematicActive() &&
     !uiPanelOpen() &&
     s.screenFade.alpha <= 0
   )
@@ -496,6 +520,12 @@ export function closeArkLaunchCard(): void {
     () => {
       resetArk()
       setArkCounterHidden(false)
+      // The next Ark is on the pad: show its real progress, unless another
+      // launch is already queued behind this one.
+      if (heldStatus && launchQueue.length === 0) {
+        clientState.ark.status = heldStatus
+        heldStatus = null
+      }
     },
     () => {
       clientState.ark.cinematic = 'none'

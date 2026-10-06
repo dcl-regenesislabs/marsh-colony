@@ -22,8 +22,9 @@ const ARK_DOOR_SETTLE_S = 0.15 // slack after the reverse play before pinning it
 const ARK_DOOR_HOLD_SPEED = 0.000001
 
 // The counter sits on `textshape_base`, an unrendered plane placed in Creator
-// Hub above the door: its position + rotation anchor the text, its scale is the
-// area the text has to fit in (so it is NOT inherited — that would squash it).
+// Hub above the door: only its position + rotation are used, as the text's
+// anchor. Its scale is ignored (inheriting it would squash the glyphs); the text
+// size is COUNTER_FONT_SIZE, picked by eye to fit that sign.
 const COUNTER_FONT_SIZE = 5 // in-world TextShape size (see scoreboard.ts — not metres)
 const COUNTER_FACE_OUT = 0.03 // metres off the plane, so it never z-fights a surface behind it
 const COUNTER_DROP = 0.07 // metres below the plane's centre: the glyphs sit high in their line box

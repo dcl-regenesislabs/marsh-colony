@@ -61,14 +61,16 @@ function broadcastArk(): void {
  *  own view (did I donate? which wearable?). Donors who are away get it replayed
  *  from their snapshot when they return (Ark.unseenArkLaunchesFor). */
 async function announceArkLaunch(launch: Ark.ArkLaunchRecord): Promise<void> {
+  // Sent before anything is awaited, so it reaches clients ahead of the
+  // rolled-over counter the caller broadcasts next.
+  for (const addr of connected) {
+    room.send('arkLaunch', { json: JSON.stringify(Ark.launchViewFor(launch, addr)) }, { to: [addr] })
+  }
   for (const p of S.allCached()) {
     if ((launch.donors[p.address.toLowerCase()] ?? 0) === 0) continue
     Ark.reconcileArkGrants(p)
     await Ark.deliverPendingWearables(p)
     await S.savePlayer(p.address)
-  }
-  for (const addr of connected) {
-    room.send('arkLaunch', { json: JSON.stringify(Ark.launchViewFor(launch, addr)) }, { to: [addr] })
   }
 }
 
@@ -96,13 +98,6 @@ function isAtFeedTree(address: string): boolean {
     return Math.hypot(transform.position.x - FEED_TREE_POSITION.x, transform.position.z - FEED_TREE_POSITION.z) <= FEED_TREE_RADIUS
   }
   return false
-}
-
-/** The shared colony population: every pet raised across the colony. */
-function broadcastColony(): void {
-  let population = 0
-  for (const p of S.allCached()) population += p.pets.length
-  room.send('colony', { population })
 }
 
 function broadcastPresence(): void {
@@ -141,7 +136,6 @@ export function server(): void {
     pushSnapshot(p)
     room.send('ark', { json: JSON.stringify(Ark.arkStatus()) }, { to: [ctx.from] })
     broadcastPresence()
-    broadcastColony() // a player joined -> their pets count toward the colony
   })
 
   // Ark: hand an Adult pet to the Captain. Validation + rewards are in
@@ -178,15 +172,17 @@ export function server(): void {
     forwardNotes(ctx.from, out.notes) // "boarded the Ark" toast + any level-up / journey step
     pushSnapshot(p)
     broadcastPresence()
-    broadcastColony()
-    broadcastArk()
+    // Launch first, counter second: the status below already belongs to the NEXT
+    // event (0 / goal), and clients hold it back until the launch has played.
     if (launch) await announceArkLaunch(launch)
+    broadcastArk()
   })
 
   // The launch cinematic was watched — stop replaying it for this player.
   room.onMessage('ackArkLaunch', async (data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
+    await Ark.ensureArkLoaded() // the ack is bounded by the launches that actually happened
     Ark.ackArkLaunch(p, data.eventId)
     await S.savePlayer(ctx.from)
     pushSnapshot(p)
@@ -245,7 +241,6 @@ export function server(): void {
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)
     broadcastPresence()
-    broadcastColony() // one more pet in the colony
   })
 
   room.onMessage('discardPet', async (_data, ctx) => {
@@ -500,7 +495,6 @@ export function server(): void {
         void S.savePlayer(p.address)
       }
       broadcastPresence()
-      broadcastColony()
 
       // Departures: anyone we marked `connected` who no longer has a
       // PlayerIdentityData entity has left the scene -> emit `session ended`

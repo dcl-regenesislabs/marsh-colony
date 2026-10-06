@@ -86,8 +86,6 @@ export const Messages = {
   stateSnapshot: Schemas.Map({ json: Schemas.String }),
   // Broadcast of all pet presence entries (PresenceEntry[] JSON) for social rendering.
   presence: Schemas.Map({ json: Schemas.String }),
-  // Broadcast of the shared Mars colony population (total pets the server knows).
-  colony: Schemas.Map({ population: Schemas.Int }),
   // Toast / notification.
   notify: Schemas.Map({ kind: Schemas.String, message: Schemas.String }),
   // Spin wheel result (SpinReward JSON + landing index for animation).
