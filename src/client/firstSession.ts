@@ -324,7 +324,7 @@ const BREED_ONLY: Partial<Record<FirstSessionStep, boolean>> = {
  *  creature comes from breeding. Opening Adopt gets a Caretaker line instead. */
 export function firstSessionAdoptLocked(): boolean {
   if (!firstSessionActive() || !BREED_ONLY[step]) return false
-  say(["Not another egg this time! Your next creature will be born from breeding. Let's get your first pet ready for it."])
+  say(['Try breeding before adopting: a bred creature gets you more XP!'])
   return true
 }
 
