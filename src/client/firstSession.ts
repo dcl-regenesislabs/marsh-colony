@@ -33,7 +33,9 @@ import { getEggPending, setFirstSessionBreedPartner } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
-import { openDialog } from './state'
+import { openDialog, CAPTAIN_NPC_NAME } from './state'
+/** The player has opened the Captain's dialog during the 'captain' step. */
+let captainHeard = false
 import { mobile } from './ui/theme'
 import { petTouchControlsAreVisible } from './touchControls'
 import { trackEvent } from '../shared/analytics'
@@ -68,6 +70,7 @@ export type FirstSessionStep =
   | 'breeding' // the breed errand / cinematic owns the screen
   | 'hatch3' // carry the hybrid egg home, hatch, keep (existing flows)
   | 'wrapup' // chapter 6: the Caretaker's closing words
+  | 'captain' // last beat: go talk to the Captain at the Ark; his dialog ends the session
   | 'done' // the rest of the visit is the normal game
 
 /** Chapter shown on the bar ("Chapter 1/6"), per step. */
@@ -93,6 +96,7 @@ const CHAPTER: Record<FirstSessionStep, number> = {
   breeding: 5,
   hatch3: 5,
   wrapup: 6,
+  captain: 6,
   done: 6
 }
 export const FIRST_SESSION_CHAPTERS = 6
@@ -106,7 +110,8 @@ const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
   switch: 'Open My Pets and pick your first pet again. I have something for it!',
   grow: 'Find the mushroom in the woods and tap it. Your pet will grow up!',
-  breed: '{tap} and choose Breed, then carry it to the breeding nest in the house.'
+  breed: '{tap} and choose Breed, then carry it to the breeding nest in the house.',
+  captain: 'Go talk to the Captain at the Ark. He has a mission for the whole colony!'
 }
 
 const GROW_DIALOG = [
@@ -118,7 +123,8 @@ const CLOSING_DIALOG = [
   'Look at that: your very first hybrid!',
   'Babies need lots of care to grow up. Feed it, bathe it and play with it.',
   "Next time you won't need my pet. Raise your two to Adult and breed them yourselves.",
-  'Come back tomorrow: your daily streak reward will be waiting!'
+  'Come back tomorrow: your daily streak reward will be waiting!',
+  'One last thing: the Captain is waiting for you at the Ark. Go say hello!'
 ]
 
 /** Objectives whose wording depends on the moment. */
@@ -505,7 +511,13 @@ function advance(dt: number): void {
     case 'wrapup':
       if (breatheLeft > 0 || !canInterrupt()) return
       say(CLOSING_DIALOG, 'Thanks!')
-      goTo('done')
+      goTo('captain')
+      return
+    case 'captain':
+      // Talking to the Captain (captain.ts opens his dialog) and closing it ends
+      // the first session: from here on it is the normal game.
+      if (clientState.dialog.open && clientState.dialog.npcName === CAPTAIN_NPC_NAME) captainHeard = true
+      else if (captainHeard && !clientState.dialog.open) goTo('done')
       return
     case 'done':
       return
