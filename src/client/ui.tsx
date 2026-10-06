@@ -774,8 +774,8 @@ function PetPanel() {
         <PillButton
           id="ark_send"
           label={unlocked ? 'Send to Ark' : 'Ark  ·  Adult'}
-          shape="wide"
-          color={unlocked ? 'blue' : 'gray'}
+          shape="pass"
+          color={unlocked ? 'green' : 'gray'}
           width={thirdW}
           height={S(54)}
           fontSize={S(16)}
