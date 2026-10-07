@@ -52,7 +52,8 @@ function ensureClickHandler(captain: Entity): void {
       openDialog(
         CAPTAIN_NPC_NAME,
         [
-          'The Legendary species are vanishing. Our mission: fill this ark with 100 Legendary pets to save them. Breed a Legendary, bring it to me, and I\'ll reward you with a wearable you can wear across other scenes too.'
+          'The Legendary species are vanishing. Our mission: fill this ark with 100 Legendary pets to save them.',
+          'Breed a Legendary, bring it to me, and I\'ll reward you with a wearable you can wear across other scenes too.'
         ],
         "Let's do it!"
       )
