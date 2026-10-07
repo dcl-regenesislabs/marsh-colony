@@ -468,6 +468,7 @@ function advance(dt: number): void {
       if (!growIntroDone && breatheLeft <= 0 && canInterrupt()) {
         growIntroDone = true
         say(GROW_DIALOG, "I'm on it!")
+        markSaid() // the gift dialog already says it: the objective only goes to the toast
         return
       }
       const pet = clientState.activePet
@@ -491,6 +492,7 @@ function advance(dt: number): void {
         'Got it!'
       )
       goTo(needSlot ? 'slot3' : 'breed')
+      markSaid()
       return
     }
     case 'slot3':
@@ -516,6 +518,7 @@ function advance(dt: number): void {
       if (breatheLeft > 0 || !canInterrupt()) return
       say(CLOSING_DIALOG, 'Thanks!')
       goTo('captain')
+      markSaid()
       return
     case 'captain':
       // Talking to the Captain (captain.ts opens his dialog) and closing it ends
@@ -555,6 +558,15 @@ function say(pages: string[], finalLabel = 'Got it!'): void {
 
 /** The objective line last said for this step ('' = not said yet). */
 let said = ''
+
+/** A Caretaker dialog that already covers the objective was just opened:
+ *  count it as said, so it shows only in the sticky toast after the dialog
+ *  instead of popping up again as a second Caretaker dialog. */
+function markSaid(): void {
+  said = objectiveFor(step)
+  objectiveTime = 0
+  repeated = false
+}
 
 function firstSessionSystem(dt: number): void {
   updateMushroom(dt) // also hides it for everyone who is not on the 'grow' step

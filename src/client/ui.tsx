@@ -148,6 +148,21 @@ function mobileMagnifierProgress(): number {
   return mobileMagnifier.phase === 'closing' ? 1 - eased : eased
 }
 
+/** A dialog never sits on top of another panel: the moment one opens, the
+ *  panel that was already up (My Pets, Inventory, Adopt, the pet's panel...)
+ *  closes and the dialog stays alone on screen. Only the opening edge counts,
+ *  so a panel a dialog opens when it ends (e.g. intro -> Adopt) is untouched.
+ *  The offspring naming step is left alone so a breed is never cut short. */
+let dialogWasOpen = false
+function dialogClosesPanelsSystem(): void {
+  const open = clientState.dialog.open
+  if (open && !dialogWasOpen) {
+    if (uiState.panel !== 'none' && uiState.panel !== 'breedName') ui.close()
+    if (clientState.petPanelOpen) clientState.petPanelOpen = false
+  }
+  dialogWasOpen = open
+}
+
 function syncMobileMagnifierSystem(): void {
   if (mobileMagnifier.phase === 'closing' && Date.now() - mobileMagnifier.startedAt >= MOBILE_NAME_OVERLAY_MS) {
     resetMobileMagnifier()
@@ -3002,7 +3017,7 @@ const bubbleRightRaw = 290
 // First session: the same bubble pointing at the native Pet Actions button
 // (IA_SECONDARY, the next arc slot). Nudged up-left so the tail stops just
 // short of the button instead of sitting on it.
-const petActionsBubbleBottomRaw = 285
+const petActionsBubbleBottomRaw = 272
 const petActionsBubbleRightRaw = 230
 const barBottomRaw = 320
 const barRightRaw = 240
@@ -4410,6 +4425,7 @@ export function setupUi(): void {
     engine.addSystem(syncUiRendererSystem)
     engine.addSystem(syncPetTouchControlsSystem)
     engine.addSystem(syncMobileMagnifierSystem)
+    engine.addSystem(dialogClosesPanelsSystem)
   }
 
   resolveRuntimePlatform()
