@@ -266,8 +266,8 @@ function hasFreeSlot(): boolean {
 /** Seconds in 'play' without a single fetch before the server tires the pet anyway. */
 const PLAY_FALLBACK_SECONDS = 120
 
-/** Breathing room after a reward before the next instruction shows up. */
-const BREATHE_SECONDS = 10
+/** Breathing room after a reward before the next instruction shows up (kept short: testers found the gaps slow). */
+const BREATHE_SECONDS = 3
 
 // Counted from when the Caretaker said the objective (dialog closed, not in Fetch).
 /** If the player sits on the objective this long, its toast throbs once. */
@@ -382,7 +382,7 @@ function advance(dt: number): void {
       // The first pet has been kept: it is in the roster and nothing is pending.
       if (p && p.pets.length > 0 && !p.hatchling && clientState.activePet && !clientState.hatch.active) {
         firstPetId = clientState.activePet.id
-        goTo('meet', BREATHE_SECONDS)
+        goTo('meet', 1) // right after Keep: the pet is hungry almost at once
       }
       return
     case 'meet':
@@ -400,7 +400,7 @@ function advance(dt: number): void {
       // nothing was eaten): don't strand the player, move on to chapter 3.
       const feedOver = !clientState.feedTask.active && !clientState.feedGame.active
       feedOverFor = feedOver ? feedOverFor + dt : 0
-      if (feedOver && feedOverFor > 3 && !clientState.sicknessErrand.active) goTo('bath', BREATHE_SECONDS)
+      if (feedOver && feedOverFor > 1.5 && !clientState.sicknessErrand.active) goTo('bath', BREATHE_SECONDS)
       return
     }
     case 'sick':
@@ -413,7 +413,7 @@ function advance(dt: number): void {
       if (breatheLeft <= 0) goTo('bath')
       return
     case 'bath':
-      if ((p?.counters['bathCount'] ?? 0) > bathsAtStart) goTo('play', 6)
+      if ((p?.counters['bathCount'] ?? 0) > bathsAtStart) goTo('play', 2)
       return
     case 'play': {
       const pet = clientState.activePet
@@ -432,7 +432,7 @@ function advance(dt: number): void {
       return
     }
     case 'rest':
-      if (clientState.activePet?.sleeping) goTo('slot', 3) // short: the nap itself is the pause
+      if (clientState.activePet?.sleeping) goTo('slot', 1.5) // short: the nap itself is the pause
       return
     case 'slot':
       if (p && p.pets.length < p.petSlots) goTo('adopt2')
@@ -458,7 +458,7 @@ function advance(dt: number): void {
       if (freeLeft <= 0) goTo('switch')
       return
     case 'switch':
-      if (clientState.activePet && clientState.activePet.id === firstPetId) goTo('grow', 3)
+      if (clientState.activePet && clientState.activePet.id === firstPetId) goTo('grow', 1.5)
       return
     case 'grow': {
       if (!growIntroDone && breatheLeft <= 0 && canInterrupt()) {
@@ -469,7 +469,7 @@ function advance(dt: number): void {
       const pet = clientState.activePet
       if (pet && pet.id === firstPetId && petStage(pet.size) === 'ADULT') {
         setFirstSessionBreedPartner(firstSessionPartnerSpecies(pet)) // already waiting in bowl B
-        goTo('nest', 3)
+        goTo('nest', 1.5)
       }
       return
     }
@@ -506,7 +506,7 @@ function advance(dt: number): void {
       return
     case 'hatch3':
       if (getEggPending() || clientState.carryEgg.active || clientState.hatch.active || p?.hatchling) return
-      goTo('wrapup', 4)
+      goTo('wrapup', 2)
       return
     case 'wrapup':
       if (breatheLeft > 0 || !canInterrupt()) return

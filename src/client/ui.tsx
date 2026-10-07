@@ -3000,9 +3000,10 @@ function HatchOverlay() {
 const bubbleBottomRaw = 180
 const bubbleRightRaw = 290
 // First session: the same bubble pointing at the native Pet Actions button
-// (IA_SECONDARY, the next arc slot). A first guess: calibrate on-device.
-const petActionsBubbleBottomRaw = 260
-const petActionsBubbleRightRaw = 200
+// (IA_SECONDARY, the next arc slot). Nudged up-left so the tail stops just
+// short of the button instead of sitting on it.
+const petActionsBubbleBottomRaw = 285
+const petActionsBubbleRightRaw = 230
 const barBottomRaw = 320
 const barRightRaw = 240
 
