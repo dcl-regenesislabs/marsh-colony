@@ -282,6 +282,7 @@ export function takeFirstSessionPoison(): boolean {
 }
 /** Counter values when the current step started, to spot the new action. */
 let bathsAtStart = 0
+let feedsAtStart = 0
 let playsAtStart = 0
 /** Seconds spent in 'play' (moves on without a fetch after PLAY_FALLBACK_SECONDS). */
 let playTime = 0
@@ -328,6 +329,7 @@ function goTo(next: FirstSessionStep, breathe = 0): void {
   resetNudges()
   const c = clientState.player?.counters ?? {}
   bathsAtStart = c['bathCount'] ?? 0
+  feedsAtStart = c['feedAnyCount'] ?? 0
   playsAtStart = c['playCount'] ?? 0
   playTime = 0
   console.log('[FirstSession] step ->', next)
@@ -379,11 +381,16 @@ function advance(dt: number): void {
         goTo('sick')
         return
       }
-      // The round is over but no sickness came back (e.g. nothing caught, so
-      // nothing was eaten): don't strand the player, move on to chapter 3.
+      // The Feed flow ended without sickness coming back.
       const feedOver = !clientState.feedTask.active && !clientState.feedGame.active
       feedOverFor = feedOver ? feedOverFor + dt : 0
-      if (feedOver && feedOverFor > 1.5 && !clientState.sicknessErrand.active) goTo('bath', BREATHE_SECONDS)
+      if (feedOver && feedOverFor > 1.5 && !clientState.sicknessErrand.active) {
+        const fed = (p?.counters['feedAnyCount'] ?? 0) > feedsAtStart
+        // Left with BACK before (or during) the round, so nothing was eaten: ask
+        // for Feed again instead of skipping the sickness arc. A round that did
+        // count but brought no sickness (poison already used) moves on.
+        goTo(fed ? 'bath' : 'feed', fed ? BREATHE_SECONDS : 0)
+      }
       return
     }
     case 'sick':
