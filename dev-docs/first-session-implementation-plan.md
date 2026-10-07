@@ -29,7 +29,9 @@
 
 ## 2. Pasos de la sesión
 
-`intro → meet → feed → sick → cured → bath → play → rest → egg2 → meet2 → freeTime → switch → grow → nest → slot3 → breed → hatchHybrid → wrapup → done`
+`intro → meet → feed → sick → cured → bath → play → grow → nest → slot3 → breed → hatchHybrid → wrapup → captain → done`
+
+> **Cambio (oct 2026):** la primera sesión se juega con **una sola mascota**. Como la cría usa la mascota del Caretaker, se sacaron la siesta, el segundo huevo, el tiempo libre y el cambio de mascota. Adoptar queda cerrado desde que se queda la primera mascota hasta el final. Son 5 capítulos.
 
 - Viven **solo en el cliente** (`src/client/firstSession.ts`) y avanzan con los eventos reales del juego (keep, resultado del Feed, cura, baño, rondas de fetch, cría…), igual que hoy los snapshots actualizan el HUD.
 - Si recargan a mitad, ya no es su primera visita: juego normal. No hay checkpoints.
@@ -68,21 +70,20 @@ Cada fase se puede probar sola y deja el juego jugable.
 
 ### Fase 4 — Capítulo 3: baño y juego (pasos 7–9)
 - Al terminar la persecución, el server baja la higiene (barro) para que el baño tenga sentido.
-- Fetch: línea "Let's play!". Tras 4–5 rondas o ~2 min, el server fuerza energía baja (fallback) → la mascota se muestra agotada → "Let it rest on the bed" con flecha a la cama.
+- Fetch: línea "Let's play!". Con una ronda alcanza; si no juega, a los ~2 min sigue igual. Sin siesta: de ahí directo al hongo.
 
-### Fase 5 — Capítulo 4: segundo huevo (pasos 10–13)
+### ~~Fase 5 — Segundo huevo~~ (sacada, ver el cambio arriba)
 - Mientras duerme: línea del Caretaker → flecha y pulso a **My Pets → Buy slot** (50) → flecha al Caretaker → adoptar (flujo actual completo, incluye el nombre con el panel nuevo).
 - Pausa libre ~30 s (si el meteorito está disponible, la línea lo menciona) y el Caretaker te vuelve a llamar.
 
-### Fase 6 — Capítulo 5: crecer y criar (pasos 14–19)
-- **Cambiar** a pet 1 con My Pets (pulso en su carta); si duerme, despertarla.
+### Fase 6 — Capítulo 4: crecer y criar
 - **Crecer a Adult — se implementa al final (Fase 7b), cuando llegue el modelo del hongo.** El Caretaker dice que por ser la primera vez te concede una Grow Potion: "go find a mushroom in the woods". Flecha al hongo en el bosque; al tocarlo la mascota crece (como el cheat de debug, pero sin dar dinero) con un efecto armado con piezas que ya están (`starburst` + escalado animado + baile). Server: acción válida solo en la primera sesión y una sola vez. Mientras no esté, para probar se usa el tótem de debug que ya existe.
 - **Nido:** flecha al nido; la pareja del Caretaker aparece sentada en el bowl B.
-- **Slot 3** (75) con el mismo pulso en My Pets.
+- **Slot 2** para el bebé, con el pulso en My Pets.
 - **Cría:** el flujo actual sin el paso `pickB` (la pareja ya está). Server `breed` con `tutorialPartner: true`: no busca la pareja en `p.pets`, usa la familia fija, no cobra fee, sigue exigiendo Adult y slot libre para la tuya. Rareza aleatoria normal.
 - Huevo → casa → eclosión → **Keep**.
 
-### Fase 7 — Capítulo 6: cierre (pasos 20–21)
+### Fase 7 — Capítulo 5: cierre
 - Diálogo final de la spec → `step: 'done'`. Desde ahí el juego es el de siempre; Goals y la racha siguen como hoy.
 
 ### Fase 7b — Hongo de crecimiento (al final)
@@ -98,10 +99,10 @@ Cada fase se puede probar sola y deja el juego jugable.
 | Caso | Esperado |
 |---|---|
 | Jugador que ya tiene save | Entra igual que hoy, sin línea de objetivo ni cambios |
-| Jugador nuevo, sesión completa | Termina con 3 mascotas (pet 1 Adult, pet 2, híbrido) |
+| Jugador nuevo, sesión completa | Termina con 2 mascotas (pet 1 Adult e híbrido) |
 | Jugador nuevo que recarga a mitad | La segunda entrada es el juego normal, con lo que haya hecho |
 | Esquivar la fruta venenosa | Igual se enferma |
-| Dejar de jugar fetch antes de cansarla | A los ~2 min se cansa sola |
+| No jugar fetch | A los ~2 min pasa igual al hongo |
 | Quedarse quieto 60 s en cualquier paso | Línea → flecha → recordatorio del Caretaker |
 | Terminar la primera sesión y volver a entrar | Juego normal |
 | Mobile | La línea de objetivo no tapa los botones; flechas visibles |

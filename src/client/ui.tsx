@@ -1864,7 +1864,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     // next one up. Its price is the one for the slot count the player is at.
     const canUnlock = props.index === p.petSlots
     // First session: the Caretaker asked for this card — its badge throbs.
-    const k = canUnlock && firstSessionHud.pulse === 'myPets' && firstSessionStep() === 'slot' ? attentionPulse() : 1
+    const k = canUnlock && firstSessionHud.pulse === 'myPets' && firstSessionStep() === 'slot3' ? attentionPulse() : 1
     const badge = Math.round(rosterPx(42) * k)
     return (
       <PetGridCard pad={rosterPx(13)}

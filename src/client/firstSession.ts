@@ -31,7 +31,6 @@ import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
 import { getEggPending, setFirstSessionBreedPartner } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
-import { dailyClaimable } from './sim'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog, CAPTAIN_NPC_NAME } from './state'
 /** The player has opened the Captain's dialog during the 'captain' step. */
@@ -57,20 +56,14 @@ export type FirstSessionStep =
   | 'sick' // sickness arc: Caretaker, Care Center, Pepito, rock throw, cure (existing flows guide it)
   | 'cured' // breathing beat: the cured pet dances (cureCelebration), nothing asked
   | 'bath' // chapter 3 starts: the chase left it muddy
-  | 'play' // fetch until it is worn out (the server tires it if the player stalls)
-  | 'rest' // let it sleep on the bed
-  | 'slot' // chapter 4: while it naps, unlock slot 2 in My Pets
-  | 'adopt2' // go to the Caretaker and adopt a second egg
-  | 'hatch2' // collect the egg, carry it home, hatch, keep (existing flows guide it)
-  | 'freeTime' // ~30 s to enjoy the new pet (the meteor gets a mention if it is down)
-  | 'switch' // chapter 5: back to pet 1 in My Pets
-  | 'grow' // the Caretaker's gift: find the mushroom in the woods, it grows pet 1 to Adult
+  | 'play' // one round of fetch (moves on anyway if the player never plays)
+  | 'grow' // chapter 4, the Caretaker's gift: find the mushroom in the woods, it grows the pet to Adult
   | 'nest' // the Caretaker's breeding lesson: his pet now waits in the nest's bowl B
-  | 'slot3' // the baby needs room: unlock slot 3
-  | 'breed' // tap pet 1, choose Breed, carry it to the nest (existing errand)
+  | 'slot3' // the baby needs room: unlock a second slot in My Pets
+  | 'breed' // tap the pet, choose Breed, carry it to the nest (existing errand)
   | 'breeding' // the breed errand / cinematic owns the screen
   | 'hatch3' // carry the hybrid egg home, hatch, keep (existing flows)
-  | 'wrapup' // chapter 6: the Caretaker's closing words
+  | 'wrapup' // chapter 5: the Caretaker's closing words
   | 'captain' // last beat: go talk to the Captain at the Ark; his dialog ends the session
   | 'done' // the rest of the visit is the normal game
 
@@ -84,32 +77,23 @@ const CHAPTER: Record<FirstSessionStep, number> = {
   cured: 2,
   bath: 3,
   play: 3,
-  rest: 3,
-  slot: 4,
-  adopt2: 4,
-  hatch2: 4,
-  freeTime: 4,
-  switch: 5,
-  grow: 5,
-  nest: 5,
-  slot3: 5,
-  breed: 5,
-  breeding: 5,
-  hatch3: 5,
-  wrapup: 6,
-  captain: 6,
-  done: 6
+  grow: 4,
+  nest: 4,
+  slot3: 4,
+  breed: 4,
+  breeding: 4,
+  hatch3: 4,
+  wrapup: 5,
+  captain: 5,
+  done: 5
 }
-export const FIRST_SESSION_CHAPTERS = 6
+export const FIRST_SESSION_CHAPTERS = 5
 
 /** What the Caretaker asks for while the step is waiting on the player. */
 const OBJECTIVE: Partial<Record<FirstSessionStep, string>> = {
   feed: 'Your pet is hungry! {tap} and choose Feed.',
   bath: "It's covered in mud from the chase! {tap} and choose Bath.",
   play: "It's feeling better. Let's play! {tap} and choose Play.",
-  rest: "It's worn out. Let it rest on the bed. {tap} and choose Sleep.",
-  adopt2: 'Your new slot is ready. Come see me and adopt a second egg!',
-  switch: 'Open My Pets and pick your first pet again. I have something for it!',
   grow: 'Find the mushroom in the woods and tap it. Your pet will grow up!',
   breed: '{tap} and choose Breed, then carry it to the breeding nest in the house.',
   captain: 'Go talk to the Captain at the Ark. He has a mission for the whole colony!'
@@ -123,7 +107,7 @@ const GROW_DIALOG = [
 const CLOSING_DIALOG = [
   'Look at that: your very first hybrid!',
   'Babies need lots of care to grow up. Feed it, bathe it and play with it.',
-  "Next time you won't need my pet. Raise your two to Adult and breed them yourselves.",
+  "Next time you won't need my pet: adopt a second one, raise both to Adult and breed them yourselves.",
   'Come back tomorrow: your daily streak reward will be waiting!',
   'One last thing: the Captain is waiting for you at the Ark. Go say hello!'
 ]
@@ -131,19 +115,14 @@ const CLOSING_DIALOG = [
 /** Objectives whose wording depends on the moment. */
 function objectiveFor(s: FirstSessionStep): string {
   const p = clientState.player
-  if ((s === 'slot' || s === 'slot3') && p) {
+  if (s === 'slot3' && p) {
     const price = slotPrice(p.petSlots)
     return p.currency >= price
-      ? s === 'slot3'
-        ? 'Open My Pets and unlock one more slot for the baby.'
-        : 'While it naps, open My Pets and unlock a new slot.'
+      ? 'Open My Pets and unlock one more slot for the baby.'
       : `A new slot costs ${price} coins. Yours are piling up while your pet is happy!`
   }
   if (s === 'grow' && !growIntroDone) return '' // the Caretaker speaks first
   if (s === 'breed' && clientState.activePet?.sleeping) return withTap("It's still asleep. {tap} and wake it up.")
-  if (s === 'freeTime') {
-    return dailyClaimable() ? 'A meteor fell nearby! Go take a look while they get to know each other.' : ''
-  }
   return withTap(OBJECTIVE[s] ?? '')
 }
 
@@ -154,18 +133,12 @@ function withTap(line: string): string {
   return line.replace('{tap}', mobile() ? 'Tap Pet Actions' : 'Click your pet')
 }
 
-/** Short beat with the new pet before the Caretaker calls you back. */
-const FREE_TIME_SECONDS = 3
-
 /** The pet-panel button each step asks for (arrow to the pet, then this pulses). */
 export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep' | 'breed' | 'myPets'
 const BUTTON: Partial<Record<FirstSessionStep, FirstSessionPulse>> = {
   feed: 'feed',
   bath: 'bath',
   play: 'play',
-  rest: 'sleep',
-  slot: 'myPets',
-  switch: 'myPets',
   slot3: 'myPets',
   breed: 'breed'
 }
@@ -309,19 +282,22 @@ export function takeFirstSessionPoison(): boolean {
 /** Counter values when the current step started, to spot the new action. */
 let bathsAtStart = 0
 let playsAtStart = 0
-/** Seconds spent in 'play'; and whether the tire fallback was already asked for. */
+/** Seconds spent in 'play' (moves on without a fetch after PLAY_FALLBACK_SECONDS). */
 let playTime = 0
-/** Seconds of free time left. */
-let freeLeft = 0
-let tireAsked = false
 let breatheLeft = 0
 let objectiveTime = 0
 let repeated = false
 
-/** Steps where the third creature must come from breeding, not adoption. */
+/** Steps where adopting is closed: the first session is played with one pet,
+ *  and the second creature comes from breeding with the Caretaker's pet. */
 const BREED_ONLY: Partial<Record<FirstSessionStep, boolean>> = {
-  freeTime: true,
-  switch: true,
+  meet: true,
+  feed: true,
+  feeding: true,
+  sick: true,
+  cured: true,
+  bath: true,
+  play: true,
   grow: true,
   nest: true,
   slot3: true,
@@ -330,7 +306,7 @@ const BREED_ONLY: Partial<Record<FirstSessionStep, boolean>> = {
   hatch3: true
 }
 
-/** First session, after the second pet: adopting is closed so the third
+/** First session, once the first pet is kept: adopting is closed so the next
  *  creature comes from breeding. Opening Adopt gets a Caretaker line instead. */
 export function firstSessionAdoptLocked(): boolean {
   if (!firstSessionActive() || !BREED_ONLY[step]) return false
@@ -421,49 +397,17 @@ function advance(dt: number): void {
       return
     case 'play': {
       const pet = clientState.activePet
-      if (pet && pet.energy < PLAY_MIN_ENERGY) {
-        goTo('rest')
+      // Too tired to play (or done): no nap in the first session, straight on to the mushroom.
+      if (pet && pet.energy < PLAY_MIN_ENERGY && !clientState.fetch.active) {
+        goTo('grow', 2)
         return
       }
       if (breatheLeft <= 0) playTime += dt
       const rounds = (p?.counters['playCount'] ?? 0) - playsAtStart
-      // One fetch is enough: when the player leaves Fetch (or stalls), the
-      // server wears the pet out once and the step above moves on to 'rest'.
-      if (!tireAsked && !clientState.fetch.active && (rounds >= 1 || playTime >= PLAY_FALLBACK_SECONDS)) {
-        tireAsked = true
-        actions.firstSessionTire()
-      }
+      // One fetch is enough: once the player leaves Fetch (or never plays), move on.
+      if (!clientState.fetch.active && (rounds >= 1 || playTime >= PLAY_FALLBACK_SECONDS)) goTo('grow', 2)
       return
     }
-    case 'rest':
-      if (clientState.activePet?.sleeping) goTo('slot', 1.5) // short: the nap itself is the pause
-      return
-    case 'slot':
-      if (p && p.pets.length < p.petSlots) goTo('adopt2')
-      return
-    case 'adopt2':
-      // Adopt! confirmed: the existing pickup/carry/hatch flows take it from here.
-      if (getEggPending() || clientState.carryEgg.active || p?.hatchling) goTo('hatch2')
-      return
-    case 'hatch2': {
-      if (!p) return
-      const eggFlow = getEggPending() || clientState.carryEgg.active || clientState.hatch.active || !!p.hatchling
-      if (eggFlow) return
-      if (p.pets.length >= 2) {
-        freeLeft = FREE_TIME_SECONDS
-        goTo('freeTime', BREATHE_SECONDS)
-      } else if (p.pets.length < p.petSlots) {
-        goTo('adopt2') // cancelled or discarded: the slot is still free, adopt again
-      }
-      return
-    }
-    case 'freeTime':
-      if (breatheLeft <= 0 && !clientState.fetch.active) freeLeft -= dt
-      if (freeLeft <= 0) goTo('switch')
-      return
-    case 'switch':
-      if (clientState.activePet && clientState.activePet.id === firstPetId) goTo('grow', 1.5)
-      return
     case 'grow': {
       if (!growIntroDone && breatheLeft <= 0 && canInterrupt()) {
         growIntroDone = true
