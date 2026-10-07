@@ -40,6 +40,7 @@ import { mobile } from './ui/theme'
 import { petTouchControlsAreVisible } from './touchControls'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
+import { showMushroomGlow } from './mushroomGlow'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
@@ -228,6 +229,9 @@ function eatMushroom(): void {
 function updateMushroom(dt: number): void {
   const e = findMushroom()
   if (e === null) return
+  // Glow (beam, rays, light, breathing) while it waits to be found.
+  const glow = firstSessionActive() && step === 'grow' && !mushroomEaten && mushroomPop < 0
+  showMushroomGlow(dt, glow, e, Transform.get(e).position, mushroomScale)
   if (mushroomPop >= 0) {
     mushroomPop += dt
     const p = Math.min(1, mushroomPop / MUSHROOM_POP_S)
