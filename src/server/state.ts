@@ -112,6 +112,12 @@ function shortAddress(address: string): string {
   return address.length > 10 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
 }
 
+/** The name other players see for this address (sanitized display name, or a
+ *  short wallet when we never got one). */
+export function displayName(address: string): string {
+  return playerNames.get(address.toLowerCase()) ?? shortAddress(address)
+}
+
 // Persisted, scene-scoped leaderboard index (Storage.world) — NOT the in-memory
 // player cache. This is what makes the board "across the colony": every player who
 // has ever saved has a row here, ranked even after the headless server restarts and
@@ -284,6 +290,7 @@ function newPlayer(address: string): PlayerData {
     hatchling: null,
     collection: [],
     albumClaims: [],
+    ark: { launchSeen: 0, grants: [] },
     createdAt: t,
     lastUpdated: t
   }
@@ -465,6 +472,7 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     counters: d.counters ?? {},
     achievements: d.achievements ?? [],
     collection: d.collection ?? [],
+    ark: { launchSeen: d.ark?.launchSeen ?? 0, grants: d.ark?.grants ?? [] },
     pets: (d.pets ?? []).map((pet) => migratePet({ ...newPet(pet.species, pet.name), ...pet })),
     hatchling: d.hatchling ? migratePet({ ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling }) : null
   }
@@ -1201,6 +1209,49 @@ export function switchPet(p: PlayerData, petId: string): Notify[] {
   if (!p.pets.find((pet) => pet.id === petId)) return [{ kind: 'error', message: 'No such pet' }]
   p.activePetId = petId
   return [{ kind: 'roster', message: 'Switched active pet' }]
+}
+
+// ---------------------------------------------------------------------------
+// Ark donation — hand an Adult pet to the Captain. It may be the player's last
+// one: they are left with no pet and adopt again at the Caretaker.
+// The pet leaves the roster for good (the album keeps it: collections only
+// grow), the donor is paid Caretaker XP + coins by rarity (C.ARK_REWARDS),
+// and the shared counter is advanced by the caller (server/ark.ts).
+// ---------------------------------------------------------------------------
+export type DonateOutcome = { notes: Notify[]; pet: PetData | null; xp: number; coins: number; firstDonation: boolean }
+
+export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): DonateOutcome {
+  const fail = (message: string): DonateOutcome => ({ notes: [{ kind: 'error', message }], pet: null, xp: 0, coins: 0, firstDonation: false })
+  if (p.hatchling) return fail('Finish with your new pet first.')
+  const idx = p.pets.findIndex((x) => x.id === petId)
+  if (idx === -1) return fail('That pet is no longer in your roster.')
+  tickPlayer(p) // decay first, so sleep/sickness are judged on CURRENT state
+  const pet = p.pets[idx]
+  if (!nearCaptain) return fail('Talk to the Captain at the Ark to donate a pet.')
+  if (C.petStage(pet.size) !== 'ADULT') return fail('Only Adult pets can board the Ark.')
+  if (pet.sleeping) return fail(`${pet.name} is asleep — let it wake up first.`)
+  if (pet.sick) return fail(`${pet.name} is sick — cure it at the Care Center first.`)
+  const key = p.address.toLowerCase()
+  if (pet.id === p.activePetId && (carriedState.get(key) ?? false)) return fail(`Put ${pet.name} down first.`)
+  for (const offer of pendingSwaps.values()) {
+    if (now() - offer.at >= C.SWAP_OFFER_TTL_MS) continue
+    if (offer.fromPetId === pet.id || offer.toPetId === pet.id) return fail(`${pet.name} is part of a pending swap.`)
+  }
+  // A double tap must not donate twice (the second request finds the pet gone
+  // anyway, but its error toast would read like the first one failed).
+  if (!cooldownOk(p.address, 'donate', 2000)) return fail('One moment...')
+
+  const firstDonation = (p.counters['arkCount'] ?? 0) === 0
+  p.pets.splice(idx, 1)
+  if (p.activePetId === pet.id) p.activePetId = p.pets[0]?.id ?? ''
+  const reward = C.ARK_REWARDS[pet.rarity] ?? C.ARK_REWARDS.common
+  const notes: Notify[] = [{ kind: 'reward', message: `${pet.name} boarded the Ark! +${reward.coins} coins` }]
+  grantCaretakerXp(p, reward.xp, notes)
+  p.currency += reward.coins
+  bump(p, 'arkCount')
+  checkAchievements(p, notes)
+  checkJourney(p, notes)
+  return { notes, pet, xp: reward.xp, coins: reward.coins, firstDonation }
 }
 
 /** Buy one rarity potion — a pure coin sink; it is spent on a breeding roll. */

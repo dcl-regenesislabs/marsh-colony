@@ -47,7 +47,8 @@ import {
   speciesLabel,
   stageScaleFor,
   yawOffsetForSpecies,
-  type PetClip
+  type PetClip,
+  type PetStage
 } from '../shared/config'
 import type { PetData } from '../shared/types'
 import { clientState, actions, adoptPet, openDialog, pushToast, switchActivePet, showHint, hasPendingHatchling } from './state'
@@ -143,6 +144,26 @@ const SAD_CINEMATIC_LOOK_DOWN = 0.35
 // illness shot and aim lower so the pet and sick bubble compose above it.
 const SAD_MOBILE_CINEMATIC_CAMERA_BACKOFF = 1.55
 const SAD_MOBILE_CINEMATIC_LOOK_DOWN = 0.8
+
+// Growth stages are normally rendered at a fixed scale. Keep the old scale
+// when a care action crosses a stage boundary: the pet gets a short dance beat
+// while still tiny, then it squashes and releases into the fast growth pop.
+const GROWTH_SMALL_SHOW_S = 0.9
+const GROWTH_SQUASH_S = 0.4
+const GROWTH_POP_S = 0.65
+const GROWTH_HOLD_S = 1.5
+const GROWTH_CINEMATIC_S = GROWTH_SMALL_SHOW_S + GROWTH_SQUASH_S + GROWTH_POP_S + GROWTH_HOLD_S
+const GROWTH_CAMERA_TRANSITION_S = 0.45
+const GROWTH_BURST_SIZE = 4.4
+const GROWTH_BURST_BEHIND = 0.12
+const GROWTH_POP_HOP = 0.12
+type PendingGrowth = { petId: string; stage: PetStage; fromScale: Vector3 }
+type GrowthCinematic = PendingGrowth & { t: number; toScale: Vector3; basePosition: Vector3; burst: Starburst; popFxPlayed: boolean }
+let renderedGrowthPetId = ''
+let renderedGrowthStage: PetStage | null = null
+let pendingGrowth: PendingGrowth | null = null
+let growthCinematic: GrowthCinematic | null = null
+let growthCamera: Entity | null = null
 
 // How far above PET_BASE_Y the pet rests while asleep, so it lies on TOP of
 // the PetBed's cushion instead of at ground level (sinking a bit below the
@@ -663,7 +684,14 @@ function petTransformOwnedElsewhere(): boolean {
  *  (feed.ts), which owns the PLAYER: they're out walking to the tree with the
  *  guide arrow up, and starting anything else there would strand that arrow. */
 function otherActivityActive(): boolean {
-  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null
+  return petTransformOwnedElsewhere() || clientState.petting.active || clientState.fetch.active || clientState.feedTask.active || clientState.sicknessErrand.active || clientState.pepitoChase.active || clientState.feedGame.active || clientState.bathGame.active || clientState.breed.active || pendingEgg !== null || clientState.arkRedeem.active || arkOwnsFlow()
+}
+
+/** An Ark donation is waiting on the server, or an Ark cinematic (boarding /
+ *  launch) owns the camera and the input freeze. arkRedeem.active alone is not
+ *  enough: it is cleared the moment the player confirms, before any of this. */
+function arkOwnsFlow(): boolean {
+  return clientState.ark.pendingDonation !== null || clientState.ark.cinematic !== 'none'
 }
 
 /**
@@ -857,6 +885,140 @@ function registerPetOpenClick(entity: Entity): void {
   )
 }
 
+/** A completed care action can resolve while another flow still owns the pet.
+ * Queue the reveal until that shared activity gate releases it; a sleeping pet
+ * must also remain in its sleep mode even if an item changed its growth stage. */
+/** True while the growth reveal owns the camera + input freeze — the Ark
+ *  cinematics wait for it instead of swapping the camera out from under it. */
+export function growthCinematicActive(): boolean {
+  return growthCinematic !== null
+}
+
+function canStartGrowthCinematic(): boolean {
+  return !clientState.activePet?.sleeping &&
+    !otherActivityActive() &&
+    !sadCinematicActive &&
+    !cureCinematicActive
+}
+
+/** Start the short camera-and-rays reveal after a pet crosses into Teenager or
+ * Adult. The stage change remains authoritative; this only delays its visual
+ * scale long enough for the celebration to read. */
+function startGrowthCinematic(): void {
+  const pending = pendingGrowth
+  const pet = clientState.activePet
+  if (!pending || !localPet || !pet || pet.id !== pending.petId || !canStartGrowthCinematic()) return
+
+  pendingGrowth = null
+  const petPos = Transform.get(localPet).position
+  const player = playerPos()
+  let direction = Vector3.create(petPos.z - player.z, 0, player.x - petPos.x)
+  direction = Vector3.length(direction) > 0.1 ? Vector3.normalize(direction) : Vector3.create(0, 0, 1)
+  const stage = stageScaleFor(pet.size)
+  const distance = 3 + stage + (mobile() ? 0.9 : 0)
+  const camPos = Vector3.create(petPos.x + direction.x * distance, petPos.y + 1.1, petPos.z + direction.z * distance)
+  const look = Vector3.create(petPos.x, petPos.y + 0.7, petPos.z)
+
+  if (!growthCamera) growthCamera = engine.addEntity()
+  Transform.createOrReplace(growthCamera, { position: camPos, rotation: Quaternion.fromLookAt(camPos, look) })
+  VirtualCamera.createOrReplace(growthCamera, {
+    defaultTransition: { transitionMode: VirtualCamera.Transition.Time(GROWTH_CAMERA_TRANSITION_S) }
+  })
+  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: growthCamera })
+  InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
+
+  Transform.getMutable(localPet).rotation = yawToward(petPos, camPos, yawOffsetForSpecies(pet.species))
+  setClip(localPet, 'dance')
+  if (localTag) setTagVisible(localTag, false)
+  growthCinematic = {
+    ...pending,
+    t: 0,
+    toScale: petScale(pet.species, stage),
+    basePosition: Vector3.create(petPos.x, petPos.y, petPos.z),
+    burst: createStarburst(GROWTH_BURST_SIZE),
+    popFxPlayed: false
+  }
+}
+
+/** Tick the squash, spring and brief admire beat. It deliberately writes scale
+ * after ensureLocalPet, which otherwise owns the authoritative display scale. */
+function updateGrowthCinematic(dt: number): void {
+  const growth = growthCinematic
+  const pet = clientState.activePet
+  if (!growth) return
+  // A snapshot can remove or replace the active pet while this local-only
+  // sequence is running. Release its camera/input rather than leaving the
+  // player locked behind an orphaned reveal.
+  if (!localPet || !pet || pet.id !== growth.petId) {
+    hideStarburst(growth.burst)
+    if (MainCamera.getOrNull(engine.CameraEntity)?.virtualCameraEntity === growthCamera) {
+      MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+    }
+    if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+    growthCinematic = null
+    return
+  }
+
+  growth.t += dt
+  const popStartsAt = GROWTH_SMALL_SHOW_S + GROWTH_SQUASH_S
+  const squash = Math.min(1, Math.max(0, (growth.t - GROWTH_SMALL_SHOW_S) / GROWTH_SQUASH_S))
+  const pop = Math.min(1, Math.max(0, (growth.t - popStartsAt) / GROWTH_POP_S))
+  // Ease-out-back gives the arrival a tiny overshoot before it settles.
+  const c1 = 1.70158
+  const easedPop = 1 + (c1 + 1) * Math.pow(pop - 1, 3) + c1 * Math.pow(pop - 1, 2)
+  // Sine in/out starts and ends at zero velocity, avoiding a visible scale
+  // jerk as the little dance flows into the squash.
+  const squashEase = 0.5 - 0.5 * Math.cos(squash * Math.PI)
+  const fromFactor = 1 - 0.12 * squashEase
+  const smallProgress = Math.min(1, growth.t / GROWTH_SMALL_SHOW_S)
+  const smallBreathe = 1 + 0.025 * Math.pow(Math.sin(smallProgress * Math.PI), 2)
+  const from = Vector3.scale(growth.fromScale, fromFactor)
+  const scale = growth.t < GROWTH_SMALL_SHOW_S
+    ? Vector3.scale(growth.fromScale, smallBreathe)
+    : growth.t < popStartsAt
+    ? from
+    : Vector3.create(
+        from.x + (growth.toScale.x - from.x) * easedPop,
+        from.y + (growth.toScale.y - from.y) * easedPop,
+        from.z + (growth.toScale.z - from.z) * easedPop
+      )
+  const petTransform = Transform.getMutable(localPet)
+  petTransform.scale = scale
+  // A small, smooth hop gives the quick growth some weight while returning the
+  // feet exactly to their original position once the pop is complete.
+  const popHop = GROWTH_POP_HOP * Math.pow(Math.sin(pop * Math.PI), 2)
+  petTransform.position = Vector3.create(growth.basePosition.x, growth.basePosition.y + popHop, growth.basePosition.z)
+
+  // The small pet gets its own beat first. Make all celebration feedback land
+  // precisely with the sudden scale pop, not while it is merely dancing.
+  if (growth.t >= popStartsAt && !growth.popFxPlayed) {
+    growth.popFxPlayed = true
+    playPetVoice(pet.species)
+    const stageLabel = growth.stage === 'ADULT' ? 'an adult' : `a ${growth.stage.toLowerCase()}`
+    pushToast(`${pet.name} grew into ${stageLabel}!`, 'success')
+  }
+
+  const pos = petTransform.position
+  const camPos = growthCamera ? Transform.get(growthCamera).position : pos
+  const away = Vector3.normalize(Vector3.subtract(pos, camPos))
+  const burstIn = Math.min(1, Math.max(0, (growth.t - (popStartsAt - 0.05)) / 0.25))
+  const leaving = Math.min(1, Math.max(0, (growth.t - (GROWTH_CINEMATIC_S - 0.45)) / 0.45))
+  updateStarburst(growth.burst, Vector3.create(pos.x, pos.y + 0.65, pos.z), away, GROWTH_BURST_BEHIND, burstIn * (1 - leaving), growth.t)
+
+  if (growth.t < GROWTH_CINEMATIC_S) return
+  const settledTransform = Transform.getMutable(localPet)
+  settledTransform.scale = growth.toScale
+  settledTransform.position = growth.basePosition
+  hideStarburst(growth.burst)
+  if (MainCamera.getOrNull(engine.CameraEntity)?.virtualCameraEntity === growthCamera) {
+    MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: undefined })
+  }
+  if (InputModifier.has(engine.PlayerEntity)) InputModifier.deleteFrom(engine.PlayerEntity)
+  if (localTag) setTagVisible(localTag, localTagWanted && !tagsSuppressed)
+  growthCinematic = null
+  mode = pet.sleeping ? 'asleep' : clientState.followEnabled ? 'follow' : 'wander'
+}
+
 function ensureLocalPet(): void {
   // During the breeding cinematic the localPet entity IS parent A, held in its
   // bowl. But the server's activePet flips to the freshly-rolled offspring the
@@ -946,7 +1108,21 @@ function ensureLocalPet(): void {
   // parent/pose and must never write a competing carry-specific scale.
   const t = Transform.getMutable(localPet)
   const s = petScale(renderSpecies, stageScaleFor(pet.size))
-  if (t.scale.x !== s.x) t.scale = s
+  const stage = petStage(pet.size)
+  if (renderedGrowthPetId !== pet.id) {
+    // Selecting/reconnecting to an existing pet is not growth. Establish its
+    // current stage as the baseline and only celebrate later changes for this
+    // same active pet.
+    renderedGrowthPetId = pet.id
+    renderedGrowthStage = stage
+    pendingGrowth = null
+  } else if (renderedGrowthStage && renderedGrowthStage !== stage) {
+    pendingGrowth = { petId: pet.id, stage, fromScale: t.scale }
+    renderedGrowthStage = stage
+  }
+  // Keep the old scale while waiting for an existing minigame/cinematic to
+  // release, then let updateGrowthCinematic own it for the reveal.
+  if (!growthCinematic && pendingGrowth?.petId !== pet.id && t.scale.x !== s.x) t.scale = s
 }
 
 /** Send the pet to a world position; play `clip` on arrival, then run cb. */
@@ -2168,7 +2344,7 @@ let arrowTarget: Vector3 | null = null
  *  is a single shared entity, so without an owner two overlapping flows fight
  *  over it — one re-pointing it every frame while the other clears it, which is
  *  how it ended up stuck on screen after switching actions. */
-export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg' | 'firstSession'
+export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg' | 'firstSession' | 'ark'
 let arrowOwner: ArrowOwner | null = null
 
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
@@ -2194,6 +2370,7 @@ function arrowOwnerActive(): boolean {
   if (arrowOwner === 'breed') return clientState.breed.active && clientState.breed.phase === 'toNest'
   if (arrowOwner === 'getEgg') return pendingEgg !== null
   if (arrowOwner === 'firstSession') return clientState.firstSessionArrow
+  if (arrowOwner === 'ark') return clientState.arkRedeem.active && clientState.arkRedeem.phase === 'toCaptain'
   return false
 }
 
@@ -2663,6 +2840,12 @@ function updateBreedTune(dt: number): void {
 function updateLocalPet(dt: number): void {
   ensureLocalPet()
   if (!localPet) return
+
+  if (!growthCinematic) startGrowthCinematic()
+  if (growthCinematic) {
+    updateGrowthCinematic(dt)
+    return
+  }
 
   // While parent A is placed in the breeding nest, hold it in its bowl (sitting,
   // facing the viewer) through the picker/breed steps + the egg cinematic — it

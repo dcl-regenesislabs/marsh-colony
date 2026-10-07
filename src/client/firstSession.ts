@@ -29,7 +29,7 @@ import {
 import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
-import { getEggPending, setFirstSessionBreedPartner } from './pet'
+import { getEggPending, setFirstSessionBreedPartner, growthCinematicActive } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog, CAPTAIN_NPC_NAME } from './state'
@@ -333,7 +333,7 @@ export function fetchBackAllowed(): boolean {
 }
 
 /** Pet panel actions, as the first session gates them. */
-export type PetActionId = 'feed' | 'bath' | 'sleep' | 'play' | 'pet' | 'breed'
+export type PetActionId = 'feed' | 'bath' | 'sleep' | 'play' | 'pet' | 'breed' | 'ark' // 'ark' is never open in the first session
 
 /** First session: only the pet action the Caretaker is asking for is open; the
  *  rest show disabled so nobody wanders off the path. Waking a sleeping pet is
@@ -536,7 +536,8 @@ function canInterrupt(): boolean {
     !c.breed.active &&
     !c.hatch.active &&
     !c.pepitoChase.active &&
-    !c.sicknessErrand.active
+    !c.sicknessErrand.active &&
+    !growthCinematicActive() // the mushroom's grow-up reveal plays before the nest lesson
   )
 }
 

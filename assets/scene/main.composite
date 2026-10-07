@@ -3292,6 +3292,27 @@
             "parent": 660
           }
         },
+        "66203": {
+          "json": {
+            "position": {
+              "x": 160.1999969482422,
+              "y": 7.5,
+              "z": 208.60000610351562
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "scale": {
+              "x": 3.0999999046325684,
+              "y": 0.800000011920929,
+              "z": 1
+            },
+            "parent": 0
+          }
+        },
         "131681": {
           "json": {
             "position": {
@@ -4678,6 +4699,20 @@
       }
     },
     {
+      "name": "core::Material",
+      "jsonSchema": {
+        "type": "object",
+        "properties": {},
+        "serializationType": "protocol-buffer",
+        "protocolBuffer": "PBMaterial"
+      },
+      "data": {
+        "66203": {
+          "json": {}
+        }
+      }
+    },
+    {
       "name": "core-schema::Name",
       "jsonSchema": {
         "type": "object",
@@ -5460,6 +5495,11 @@
             "value": "Headpoint04"
           }
         },
+        "66203": {
+          "json": {
+            "value": "textshape_base"
+          }
+        },
         "131681": {
           "json": {
             "value": "Plant01.glb_13"
@@ -5644,7 +5684,8 @@
                   594,
                   660,
                   131682,
-                  668
+                  668,
+                  66203
                 ]
               },
               {
@@ -6390,6 +6431,10 @@
               {
                 "entity": 668,
                 "children": []
+              },
+              {
+                "entity": 66203,
+                "children": []
               }
             ]
           }
@@ -6879,6 +6924,9 @@
           "json": {}
         },
         "66200": {
+          "json": {}
+        },
+        "66203": {
           "json": {}
         },
         "131681": {

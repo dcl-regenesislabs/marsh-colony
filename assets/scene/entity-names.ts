@@ -160,5 +160,6 @@ export enum EntityNames {
   nest_glb_2 = "nest.glb_2",
   penArea = "penArea",
   penFenceArea = "penFenceArea",
+  textshape_base = "textshape_base",
   tree_glb = "tree.glb",
 } 
