@@ -604,9 +604,8 @@ function firstSessionSystem(dt: number): void {
     firstSessionHud.nudgedAt = Date.now() // the sticky toast throbs instead of another dialog
   }
 
-  // Once said, the objective stays on screen until it is done (dialogs too: the
-  // toast row never overlaps them, and it keeps players oriented).
-  firstSessionHud.task = heard ? objective : ''
+  // Once the dialog is closed, the objective stays on screen until it is done.
+  firstSessionHud.task = heard && !clientState.dialog.open ? objective : ''
 
   // No arrows: the player finds things. Only the right button pulses — the pet
   // panel's once it is open, My Pets right away.
