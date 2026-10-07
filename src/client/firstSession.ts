@@ -153,8 +153,8 @@ function withTap(line: string): string {
   return line.replace('{tap}', mobile() ? 'Tap Pet Actions' : 'Click your pet')
 }
 
-/** Free time with the new pet before the Caretaker calls you back. */
-const FREE_TIME_SECONDS = 30
+/** Short beat with the new pet before the Caretaker calls you back. */
+const FREE_TIME_SECONDS = 3
 
 /** The pet-panel button each step asks for (arrow to the pet, then this pulses). */
 export type FirstSessionPulse = 'feed' | 'bath' | 'play' | 'sleep' | 'breed' | 'myPets'
