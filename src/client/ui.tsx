@@ -3017,7 +3017,7 @@ const bubbleRightRaw = 290
 // First session: the same bubble pointing at the native Pet Actions button
 // (IA_SECONDARY, the next arc slot). Nudged up-left so the tail stops just
 // short of the button instead of sitting on it.
-const petActionsBubbleBottomRaw = 262
+const petActionsBubbleBottomRaw = 247
 const petActionsBubbleRightRaw = 234
 const barBottomRaw = 320
 const barRightRaw = 240
