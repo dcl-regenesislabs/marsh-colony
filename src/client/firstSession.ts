@@ -318,6 +318,20 @@ export function firstSessionAdoptLocked(): boolean {
   return true
 }
 
+/** First session: the action overlays (Feed errand, fruit game, bath walk and
+ *  game, breeding, egg pickup, petting) show no BACK button, so the visit can
+ *  only move forward. Fetch is the exception (fetchBackAllowed). */
+export function firstSessionHidesBack(): boolean {
+  return firstSessionActive()
+}
+
+/** Fetch has no end of its own, so BACK stays — except on the Play step before
+ *  the first round, so the player can't leave without playing once. */
+export function fetchBackAllowed(): boolean {
+  if (!firstSessionActive() || step !== 'play') return true
+  return (clientState.player?.counters['playCount'] ?? 0) > playsAtStart
+}
+
 export function firstSessionStep(): FirstSessionStep {
   return step
 }

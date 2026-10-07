@@ -38,7 +38,7 @@ import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible,
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS } from './firstSession'
+import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS, firstSessionHidesBack, fetchBackAllowed } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -2877,7 +2877,9 @@ const BACK_ARROW_ASPECT_RATIO = 341 / 256
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
 // game / Bath / Feed errand). It shares the toast's device-safe anchor on both
 // mobile and Unity, then moves below the toast while that notification is open.
-function BackButton(props: { onClick: () => void; disabled?: boolean }) {
+function BackButton(props: { onClick: () => void; disabled?: boolean; keepInFirstSession?: boolean }) {
+  // First session: no way out of an activity, only forward (see firstSession.ts).
+  if (firstSessionHidesBack() && !props.keepInFirstSession) return <UiEntity />
   const toastVisible = toastIsVisible(Date.now())
   const layout = actionHudLayout()
   const height = S(90)
@@ -3119,7 +3121,7 @@ function FetchOverlay() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {/* BACK — disabled while charging/mid-throw so you don't strand a charge or a ball in the air */}
-      <BackButton disabled={busy || charging} onClick={() => (clientState.fetch.active = false)} />
+      {fetchBackAllowed() && <BackButton keepInFirstSession disabled={busy || charging} onClick={() => (clientState.fetch.active = false)} />}
       {/* Mobile charge bar — subtle, thin, vertical (fills upward), calibrated
           on-device. Note for future positioning near this corner: the
           bottom-right is where the client draws its own native gamepad
