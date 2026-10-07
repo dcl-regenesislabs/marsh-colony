@@ -117,7 +117,8 @@ function objectiveFor(s: FirstSessionStep): string {
   const p = clientState.player
   if (s === 'slot3' && p) {
     const price = slotPrice(p.petSlots)
-    return p.currency >= price
+    // Short on coins: the Caretaker tops them up (slotFundsAsked), so say the real ask right away.
+    return p.currency >= price || slotFundsAsked
       ? 'Open My Pets and unlock one more slot for the baby.'
       : `A new slot costs ${price} coins. Yours are piling up while your pet is happy!`
   }
@@ -284,6 +285,8 @@ let bathsAtStart = 0
 let playsAtStart = 0
 /** Seconds spent in 'play' (moves on without a fetch after PLAY_FALLBACK_SECONDS). */
 let playTime = 0
+/** Asked the Caretaker to cover the baby's slot (only when short on coins). */
+let slotFundsAsked = false
 let breatheLeft = 0
 let objectiveTime = 0
 let repeated = false
@@ -427,6 +430,12 @@ function advance(dt: number): void {
       const pet = clientState.activePet
       const partner = speciesLabel(firstSessionPartnerSpecies(pet ?? { species: '' }))
       const needSlot = !hasFreeSlot()
+      // Short on coins for the baby's slot: the Caretaker covers it (asked before
+      // the objective is marked as said, so it names the real ask, not the price).
+      if (needSlot && !slotFundsAsked && clientState.player && clientState.player.currency < slotPrice(clientState.player.petSlots)) {
+        slotFundsAsked = true
+        actions.firstSessionSlotFunds()
+      }
       say(
         [
           'Look how big it is! Now it is ready for the best part: breeding.',
@@ -441,6 +450,10 @@ function advance(dt: number): void {
     }
     case 'slot3':
       if (hasFreeSlot()) goTo('breed')
+      else if (!slotFundsAsked && p && p.currency < slotPrice(p.petSlots)) {
+        slotFundsAsked = true
+        actions.firstSessionSlotFunds() // the server checks it is really short, once per visit
+      }
       return
     case 'breed':
       if (clientState.breed.active) goTo('breeding')

@@ -541,6 +541,9 @@ export const actions = {
   firstSessionGrow(petId: string): void {
     room.send('firstSessionGrow', { petId })
   },
+  firstSessionSlotFunds(): void {
+    room.send('firstSessionSlotFunds', {})
+  },
   firstSessionTire(): void {
     room.send('firstSessionTire', {})
   },

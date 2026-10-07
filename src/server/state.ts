@@ -904,6 +904,9 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   if (!cooldownOk(p.address, 'feed', C.ACTION_COOLDOWN_MS.feed)) {
     return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
   }
+  // First session: a bad round still counts as a full meal, so the visit can't
+  // stall on the Feed step or end up without coins for the baby's slot.
+  if (isFirstSession(p.address)) caught = Math.max(caught, C.FEED_MIN_FRUITS)
   if (caught > 0) bump(p, 'feedAnyCount') // any feed counts for the Journey "Feed" step
   if (caught >= C.FEED_MIN_FRUITS) {
     // A real meal: growth + XP, and coins scaled by fruit caught (only if the pet
@@ -935,6 +938,8 @@ export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
+  // First session: any bath counts as a full one (see feedFromMinigame).
+  if (isFirstSession(p.address)) popped = Math.max(popped, C.BATH_BUBBLE_GOAL)
   if (popped <= 0) return notes // nothing popped -> no clean
   const lockLeft = C.sleepLockRemaining(pet, now())
   if (lockLeft > 0) {
@@ -1242,6 +1247,18 @@ export function firstSessionTire(p: PlayerData): boolean {
   tickPlayer(p)
   pet.energy = Math.min(pet.energy, C.PLAY_MIN_ENERGY - 2)
   return true
+}
+
+/** First session only, once per visit: the baby needs a slot and the player
+ *  can't afford it, so the Caretaker covers the difference. */
+export function firstSessionSlotFunds(p: PlayerData): Notify[] | null {
+  if (p.pets.length < p.petSlots) return null // a slot is already free
+  const price = C.slotPrice(p.petSlots)
+  if (p.currency >= price) return null
+  if (!takeFirstSessionGift(p.address, 'slotFunds')) return null
+  const gift = price - p.currency
+  p.currency = price
+  return [{ kind: 'reward', message: `The Caretaker chipped in ${gift} coins for the baby's slot!` }]
 }
 
 /** First session only, once per visit: the Caretaker's grow mushroom takes the

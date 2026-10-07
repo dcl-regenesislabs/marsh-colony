@@ -38,7 +38,7 @@ import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchC
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
 import { startSicknessCinematicFromFeedBlackout } from './sicknessCinematic'
-import { takeFirstSessionPoison } from './firstSession'
+import { takeFirstSessionPoison, firstSessionActive } from './firstSession'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import {
   getLocalPet,
@@ -1356,7 +1356,14 @@ function applyResults(): void {
   // left free through this long idle tail too, it silently drifted and popped
   // to a jarring angle the instant the camera released at the end.
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
-  const caught = clientState.feedGame.caught
+  let caught = clientState.feedGame.caught
+  // First session: a bad round still counts as a meal (the pet finds fruit on
+  // the ground), so the sickness arc, the coins and the Journey step always
+  // happen and nobody gets stuck. The server applies the same floor.
+  if (firstSessionActive() && caught < Cfg.FEED_MIN_FRUITS) {
+    caught = Cfg.FEED_MIN_FRUITS
+    clientState.feedGame.caught = caught
+  }
   if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
   for (const f of fruits) {
     Tween.deleteFrom(f.entity)

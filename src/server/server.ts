@@ -286,6 +286,17 @@ export function server(): void {
     pushSnapshot(p)
   })
 
+  room.onMessage('firstSessionSlotFunds', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    if (!S.isFirstSession(ctx.from)) return
+    const notes = S.firstSessionSlotFunds(p)
+    if (!notes) return
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+  })
+
   room.onMessage('firstSessionGrow', async (data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)

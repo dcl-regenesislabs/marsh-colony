@@ -15,6 +15,7 @@ import { BATH_BUBBLE_GOAL } from '../shared/config'
 import { actions, clientState, pushToast } from './state'
 import { applyBathMinigameLocal } from './sim'
 import { finishBath, endBathCamera } from './pet'
+import { firstSessionActive } from './firstSession'
 
 const POP_SOUND = 'assets/sounds/waterdrop.mp3'
 let popSfx: Entity | null = null
@@ -159,7 +160,13 @@ function applyBathResults(): void {
   // Hygiene scales with bubbles popped (no all-or-nothing gate): apply the
   // optimistic mirror, then let the authoritative server apply the proportional
   // clean. Both no-op at 0 pops / when the pet is nap-locked.
-  const popped = clientState.bathGame.popped
+  let popped = clientState.bathGame.popped
+  // First session: even with no bubbles popped the bath counts as a full one,
+  // so the session moves on and pays out. The server applies the same floor.
+  if (firstSessionActive() && popped < BATH_BUBBLE_GOAL) {
+    popped = BATH_BUBBLE_GOAL
+    clientState.bathGame.popped = popped
+  }
   if (popped > 0) {
     applyBathMinigameLocal(popped)
     actions.bathResult(popped) // server is authoritative
