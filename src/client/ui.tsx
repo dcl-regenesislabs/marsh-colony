@@ -269,6 +269,17 @@ export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 
 // swap offer, passport, adopt, shop, etc.) — used to hold off the toast queue
 // (#186) and to hide the bottom nav so its icons don't poke through under/over
 // whatever's open.
+/** A panel/modal is on screen (bigUiOpen without the NPC dialog). */
+function panelUiOpen(): boolean {
+  return (
+    uiState.panel !== 'none' ||
+    clientState.petPanelOpen ||
+    clientState.viewingPetAddress !== null ||
+    clientState.incomingSwap !== null ||
+    (clientState.breed.active && clientState.breed.phase === 'pickB') // Choose a Partner
+  )
+}
+
 function bigUiOpen(): boolean {
   return (
     uiState.panel !== 'none' ||
@@ -2679,10 +2690,10 @@ function toastIsVisible(now: number): boolean {
 
 function Toasts() {
   const now = Date.now()
-  // Hold the queue while a panel/modal/dialog owns the screen, so a toast can't
-  // paint over open UI (the #186 overlap complaint). Nothing is shifted or shown
-  // until they close, then the queue resumes.
-  if (bigUiOpen()) return <UiEntity />
+  // Hold the queue while a panel/modal owns the screen, so a toast can't paint
+  // over open UI (the #186 overlap complaint). Dialogs don't count: the toast row
+  // and the dialog never overlap, and hiding toasts there left players lost.
+  if (panelUiOpen()) return <UiEntity />
   if ((!clientState.currentToast || clientState.currentToast.until <= now) && clientState.toasts.length > 0) {
     const next = clientState.toasts.shift()!
     clientState.currentToast = { message: next.message, kind: next.kind, shownAt: now, until: now + TOAST_TOTAL_MS }
@@ -2767,7 +2778,7 @@ let taskShownAt = 0
 function FirstSessionTask() {
   const hud = firstSessionHud
   const now = Date.now()
-  if (!hud.task || bigUiOpen()) {
+  if (!hud.task || panelUiOpen()) {
     if (!hud.task) taskShown = ''
     return <UiEntity />
   }

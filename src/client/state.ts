@@ -341,20 +341,11 @@ function makeLocalPet(species: string, name: string): PetData {
   }
 }
 
-/** Make a stored pet the active one locally (and tell the server). */
-export function switchActivePet(petId: string): void {
-  const p = clientState.player
-  if (!p) return
-  const pet = p.pets.find((x) => x.id === petId)
-  if (!pet) return
-  // Don't swap the active pet out from under a running flow. The localPet entity
-  // is REUSED across the switch, so the newcomer would inherit a carry/errand it
-  // never started (see pet.ts reanchorLocalPet). Both entry points — the roster
-  // panel and clicking a stored pet in the world — funnel through here, so this
-  // is the one gate that covers them all. Sleeping / plain care actions are NOT
-  // blocked: reanchorLocalPet re-places the pet cleanly for those.
+/** The player is in the middle of a pet flow (carrying it to the feeder or the
+ *  bath, a minigame, an errand, breeding, hatching...). */
+export function petActivityActive(): boolean {
   const s = clientState
-  if (
+  return (
     hasPendingHatchling() ||
     s.hatch.active ||
     s.carryEgg.active ||
@@ -367,7 +358,22 @@ export function switchActivePet(petId: string): void {
     s.feedTask.active ||
     s.sicknessErrand.active ||
     s.pepitoChase.active
-  ) {
+  )
+}
+
+/** Make a stored pet the active one locally (and tell the server). */
+export function switchActivePet(petId: string): void {
+  const p = clientState.player
+  if (!p) return
+  const pet = p.pets.find((x) => x.id === petId)
+  if (!pet) return
+  // Don't swap the active pet out from under a running flow. The localPet entity
+  // is REUSED across the switch, so the newcomer would inherit a carry/errand it
+  // never started (see pet.ts reanchorLocalPet). Both entry points — the roster
+  // panel and clicking a stored pet in the world — funnel through here, so this
+  // is the one gate that covers them all. Sleeping / plain care actions are NOT
+  // blocked: reanchorLocalPet re-places the pet cleanly for those.
+  if (petActivityActive()) {
     pushToast('Finish what your pet is doing first!')
     return
   }
