@@ -332,6 +332,18 @@ export function fetchBackAllowed(): boolean {
   return (clientState.player?.counters['playCount'] ?? 0) > playsAtStart
 }
 
+/** Pet panel actions, as the first session gates them. */
+export type PetActionId = 'feed' | 'bath' | 'sleep' | 'play' | 'pet' | 'breed'
+
+/** First session: only the pet action the Caretaker is asking for is open; the
+ *  rest show disabled so nobody wanders off the path. Waking a sleeping pet is
+ *  always allowed. Outside the first session everything is open. */
+export function firstSessionAllowsPetAction(action: PetActionId, petSleeping: boolean): boolean {
+  if (!firstSessionActive()) return true
+  if (action === 'sleep' && petSleeping) return true
+  return BUTTON[step] === action
+}
+
 export function firstSessionStep(): FirstSessionStep {
   return step
 }

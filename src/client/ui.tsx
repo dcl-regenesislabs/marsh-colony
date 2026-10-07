@@ -38,7 +38,7 @@ import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible,
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS, firstSessionHidesBack, fetchBackAllowed } from './firstSession'
+import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS, firstSessionHidesBack, fetchBackAllowed, firstSessionAllowsPetAction } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -663,6 +663,8 @@ function PetPanel() {
         : clientState.sicknessErrand.active
           ? 'Go see the Caretaker or tap BACK first!'
         : 'Your pet is busy right now!'
+  // First session: only the action the Caretaker asks for is open.
+  const off = (a: 'feed' | 'bath' | 'sleep' | 'play' | 'pet' | 'breed') => !firstSessionAllowsPetAction(a, pet.sleeping)
   const guard = (fn: () => void) => () => {
     if (locked) {
       pushToast(busyMessage())
@@ -686,7 +688,7 @@ function PetPanel() {
       </UiEntity>
       {/* Care actions (flat, colored per stat) */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} pulse={firstSessionHud.pulse === 'feed'} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
+        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked || off('feed')} pulse={firstSessionHud.pulse === 'feed'} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
         <PillButton
           id="care_bath"
           label="Bath"
@@ -694,7 +696,7 @@ function PetPanel() {
           color="blue"
           width={chipW}
           height={chipH}
-          disabled={locked}
+          disabled={locked || off('bath')}
           pulse={firstSessionHud.pulse === 'bath'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
@@ -712,8 +714,8 @@ function PetPanel() {
           width={chipW}
           height={chipH}
           fontSize={pet.sleeping && (lockLeft > 0 || sleepLeft > 0) ? S(14) : S(17)}
-          disabled={!pet.sleeping && busy}
-          pulse={(!pet.sleeping && tired && !busy) || firstSessionHud.pulse === 'sleep'}
+          disabled={(!pet.sleeping && busy) || off('sleep')}
+          pulse={(!pet.sleeping && tired && !busy && !off('sleep')) || firstSessionHud.pulse === 'sleep'}
           margin={{ left: S(3), right: S(3) }}
           onClick={() => {
             // An exhausted pet needs 30 seconds to settle before it can wake.
@@ -744,7 +746,7 @@ function PetPanel() {
           width={chipW}
           height={chipH}
           fontSize={tired ? S(15) : S(17)}
-          disabled={locked}
+          disabled={locked || off('play')}
           pulse={firstSessionHud.pulse === 'play'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
@@ -762,7 +764,7 @@ function PetPanel() {
       </UiEntity>
       {/* Pet + Breed, side by side and equal size. */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="wide" color="pink" width={halfW} height={S(54)} disabled={locked} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
+        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="wide" color="pink" width={halfW} height={S(54)} disabled={locked || off('pet')} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
         <PillButton
           id="breed_teaser"
           label={unlocked ? 'Breed' : 'Breed  ·  Adult'}
@@ -771,6 +773,7 @@ function PetPanel() {
           width={halfW}
           height={S(54)}
           margin={{ left: S(4) }}
+          disabled={off('breed')}
           pulse={unlocked}
           onClick={() => {
             if (!unlocked) {
