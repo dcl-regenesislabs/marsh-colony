@@ -49,16 +49,11 @@ import {
   FEED_RESULTS_FOCUS_S,
   feedResultsCounterDurationMs,
   FEED_PET_SIT_TUNER_ENABLED,
-  FORCED_POISON_CINEMATIC_TUNER_ENABLED,
-  debugPlayForcedPoisonCinematic,
   getFeedPetSitTuning,
-  getForcedPoisonCameraTuning,
   nudgeFeedPetSit,
-  nudgeForcedPoisonCamera,
   resetFeedPetSitTuning,
-  resetForcedPoisonCameraTuning,
-  type FeedPetSitAxis,
-  type ForcedPoisonCameraAxis
+  showForcedPoisonCinematic,
+  type FeedPetSitAxis
 } from './fruitGame'
 import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
 import { dismissMeteorAfterClaim } from './meteor'
@@ -3438,8 +3433,9 @@ function FeedStartCard() {
   const width = S(540)
   const height = Math.round(width / FEED_START_ASPECT)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height: height + S(48), flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}>
       <TactileButton id="feed_start" label="" texture={FEED_HUD_SHEET} uvs={FEED_START_UVS} width={width} height={height} onClick={() => startCatchingCountdown()} />
+      <TactileButton id="show_forced_poison_cinematic" label="Show Cinematic" width={S(210)} height={S(36)} bg={C.greenDark} fontSize={S(15)} onClick={() => showForcedPoisonCinematic()} />
     </UiEntity>
   )
 }
@@ -3519,44 +3515,6 @@ function FeedPetSitTuner() {
   )
 }
 
-const FORCED_POISON_CINEMATIC_TUNER_STEP = 0.1
-
-function ForcedPoisonCameraTunerAxis(props: { axis: ForcedPoisonCameraAxis; value: number }) {
-  const axis = props.axis.toUpperCase()
-  return (
-    <UiEntity uiTransform={{ width: '100%', height: S(38), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', margin: { bottom: S(4) } }}>
-      <TactileButton id={`forced_poison_camera_${props.axis}_minus`} label={`- ${axis}`} width={S(70)} height={S(34)} bg={C.cardAlt} fontSize={S(13)} onClick={() => nudgeForcedPoisonCamera(props.axis, -FORCED_POISON_CINEMATIC_TUNER_STEP)} />
-      <Label value={`${axis}: ${props.value.toFixed(2)}`} fontSize={S(15)} color={C.text} textAlign="middle-center" uiTransform={{ width: S(92), height: S(34) }} />
-      <TactileButton id={`forced_poison_camera_${props.axis}_plus`} label={`+ ${axis}`} width={S(70)} height={S(34)} bg={C.cardAlt} fontSize={S(13)} onClick={() => nudgeForcedPoisonCamera(props.axis, FORCED_POISON_CINEMATIC_TUNER_STEP)} />
-    </UiEntity>
-  )
-}
-
-/** Temporary controls for replaying and composing the first-session red-fruit
- * moment. The offset is applied instantly while the close-up is on screen. */
-function ForcedPoisonCinematicTuner() {
-  if (!FORCED_POISON_CINEMATIC_TUNER_ENABLED) return null
-  const tuning = getForcedPoisonCameraTuning()
-  const canPlay = clientState.feedGame.phase === 'catching'
-  const width = S(270)
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: S(104), right: S(16) }, width, flexDirection: 'column', alignItems: 'center', padding: S(10), borderRadius: S(12), pointerFilter: 'block' }}
-      uiBackground={{ color: { r: 0.05, g: 0.05, b: 0.08, a: 0.9 } }}
-    >
-      <Label value="DEBUG · RED FRUIT CINEMATIC" fontSize={S(14)} color={C.gold} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-      <Label value="Camera offset (world)" fontSize={S(11)} color={C.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20) }} />
-      <ForcedPoisonCameraTunerAxis axis="x" value={tuning.offset.x} />
-      <ForcedPoisonCameraTunerAxis axis="y" value={tuning.offset.y} />
-      <ForcedPoisonCameraTunerAxis axis="z" value={tuning.offset.z} />
-      <UiEntity uiTransform={{ width: '100%', height: S(34), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TactileButton id="forced_poison_cinematic_play" label={canPlay ? 'Play cinematic' : 'Start round first'} width={S(146)} height={S(32)} bg={canPlay ? C.greenDark : C.cardAlt} fontSize={S(13)} onClick={() => { if (canPlay) debugPlayForcedPoisonCinematic() }} />
-        <TactileButton id="forced_poison_camera_reset" label="Reset" width={S(100)} height={S(32)} bg={C.pink} fontSize={S(13)} onClick={() => resetForcedPoisonCameraTuning()} />
-      </UiEntity>
-    </UiEntity>
-  )
-}
-
 function FeedGameOverlay() {
   const st = clientState.feedGame
   if (!st.active) return <UiEntity />
@@ -3571,15 +3529,7 @@ function FeedGameOverlay() {
       </UiEntity>
     )
   }
-  // Keep the tuning panel alive through the forced beat so camera nudges can
-  // be assessed immediately while the fruit and skull are actually on screen.
-  if (st.phase === 'forcedPoisonEnter' || st.phase === 'forcedPoison' || st.phase === 'poisonReveal' || st.phase === 'poisonExit') {
-    return (
-      <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
-        <ForcedPoisonCinematicTuner />
-      </UiEntity>
-    )
-  }
+  if (st.phase === 'forcedPoisonEnter' || st.phase === 'forcedPoison' || st.phase === 'poisonReveal' || st.phase === 'poisonExit') return <UiEntity />
   const catching = st.phase === 'catching'
   const introPhase = st.phase === 'intro'
   const countdown = st.phase === 'countdown'
@@ -3632,7 +3582,6 @@ function FeedGameOverlay() {
           </UiEntity>
           {introPhase ? <FeedStartCard /> : null}
           <FeedPetSitTuner />
-          <ForcedPoisonCinematicTuner />
           {mobile() ? <MoveArrowButton side="left" /> : null}
           {mobile() ? <MoveArrowButton side="right" /> : null}
         </UiEntity>

@@ -144,7 +144,7 @@ const POISON_POP_TOTAL_MS = POISON_POP_IN_MS + POISON_POP_HOLD_MS + POISON_POP_O
 const POISON_REVEAL_S = POISON_POP_TOTAL_MS / 1000
 const POISON_CINEMATIC_FADE_MS = 220
 const POISON_CINEMATIC_ZOOM_MS = 700
-const POISON_CINEMATIC_CAM_DIST = 2.7
+const POISON_CINEMATIC_CAM_DIST = 2.0
 const POISON_CINEMATIC_LOOK_HEIGHT = 3.2
 const SCORCH_TEXTURE = 'assets/images/scorch_03.png'
 const SCORCH_COUNT = GROUND_CLUTTER_COUNT
@@ -251,13 +251,6 @@ export type FeedPetSitAxis = 'x' | 'y' | 'z'
 type FeedPetSitOffset = { x: number; y: number; z: number }
 const feedPetSitOffset: FeedPetSitOffset = { x: 1.4, y: 0, z: 0.7 }
 
-/** DEBUG: on-screen controls for replaying and framing the forced red-fruit
- * tutorial beat. Set false before shipping. */
-export const FORCED_POISON_CINEMATIC_TUNER_ENABLED = true
-export type ForcedPoisonCameraAxis = 'x' | 'y' | 'z'
-export type ForcedPoisonCameraOffset = { x: number; y: number; z: number }
-const forcedPoisonCameraOffset: ForcedPoisonCameraOffset = { x: 0, y: 0, z: 0 }
-
 // Same "hold" pose/asset pet.ts uses for carrying the pet to the bath — a
 // two-handed cradling pose, better suited to holding the drawer than the
 // egg-carry emote.
@@ -315,9 +308,9 @@ let closing = false
 const fruits: FruitRuntime[] = []
 let forcedPoisonFruit: FruitRuntime | null = null
 let forcedPoisonStartedAt = 0
-// A debug replay must not submit Feed results or consume the first-session
-// poison flag. Keep the live round exactly where it was, then restore it.
-let forcedPoisonPreview: { caught: number; caughtPoison: boolean; timeLeft: number } | null = null
+// The Show Cinematic control returns to the untouched Feed intro once its
+// self-contained preview ends. The actual tutorial path leaves this null.
+let forcedPoisonPreview: { caught: number; caughtPoison: boolean; timeLeft: number; introPhaseAt: number } | null = null
 const groundClutter: Entity[] = [] // decorative fallen fruit — see GROUND_CLUTTER_COUNT
 let clutterIndex = 0
 const catchBursts: Entity[] = []
@@ -524,7 +517,6 @@ let localRight = Vector3.create(1, 0, 0)
 let localForward = Vector3.create(0, 0, 1)
 let cinematicSpawnPos = Vector3.Zero()
 let feedingShotAnchor: Vector3 | null = null
-let forcedPoisonCameraFocus: Vector3 | null = null
 
 /** Current runtime offset for Unity/mobile positioning of the sitting pet. */
 export function getFeedPetSitTuning(): { offset: FeedPetSitOffset; position: FeedPetSitOffset | null } {
@@ -558,54 +550,6 @@ export function resetFeedPetSitTuning(): void {
   feedPetSitOffset.y = 0
   feedPetSitOffset.z = 0
   console.log('[Feed pet sit tuner] offset reset to { x: 0.00, y: 0.00, z: 0.00 }')
-}
-
-/** Current relative close-up offset for the forced poison cinematic. */
-export function getForcedPoisonCameraTuning(): { offset: ForcedPoisonCameraOffset } {
-  return { offset: { ...forcedPoisonCameraOffset } }
-}
-
-function forcedPoisonCameraShot(focus: Vector3): { position: Vector3; rotation: Quaternion } {
-  const cameraBack = Vector3.create(-localForward.x, 0, -localForward.z)
-  const position = Vector3.create(
-    focus.x + cameraBack.x * POISON_CINEMATIC_CAM_DIST + forcedPoisonCameraOffset.x,
-    pendingCamPos.y + forcedPoisonCameraOffset.y,
-    focus.z + cameraBack.z * POISON_CINEMATIC_CAM_DIST + forcedPoisonCameraOffset.z
-  )
-  const look = Vector3.create(focus.x, groundY + POISON_CINEMATIC_LOOK_HEIGHT, focus.z)
-  return { position, rotation: Quaternion.fromLookAt(position, look) }
-}
-
-/** Move the virtual camera live while framing the forced poison close-up. */
-export function nudgeForcedPoisonCamera(axis: ForcedPoisonCameraAxis, amount: number): void {
-  forcedPoisonCameraOffset[axis] += amount
-  const focus = forcedPoisonCameraFocus
-  if (focus && cinCam && Transform.has(cinCam)) {
-    const shot = forcedPoisonCameraShot(focus)
-    Tween.deleteFrom(cinCam)
-    const transform = Transform.getMutable(cinCam)
-    transform.position = shot.position
-    transform.rotation = shot.rotation
-  }
-  console.log(
-    `[Forced poison camera tuner] offset = { x: ${forcedPoisonCameraOffset.x.toFixed(2)}, y: ${forcedPoisonCameraOffset.y.toFixed(2)}, z: ${forcedPoisonCameraOffset.z.toFixed(2)} }`
-  )
-}
-
-/** Reset the forced poison camera to its authored close-up. */
-export function resetForcedPoisonCameraTuning(): void {
-  forcedPoisonCameraOffset.x = 0
-  forcedPoisonCameraOffset.y = 0
-  forcedPoisonCameraOffset.z = 0
-  const focus = forcedPoisonCameraFocus
-  if (focus && cinCam && Transform.has(cinCam)) {
-    const shot = forcedPoisonCameraShot(focus)
-    Tween.deleteFrom(cinCam)
-    const transform = Transform.getMutable(cinCam)
-    transform.position = shot.position
-    transform.rotation = shot.rotation
-  }
-  console.log('[Forced poison camera tuner] offset reset to { x: 0.00, y: 0.00, z: 0.00 }')
 }
 
 type FeedPetCalibration = { right: number; up: number; forward: number }
@@ -1010,28 +954,33 @@ function startFall(f: FruitRuntime): void {
 function zoomToForcedPoison(player: Vector3): void {
   if (!cinCam || !Transform.has(cinCam)) return
   const current = Transform.get(cinCam)
-  forcedPoisonCameraFocus = Vector3.clone(player)
-  const shot = forcedPoisonCameraShot(forcedPoisonCameraFocus)
+  const cameraBack = Vector3.create(-localForward.x, 0, -localForward.z)
+  const closePos = Vector3.create(
+    player.x + cameraBack.x * POISON_CINEMATIC_CAM_DIST,
+    pendingCamPos.y,
+    player.z + cameraBack.z * POISON_CINEMATIC_CAM_DIST
+  )
+  const look = Vector3.create(player.x, groundY + POISON_CINEMATIC_LOOK_HEIGHT, player.z)
   Tween.deleteFrom(cinCam)
   Tween.createOrReplace(cinCam, {
     mode: Tween.Mode.MoveRotateScale({
-      position: { start: current.position, end: shot.position },
-      rotation: { start: current.rotation, end: shot.rotation }
+      position: { start: current.position, end: closePos },
+      rotation: { start: current.rotation, end: Quaternion.fromLookAt(closePos, look) }
     }),
     duration: POISON_CINEMATIC_ZOOM_MS,
     easingFunction: EasingFunction.EF_EASEOUTQUAD
   })
 }
 
-/** Play the red-fruit beat on demand without ending or mutating the Feed
- * round. Only available while a real round is catching, so the server's Feed
- * lease and the scene's existing camera setup are both in place. */
-export function debugPlayForcedPoisonCinematic(): void {
-  if (!FORCED_POISON_CINEMATIC_TUNER_ENABLED || phase !== 'catching') return
+/** Show the red-fruit beat directly from the Feed intro, without starting a
+ * round or contacting the Feed-result flow. */
+export function showForcedPoisonCinematic(): void {
+  if (phase !== 'intro') return
   forcedPoisonPreview = {
     caught: clientState.feedGame.caught,
     caughtPoison: caughtPoisonThisRound,
-    timeLeft: clientState.feedGame.timeLeft
+    timeLeft: clientState.feedGame.timeLeft,
+    introPhaseAt: phaseAt
   }
   beginForcedPoisonCinematic()
 }
@@ -1069,7 +1018,8 @@ function beginForcedPoisonCinematic(): void {
 function beginForcedPoisonFall(): void {
   const f = fruits[0]
   if (!f) {
-    applyResults()
+    if (forcedPoisonPreview) resumeAfterForcedPoisonPreview()
+    else applyResults()
     return
   }
 
@@ -1104,7 +1054,7 @@ function beginForcedPoisonFall(): void {
   clientState.feedGame.phase = 'forcedPoison'
 }
 
-/** Restore the active Feed round after a debug-only poison replay. */
+/** Return a Show Cinematic preview to the untouched Feed intro. */
 function resumeAfterForcedPoisonPreview(): void {
   const preview = forcedPoisonPreview
   if (!preview) return
@@ -1116,7 +1066,7 @@ function resumeAfterForcedPoisonPreview(): void {
   forcedPoisonStartedAt = 0
 
   // The forced shot hides the fruit pool and attaches its red fruit to the
-  // drawer. Rebuild a normal wave before handing control back to the round.
+  // drawer. Rebuild the static intro composition before handing control back.
   for (const fruit of fruits) {
     Tween.deleteFrom(fruit.entity)
     const transform = Transform.getMutable(fruit.entity)
@@ -1125,13 +1075,27 @@ function resumeAfterForcedPoisonPreview(): void {
     transform.scale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
     GltfContainer.createOrReplace(fruit.entity, { src: randomFruitModel(), ...NO_COLLISION })
     VisibilityComponent.createOrReplace(fruit.entity, { visible: true })
-    armFruit(fruit)
+    fruit.phase = 'idle'
+    fruit.poison = false
   }
   InputModifier.createOrReplace(engine.PlayerEntity, {
     mode: InputModifier.Mode.Standard({ disableJump: true, disableDoubleJump: true, disableGliding: true })
   })
-  beginCatching()
-  forcedPoisonCameraFocus = null
+  phase = 'intro'
+  phaseAt = preview.introPhaseAt
+  clientState.feedGame.phase = 'intro'
+  if (cinCam && Transform.has(cinCam)) {
+    const current = Transform.get(cinCam)
+    Tween.deleteFrom(cinCam)
+    Tween.createOrReplace(cinCam, {
+      mode: Tween.Mode.MoveRotateScale({
+        position: { start: current.position, end: pendingCamPos },
+        rotation: { start: current.rotation, end: Quaternion.fromLookAt(pendingCamPos, pendingLookTarget) }
+      }),
+      duration: POISON_CINEMATIC_ZOOM_MS,
+      easingFunction: EasingFunction.EF_EASEOUTQUAD
+    })
+  }
 }
 
 function forcedPoisonTick(): void {
@@ -2218,7 +2182,6 @@ export function startFruitGame(mascotaId: string): void {
   forcedPoisonFruit = null
   forcedPoisonStartedAt = 0
   forcedPoisonPreview = null
-  forcedPoisonCameraFocus = null
   introEmotePlayed = false
   drawerRevealed = false
   phase = 'arrival'
