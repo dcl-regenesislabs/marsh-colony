@@ -142,6 +142,10 @@ const POISON_POP_OUT_MS = 350
 const POISON_POP_RISE = 0.6 // metres it drifts up over its whole lifetime
 const POISON_POP_TOTAL_MS = POISON_POP_IN_MS + POISON_POP_HOLD_MS + POISON_POP_OUT_MS
 const POISON_REVEAL_S = POISON_POP_TOTAL_MS / 1000
+const POISON_CINEMATIC_FADE_MS = 220
+const POISON_CINEMATIC_ZOOM_MS = 700
+const POISON_CINEMATIC_CAM_DIST = 2.7
+const POISON_CINEMATIC_LOOK_HEIGHT = 3.2
 const SCORCH_TEXTURE = 'assets/images/scorch_03.png'
 const SCORCH_COUNT = GROUND_CLUTTER_COUNT
 const SCORCH_START_SCALE = 0.6
@@ -278,7 +282,18 @@ interface FruitRuntime {
   poison: boolean
 }
 
-type Phase = 'idle' | 'arrival' | 'intro' | 'countdown' | 'catching' | 'forcedPoison' | 'poisonReveal' | 'feeding' | 'results'
+type Phase =
+  | 'idle'
+  | 'arrival'
+  | 'intro'
+  | 'countdown'
+  | 'catching'
+  | 'forcedPoisonEnter'
+  | 'forcedPoison'
+  | 'poisonReveal'
+  | 'poisonExit'
+  | 'feeding'
+  | 'results'
 let phase: Phase = 'idle'
 let phaseAt = 0
 let clock = 0
@@ -932,10 +947,58 @@ function startFall(f: FruitRuntime): void {
   f.phase = 'falling'
 }
 
+/** Camera close-up used only for the tutorial's unavoidable red-fruit beat. */
+function zoomToForcedPoison(player: Vector3): void {
+  if (!cinCam || !Transform.has(cinCam)) return
+  const current = Transform.get(cinCam)
+  const cameraBack = Vector3.create(-localForward.x, 0, -localForward.z)
+  const closePos = Vector3.create(
+    player.x + cameraBack.x * POISON_CINEMATIC_CAM_DIST,
+    pendingCamPos.y,
+    player.z + cameraBack.z * POISON_CINEMATIC_CAM_DIST
+  )
+  const look = Vector3.create(player.x, groundY + POISON_CINEMATIC_LOOK_HEIGHT, player.z)
+  Tween.deleteFrom(cinCam)
+  Tween.createOrReplace(cinCam, {
+    mode: Tween.Mode.MoveRotateScale({
+      position: { start: current.position, end: closePos },
+      rotation: { start: current.rotation, end: Quaternion.fromLookAt(closePos, look) }
+    }),
+    duration: POISON_CINEMATIC_ZOOM_MS,
+    easingFunction: EasingFunction.EF_EASEOUTQUAD
+  })
+}
+
+/** Fade out, then reveal the forced red-fruit close-up through a fade-in. */
+function beginForcedPoisonCinematic(): void {
+  phase = 'forcedPoisonEnter'
+  phaseAt = clock
+  clientState.feedGame.phase = 'forcedPoisonEnter'
+  let stage: 'out' | 'in' = 'out'
+  let elapsedMs = 0
+  const fadeTick = (dt: number): void => {
+    elapsedMs += dt * 1000
+    if (stage === 'out') {
+      clientState.screenFade.alpha = Math.min(1, elapsedMs / POISON_CINEMATIC_FADE_MS)
+      if (elapsedMs < POISON_CINEMATIC_FADE_MS) return
+      clientState.screenFade.alpha = 1
+      beginForcedPoisonFall()
+      stage = 'in'
+      elapsedMs = 0
+      return
+    }
+    clientState.screenFade.alpha = Math.max(0, 1 - elapsedMs / POISON_CINEMATIC_FADE_MS)
+    if (elapsedMs < POISON_CINEMATIC_FADE_MS) return
+    clientState.screenFade.alpha = 0
+    engine.removeSystem(fadeTick)
+  }
+  engine.addSystem(fadeTick)
+}
+
 /** Tutorial fallback: when the round ends without a red fruit, keep the
  * player in the existing tree shot and drop one directly onto them. Its X/Z
  * follows the avatar during the brief fall, so the automatic catch is
- * deterministic even while the player keeps moving in the catch lane. */
+ * deterministic even where the input lock is not supported. */
 function beginForcedPoisonFall(): void {
   const f = fruits[0]
   if (!f) {
@@ -944,7 +1007,9 @@ function beginForcedPoisonFall(): void {
   }
 
   // Do not cut to the feeding shot yet: this is still part of the catch-lane
-  // cinematic, and the player keeps its normal left/right movement here.
+  // cinematic. The input lock makes the forced beat read clearly on clients
+  // that support it; the fruit still follows X/Z as a browser-safe fallback.
+  InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   for (const fruit of fruits) {
     Tween.deleteFrom(fruit.entity)
     const transform = Transform.getMutable(fruit.entity)
@@ -955,6 +1020,7 @@ function beginForcedPoisonFall(): void {
   }
 
   const player = playerPos()
+  zoomToForcedPoison(player)
   Transform.createOrReplace(f.entity, {
     position: Vector3.create(player.x, canopyCenter.y, player.z),
     rotation: Quaternion.Identity(),
@@ -993,6 +1059,33 @@ function forcedPoisonTick(): void {
   phase = 'poisonReveal'
   phaseAt = clock
   clientState.feedGame.phase = 'poisonReveal'
+}
+
+/** Fade the completed skull reveal out, switch to the food shot under black,
+ * then fade that next shot in. */
+function finishPoisonCinematic(): void {
+  phase = 'poisonExit'
+  phaseAt = clock
+  clientState.feedGame.phase = 'poisonExit'
+  let stage: 'out' | 'in' = 'out'
+  let elapsedMs = 0
+  const fadeTick = (dt: number): void => {
+    elapsedMs += dt * 1000
+    if (stage === 'out') {
+      clientState.screenFade.alpha = Math.min(1, elapsedMs / POISON_CINEMATIC_FADE_MS)
+      if (elapsedMs < POISON_CINEMATIC_FADE_MS) return
+      clientState.screenFade.alpha = 1
+      applyResults()
+      stage = 'in'
+      elapsedMs = 0
+      return
+    }
+    clientState.screenFade.alpha = Math.max(0, 1 - elapsedMs / POISON_CINEMATIC_FADE_MS)
+    if (elapsedMs < POISON_CINEMATIC_FADE_MS) return
+    clientState.screenFade.alpha = 0
+    engine.removeSystem(fadeTick)
+  }
+  engine.addSystem(fadeTick)
 }
 
 /** Small scripted bounce-and-settle for a fruit that hit the ground uncaught:
@@ -1683,7 +1776,16 @@ function finalizeAndClose(): void {
 
 /** The Back button follows the same completion path as a natural timeout. */
 export function cancelFruitGame(): void {
-  if (phase === 'idle' || phase === 'forcedPoison' || phase === 'poisonReveal' || phase === 'results' || phase === 'feeding') return
+  if (
+    phase === 'idle' ||
+    phase === 'forcedPoisonEnter' ||
+    phase === 'forcedPoison' ||
+    phase === 'poisonReveal' ||
+    phase === 'poisonExit' ||
+    phase === 'results' ||
+    phase === 'feeding'
+  )
+    return
   applyResults()
 }
 
@@ -1713,13 +1815,15 @@ function tick(dt: number): void {
     const st = clientState.feedGame
     st.timeLeft = Math.max(0, st.timeLeft - dt)
     if (st.timeLeft <= 0) {
-      if (firstSessionPoisonPending() && !caughtPoisonThisRound) beginForcedPoisonFall()
+      if (firstSessionPoisonPending() && !caughtPoisonThisRound) beginForcedPoisonCinematic()
       else applyResults()
     }
+  } else if (phase === 'forcedPoisonEnter') {
+    // The fade system starts the fall once its black frame is in place.
   } else if (phase === 'forcedPoison') {
     forcedPoisonTick()
   } else if (phase === 'poisonReveal') {
-    if (clock - phaseAt >= POISON_REVEAL_S) applyResults()
+    if (clock - phaseAt >= POISON_REVEAL_S) finishPoisonCinematic()
   } else if (phase === 'feeding') {
     // The caught counter gets its own first beat. Then the bar moves smoothly
     // through the remaining cinematic and finishes with the last bite.
