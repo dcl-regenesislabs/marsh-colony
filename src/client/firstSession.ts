@@ -273,6 +273,11 @@ let poisonTaken = false
 /** Seconds the Feed flow has been over while still in 'feeding'. */
 let feedOverFor = 0
 
+/** True only until the first-session Feed round has delivered its poison beat. */
+export function firstSessionPoisonPending(): boolean {
+  return firstSessionActive() && !poisonTaken
+}
+
 /** First session only, once: the Feed round being submitted must end with the
  *  pet poisoned (fruitGame.ts). Returns false for everyone else. */
 export function takeFirstSessionPoison(): boolean {

@@ -38,7 +38,7 @@ import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchC
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
 import { startSicknessCinematicFromFeedBlackout } from './sicknessCinematic'
-import { takeFirstSessionPoison, firstSessionActive } from './firstSession'
+import { takeFirstSessionPoison, firstSessionActive, firstSessionPoisonPending } from './firstSession'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import {
   getLocalPet,
@@ -92,6 +92,9 @@ const NO_COLLISION = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisi
 
 const GAME_DURATION_S = 30
 const FALL_DURATION_MS = 1800
+// The tutorial fallback gets its own uninterrupted drop after the normal
+// timer ends, so the player has time to see why the pet becomes sick.
+const FORCED_POISON_FALL_S = 1.6
 const MIN_HANG_S = 1.2
 const MAX_HANG_S = 2.5
 const RESPAWN_DELAY_S = 0.8
@@ -138,6 +141,7 @@ const POISON_POP_HOLD_MS = 550
 const POISON_POP_OUT_MS = 350
 const POISON_POP_RISE = 0.6 // metres it drifts up over its whole lifetime
 const POISON_POP_TOTAL_MS = POISON_POP_IN_MS + POISON_POP_HOLD_MS + POISON_POP_OUT_MS
+const POISON_REVEAL_S = POISON_POP_TOTAL_MS / 1000
 const SCORCH_TEXTURE = 'assets/images/scorch_03.png'
 const SCORCH_COUNT = GROUND_CLUTTER_COUNT
 const SCORCH_START_SCALE = 0.6
@@ -274,7 +278,7 @@ interface FruitRuntime {
   poison: boolean
 }
 
-type Phase = 'idle' | 'arrival' | 'intro' | 'countdown' | 'catching' | 'feeding' | 'results'
+type Phase = 'idle' | 'arrival' | 'intro' | 'countdown' | 'catching' | 'forcedPoison' | 'poisonReveal' | 'feeding' | 'results'
 let phase: Phase = 'idle'
 let phaseAt = 0
 let clock = 0
@@ -287,6 +291,8 @@ let caughtPoisonThisRound = false
 let closing = false
 
 const fruits: FruitRuntime[] = []
+let forcedPoisonFruit: FruitRuntime | null = null
+let forcedPoisonStartedAt = 0
 const groundClutter: Entity[] = [] // decorative fallen fruit — see GROUND_CLUTTER_COUNT
 let clutterIndex = 0
 const catchBursts: Entity[] = []
@@ -924,6 +930,69 @@ function startFall(f: FruitRuntime): void {
     easingFunction: EasingFunction.EF_EASEINQUAD
   })
   f.phase = 'falling'
+}
+
+/** Tutorial fallback: when the round ends without a red fruit, keep the
+ * player in the existing tree shot and drop one directly onto them. Its X/Z
+ * follows the avatar during the brief fall, so the automatic catch is
+ * deterministic even while the player keeps moving in the catch lane. */
+function beginForcedPoisonFall(): void {
+  const f = fruits[0]
+  if (!f) {
+    applyResults()
+    return
+  }
+
+  // Do not cut to the feeding shot yet: this is still part of the catch-lane
+  // cinematic, and the player keeps its normal left/right movement here.
+  for (const fruit of fruits) {
+    Tween.deleteFrom(fruit.entity)
+    const transform = Transform.getMutable(fruit.entity)
+    transform.parent = undefined
+    transform.scale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
+    VisibilityComponent.createOrReplace(fruit.entity, { visible: false })
+    fruit.phase = 'idle'
+  }
+
+  const player = playerPos()
+  Transform.createOrReplace(f.entity, {
+    position: Vector3.create(player.x, canopyCenter.y, player.z),
+    rotation: Quaternion.Identity(),
+    scale: Vector3.scale(Vector3.One(), FRUIT_SCALE)
+  })
+  GltfContainer.createOrReplace(f.entity, { src: POISON_FRUIT_MODEL, ...NO_COLLISION })
+  VisibilityComponent.createOrReplace(f.entity, { visible: true })
+  f.poison = true
+  f.phase = 'falling'
+  forcedPoisonFruit = f
+  forcedPoisonStartedAt = clock
+  phase = 'forcedPoison'
+  phaseAt = clock
+  clientState.feedGame.phase = 'forcedPoison'
+}
+
+function forcedPoisonTick(): void {
+  const f = forcedPoisonFruit
+  if (!f) {
+    applyResults()
+    return
+  }
+
+  const elapsed = Math.min(1, (clock - forcedPoisonStartedAt) / FORCED_POISON_FALL_S)
+  const fall = elapsed * elapsed
+  const player = playerPos()
+  const catchY = groundY + (CATCH_MIN_Y + CATCH_MAX_Y) / 2
+  Transform.getMutable(f.entity).position = Vector3.create(player.x, canopyCenter.y + (catchY - canopyCenter.y) * fall, player.z)
+
+  if (elapsed < 1) return
+  forcedPoisonFruit = null
+  resolveFruit(f, true)
+  // Hold the same tree camera until the skull's complete pop/hold/fade has
+  // played. Applying results here used to pan immediately to the feeding shot
+  // and made the poison feedback almost impossible to notice.
+  phase = 'poisonReveal'
+  phaseAt = clock
+  clientState.feedGame.phase = 'poisonReveal'
 }
 
 /** Small scripted bounce-and-settle for a fruit that hit the ground uncaught:
@@ -1614,7 +1683,7 @@ function finalizeAndClose(): void {
 
 /** The Back button follows the same completion path as a natural timeout. */
 export function cancelFruitGame(): void {
-  if (phase === 'idle' || phase === 'results' || phase === 'feeding') return
+  if (phase === 'idle' || phase === 'forcedPoison' || phase === 'poisonReveal' || phase === 'results' || phase === 'feeding') return
   applyResults()
 }
 
@@ -1643,7 +1712,14 @@ function tick(dt: number): void {
     fruitTick()
     const st = clientState.feedGame
     st.timeLeft = Math.max(0, st.timeLeft - dt)
-    if (st.timeLeft <= 0) applyResults()
+    if (st.timeLeft <= 0) {
+      if (firstSessionPoisonPending() && !caughtPoisonThisRound) beginForcedPoisonFall()
+      else applyResults()
+    }
+  } else if (phase === 'forcedPoison') {
+    forcedPoisonTick()
+  } else if (phase === 'poisonReveal') {
+    if (clock - phaseAt >= POISON_REVEAL_S) applyResults()
   } else if (phase === 'feeding') {
     // The caught counter gets its own first beat. Then the bar moves smoothly
     // through the remaining cinematic and finishes with the last bite.
@@ -1937,6 +2013,8 @@ export function startFruitGame(mascotaId: string): void {
     hungerFillProgress: 0
   }
   caughtPoisonThisRound = false
+  forcedPoisonFruit = null
+  forcedPoisonStartedAt = 0
   introEmotePlayed = false
   drawerRevealed = false
   phase = 'arrival'

@@ -3527,6 +3527,9 @@ function FeedGameOverlay() {
       </UiEntity>
     )
   }
+  // The forced-red beat and its skull reveal are world-only; they own the
+  // camera until the food cinematic starts.
+  if (st.phase === 'forcedPoison' || st.phase === 'poisonReveal') return <UiEntity />
   const catching = st.phase === 'catching'
   const introPhase = st.phase === 'intro'
   const countdown = st.phase === 'countdown'
