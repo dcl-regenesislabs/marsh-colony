@@ -25,6 +25,7 @@ import {
   cancelCarryPet,
   canStartPetInteraction,
   startBreedErrand,
+  firstSessionBreedPartner,
   cancelBreed,
   placeParentA,
   chooseBreedPartner,
@@ -34,10 +35,11 @@ import {
   BREED_BURST_FRAMES,
   playPetVoice
 } from './pet'
-import { hidePetTouchControls, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, showPetTouchControls } from './touchControls'
+import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, setMyPetsSpotlight, showPetTouchControls } from './touchControls'
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
+import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS, firstSessionHidesBack, fetchBackAllowed, firstSessionAllowsPetAction } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -177,6 +179,21 @@ function mobileMagnifierProgress(): number {
   return mobileMagnifier.phase === 'closing' ? 1 - eased : eased
 }
 
+/** A dialog never sits on top of another panel: the moment one opens, the
+ *  panel that was already up (My Pets, Inventory, Adopt, the pet's panel...)
+ *  closes and the dialog stays alone on screen. Only the opening edge counts,
+ *  so a panel a dialog opens when it ends (e.g. intro -> Adopt) is untouched.
+ *  The offspring naming step is left alone so a breed is never cut short. */
+let dialogWasOpen = false
+function dialogClosesPanelsSystem(): void {
+  const open = clientState.dialog.open
+  if (open && !dialogWasOpen) {
+    if (uiState.panel !== 'none' && uiState.panel !== 'breedName') ui.close()
+    if (clientState.petPanelOpen) clientState.petPanelOpen = false
+  }
+  dialogWasOpen = open
+}
+
 function syncMobileMagnifierSystem(): void {
   if (mobileMagnifier.phase === 'closing' && Date.now() - mobileMagnifier.startedAt >= MOBILE_NAME_OVERLAY_MS) {
     resetMobileMagnifier()
@@ -185,6 +202,11 @@ function syncMobileMagnifierSystem(): void {
 
 export const ui = {
   openAdopt(): void {
+    // First session: after the second pet, the third one comes from breeding.
+    if (firstSessionAdoptLocked()) {
+      uiState.panel = 'none'
+      return
+    }
     // One hatchling at a time: finish (keep/discard) the current one first.
     if (hasPendingHatchling()) {
       pushToast('Place or discard your current pet first.')
@@ -691,6 +713,8 @@ function PetPanel() {
         : clientState.sicknessErrand.active
           ? 'Go see the Caretaker or tap BACK first!'
         : 'Your pet is busy right now!'
+  // First session: only the action the Caretaker asks for is open.
+  const off = (a: 'feed' | 'bath' | 'sleep' | 'play' | 'pet' | 'breed' | 'ark') => !firstSessionAllowsPetAction(a, pet.sleeping)
   const guard = (fn: () => void) => () => {
     if (locked) {
       pushToast(busyMessage())
@@ -714,7 +738,7 @@ function PetPanel() {
       </UiEntity>
       {/* Care actions (flat, colored per stat) */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
+        <PillButton id="care_feed" label="Feed" shape="chip" color="orange" width={chipW} height={chipH} disabled={locked || off('feed')} pulse={firstSessionHud.pulse === 'feed'} margin={{ left: S(3), right: S(3) }} onClick={guard(() => startFeedTask())} />
         <PillButton
           id="care_bath"
           label="Bath"
@@ -722,7 +746,8 @@ function PetPanel() {
           color="blue"
           width={chipW}
           height={chipH}
-          disabled={locked}
+          disabled={locked || off('bath')}
+          pulse={firstSessionHud.pulse === 'bath'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Pick the pet up and carry it to the tub (place it there to bathe).
@@ -739,8 +764,8 @@ function PetPanel() {
           width={chipW}
           height={chipH}
           fontSize={pet.sleeping && (lockLeft > 0 || sleepLeft > 0) ? S(14) : S(17)}
-          disabled={!pet.sleeping && busy}
-          pulse={!pet.sleeping && tired && !busy}
+          disabled={(!pet.sleeping && busy) || off('sleep')}
+          pulse={(!pet.sleeping && tired && !busy && !off('sleep')) || firstSessionHud.pulse === 'sleep'}
           margin={{ left: S(3), right: S(3) }}
           onClick={() => {
             // An exhausted pet needs 30 seconds to settle before it can wake.
@@ -771,7 +796,8 @@ function PetPanel() {
           width={chipW}
           height={chipH}
           fontSize={tired ? S(15) : S(17)}
-          disabled={locked}
+          disabled={locked || off('play')}
+          pulse={firstSessionHud.pulse === 'play'}
           margin={{ left: S(3), right: S(3) }}
           onClick={guard(() => {
             // Out of energy: playing is what drains it, so the way back is bed.
@@ -790,7 +816,7 @@ function PetPanel() {
           pill (its 4:1 cell matches a third of the row). Breed and the Ark are
           for Adults only. */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="half" color="pink" width={thirdW} height={thirdH} fontSize={S(16)} disabled={locked} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
+        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="half" color="pink" width={thirdW} height={thirdH} fontSize={S(16)} disabled={locked || off('pet')} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
         <PillButton
           id="breed_teaser"
           label={unlocked ? 'Breed' : 'Breed  ·  Adult'}
@@ -800,10 +826,16 @@ function PetPanel() {
           height={thirdH}
           fontSize={S(16)}
           margin={{ left: S(4), right: S(4) }}
+          disabled={off('breed')}
           pulse={unlocked}
           onClick={() => {
             if (!unlocked) {
               pushToast('Grow your pet to Adult to unlock breeding!')
+              return
+            }
+            // First session: the Caretaker lends his own pet, so no partner check.
+            if (firstSessionBreedPartner() !== null) {
+              startBreedErrand()
               return
             }
             if (otherPets.length === 0) {
@@ -828,6 +860,7 @@ function PetPanel() {
           height={thirdH}
           fontSize={S(16)}
           margin={{ left: S(4) }}
+          disabled={off('ark')}
           onClick={() => {
             if (!unlocked) {
               pushToast('Only Adult pets can board the Ark.')
@@ -1072,14 +1105,14 @@ function BottomNav() {
   // separate "selected" variant.
   const navSize = Sbtn(92)
   const plateSize = navSize + S(10)
-  const nav = (id: string, uvs: number[], panel: Panel, onClick: () => void) => {
+  const nav = (id: string, uvs: number[], panel: Panel, onClick: () => void, pulse = false) => {
     const sel = uiState.panel === panel
     return (
       <UiEntity
         uiTransform={{ width: plateSize, height: plateSize, alignItems: 'center', justifyContent: 'center', margin: { left: S(6), right: S(6) }, borderRadius: S(18) }}
         uiBackground={sel ? { color: LOC.blue } : undefined}
       >
-        <TactileButton id={id} label="" texture={HUD_SHEET} uvs={uvs} width={navSize} height={navSize} onClick={onClick} />
+        <TactileButton id={id} label="" texture={HUD_SHEET} uvs={uvs} width={navSize} height={navSize} pulse={pulse && !sel} onClick={onClick} />
       </UiEntity>
     )
   }
@@ -1089,7 +1122,7 @@ function BottomNav() {
   // DESKTOP: the classic centered bottom bar.
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(18), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster())}
+      {nav('nav_pets', NAV_PAW_UVS, 'roster', () => ui.openRoster(), firstSessionHud.pulse === 'myPets')}
       {nav('nav_inv', NAV_INV_UVS, 'inventory', () => ui.openInventory())}
       {nav('nav_goals', NAV_GOALS_UVS, 'goals', () => ui.openGoals())}
     </UiEntity>
@@ -1129,8 +1162,13 @@ function syncPetTouchControlsSystem(): void {
     hidePetTouchControls()
     return
   }
+  // First session: the Caretaker asked for My Pets -> it is the only button.
+  const spotlight = firstSessionHud.pulse === 'myPets'
+  setMyPetsSpotlight(spotlight)
   showPetTouchControls(clientState.followEnabled, icon)
-  if (inputSystem.isTriggered(NAV_ROSTER_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
+  if (spotlight && inputSystem.isTriggered(MY_PETS_SPOTLIGHT_ACTION, PointerEventType.PET_DOWN)) {
+    ui.openRoster()
+  } else if (inputSystem.isTriggered(NAV_ROSTER_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
     ui.openRoster()
   } else if (inputSystem.isTriggered(NAV_INVENTORY_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
     ui.openInventory()
@@ -1440,6 +1478,9 @@ function BreedNamePanel() {
   const hasPotion = potions > 0
   const usingPotion = hasPotion && uiState.breedUsePotion
   const noticeOn = Date.now() < breedNotice.until
+  // First session: the Caretaker's lent partner breeds for free.
+  const lent = clientState.breed.partnerId === Cfg.FIRST_SESSION_PARTNER_ID
+  const fee = lent ? 0 : Cfg.BREED_COST
 
   const potionIcon = S(60)
   const buyW = S(120)
@@ -1523,7 +1564,7 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={noticeOn ? breedNotice.text : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}Breeding costs ${Cfg.BREED_COST} coins`}
+          value={noticeOn ? breedNotice.text : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
           fontSize={S(15)}
           color={noticeOn ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
@@ -1546,7 +1587,7 @@ function BreedNamePanel() {
             // (which sends the breed). If the flow was cancelled (world BACK) while
             // this modal was still open, just close — no stale actions.breed('').
             // Check the fee here too: once the egg cinematic starts it can't be taken back.
-            if (coins < Cfg.BREED_COST) {
+            if (coins < fee) {
               showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
               return
             }
@@ -1896,6 +1937,9 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     // Slots are unlimited, and the grid only ever renders ONE locked card: the
     // next one up. Its price is the one for the slot count the player is at.
     const canUnlock = props.index === p.petSlots
+    // First session: the Caretaker asked for this card — its badge throbs.
+    const k = canUnlock && firstSessionHud.pulse === 'myPets' && firstSessionStep() === 'slot3' ? attentionPulse() : 1
+    const badge = Math.round(rosterPx(42) * k)
     return (
       <PetGridCard pad={rosterPx(13)}
         selected={false}
@@ -1910,8 +1954,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
             : undefined
         }
       >
-        <UiEntity uiTransform={{ width: rosterPx(42), height: rosterPx(42), borderRadius: rosterPx(21), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
-          <Label value={canUnlock ? '+' : 'x'} fontSize={rosterPx(26)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: rosterPx(42), height: rosterPx(42) }} />
+        <UiEntity uiTransform={{ width: badge, height: badge, borderRadius: Math.round(badge / 2), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
+          <Label value={canUnlock ? '+' : 'x'} fontSize={Math.round(rosterPx(26) * k)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: badge, height: badge }} />
         </UiEntity>
         <Label value={canUnlock ? 'Unlock' : 'Locked'} fontSize={rosterPx(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(24) }} />
         <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: rosterPx(4) } }}>
@@ -2702,7 +2746,9 @@ function actionHudLayout() {
 }
 
 function toastIsVisible(now: number): boolean {
-  return !bigUiOpen() && !!clientState.currentToast && clientState.currentToast.until > now
+  if (bigUiOpen()) return false
+  if (firstSessionHud.task) return true // the first session's sticky objective sits in the toast row
+  return !!clientState.currentToast && clientState.currentToast.until > now
 }
 
 function Toasts() {
@@ -2782,6 +2828,66 @@ function Toasts() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// First session: the sticky objective toast. Same pill and spot as the game
+// toasts (which are suspended, see GAME_TOASTS_ENABLED), but it does not time
+// out: it slides in when the Caretaker's dialog closes and stays until the
+// objective is done, so a player who skipped the dialog still knows what to do.
+// ---------------------------------------------------------------------------
+const TASK_THROB_MS = 2400
+let taskShown = ''
+let taskShownAt = 0
+
+function FirstSessionTask() {
+  const hud = firstSessionHud
+  const now = Date.now()
+  if (!hud.task || bigUiOpen()) {
+    if (!hud.task) taskShown = ''
+    return <UiEntity />
+  }
+  if (hud.task !== taskShown) {
+    taskShown = hud.task
+    taskShownAt = now
+  }
+  const layout = actionHudLayout()
+  const elapsed = now - taskShownAt
+  const e = elapsed < TOAST_ENTER_MS ? easeOutCubic(elapsed / TOAST_ENTER_MS) : 1
+  const k = now - hud.nudgedAt < TASK_THROB_MS ? attentionPulse() : 1
+  const w = Math.round(S(500) * k)
+  const h = Math.round(S(TOAST_HEIGHT) * k)
+  const slide = (w + S(20)) * (1 - e)
+  const border = S(TOAST_BORDER)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <ScreenInsetArea>
+        <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+          <UiEntity
+            uiTransform={{
+              positionType: 'absolute',
+              position: layout.toastPosition,
+              margin: { left: -slide + layout.toastMargin.left, top: layout.toastMargin.top },
+              width: w,
+              height: h,
+              padding: border,
+              borderRadius: h / 2,
+              pointerFilter: 'none'
+            }}
+            uiBackground={{ color: withAlpha(TOAST_BORDER_COLOR, e) }}
+          >
+            <UiEntity
+              uiTransform={{ width: '100%', height: '100%', borderRadius: h / 2 - border, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: S(44), right: S(44) } }}
+              uiBackground={{ color: withAlpha(TOAST_CREAM, e) }}
+            >
+              <Label value={`CHAPTER ${hud.chapter}/${FIRST_SESSION_CHAPTERS}`} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
+              <Label value={hud.task} fontSize={S(15)} color={withAlpha(PET_UI.ink, e)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: h - S(40) }} />
+            </UiEntity>
+          </UiEntity>
+        </UiEntity>
+      </ScreenInsetArea>
+    </UiEntity>
+  )
+}
+
 // Care rewards deliberately use just the game's existing coin and star art,
 // not the old illustrated chips. Each small token rises and fades quickly so it
 // reads as a moment of progress without competing with the HUD or a toast.
@@ -2845,7 +2951,9 @@ const BACK_ARROW_ASPECT_RATIO = 341 / 256
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
 // game / Bath / Feed errand). It shares the toast's device-safe anchor on both
 // mobile and Unity, then moves below the toast while that notification is open.
-function BackButton(props: { onClick: () => void; disabled?: boolean }) {
+function BackButton(props: { onClick: () => void; disabled?: boolean; keepInFirstSession?: boolean }) {
+  // First session: no way out of an activity, only forward (see firstSession.ts).
+  if (firstSessionHidesBack() && !props.keepInFirstSession) return <UiEntity />
   const toastVisible = toastIsVisible(Date.now())
   const layout = actionHudLayout()
   const height = S(90)
@@ -2982,6 +3090,11 @@ function HatchOverlay() {
 // precisely, so these were found by testing on-device.
 const bubbleBottomRaw = 180
 const bubbleRightRaw = 290
+// First session: the same bubble pointing at the native Pet Actions button
+// (IA_SECONDARY, the next arc slot). Nudged up-left so the tail stops just
+// short of the button instead of sitting on it.
+const petActionsBubbleBottomRaw = 222
+const petActionsBubbleRightRaw = 234
 const barBottomRaw = 320
 const barRightRaw = 240
 
@@ -3024,6 +3137,53 @@ function DesktopThrowGuidance(props: { instruction: string; charge: number; visi
   )
 }
 
+/** First session, mobile: "Pet Actions" bubble pointing at the native button
+ *  that opens the pet's panel, while an objective needs it (firstSession.ts). */
+function PetActionsHint() {
+  if (!firstSessionHud.pointPetActions || bigUiOpen()) return <UiEntity />
+  // Static, exactly like Fetch's "Hold to throw" bubble.
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(petActionsBubbleBottomRaw), right: S(petActionsBubbleRightRaw) }, width: S(280), height: S(187), pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+          uiBackground={{ texture: { src: 'assets/images/revamp/bubble.png' }, textureMode: 'stretch' }}
+        />
+        <Label
+          value="Pet Actions"
+          fontSize={S(20)}
+          color={{ r: 0.25, g: 0.18, b: 0.14, a: 1 }}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: S(55), left: S(20) }, width: S(240), height: S(50) }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** First session, mobile: "My Pets" bubble on the lone My Pets button (it sits
+ *  in Fetch's Throw slot, so it reuses that calibrated bubble position). */
+function MyPetsHint() {
+  if (!mobile() || firstSessionHud.pulse !== 'myPets' || !myPetsSpotlightVisible() || bigUiOpen()) return <UiEntity />
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(bubbleBottomRaw), right: S(bubbleRightRaw) }, width: S(280), height: S(187), pointerFilter: 'none' }}>
+        <UiEntity
+          uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}
+          uiBackground={{ texture: { src: 'assets/images/revamp/bubble.png' }, textureMode: 'stretch' }}
+        />
+        <Label
+          value="My Pets"
+          fontSize={S(20)}
+          color={{ r: 0.25, g: 0.18, b: 0.14, a: 1 }}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: S(55), left: S(20) }, width: S(240), height: S(50) }}
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function FetchOverlay() {
   if (!clientState.fetch.active) return <UiEntity />
   const st = clientState.fetch
@@ -3035,7 +3195,7 @@ function FetchOverlay() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {/* BACK — disabled while charging/mid-throw so you don't strand a charge or a ball in the air */}
-      <BackButton disabled={busy || charging} onClick={() => (clientState.fetch.active = false)} />
+      {fetchBackAllowed() && <BackButton keepInFirstSession disabled={busy || charging} onClick={() => (clientState.fetch.active = false)} />}
       {/* Mobile charge bar — subtle, thin, vertical (fills upward), calibrated
           on-device. Note for future positioning near this corner: the
           bottom-right is where the client draws its own native gamepad
@@ -4746,6 +4906,8 @@ const Root = () => {
             {!bigUiOpen() && <TopBars />}
             <BottomNav />
             <FetchOverlay />
+            <PetActionsHint />
+            <MyPetsHint />
             <PepitoRockChargeOverlay />
             <CarryHatchButton />
             <BathButton />
@@ -4783,6 +4945,7 @@ const Root = () => {
         <DialogBox />
         {/* Toasts are the only global notification surface. */}
         {!hideHudForPepitoTheft && <Toasts />}
+        {!hideHudForPepitoTheft && <FirstSessionTask />}
       </UiEntity>
     )
   return (
@@ -4833,6 +4996,7 @@ export function setupUi(): void {
     engine.addSystem(syncUiRendererSystem)
     engine.addSystem(syncPetTouchControlsSystem)
     engine.addSystem(syncMobileMagnifierSystem)
+    engine.addSystem(dialogClosesPanelsSystem)
   }
 
   resolveRuntimePlatform()

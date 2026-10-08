@@ -184,10 +184,59 @@ export function isFreshPlayer(address: string): boolean {
   return freshPlayers.has(address)
 }
 
+// ---------------------------------------------------------------------------
+// Custom first session. A player is in it for the whole of their FIRST visit
+// (no save existed when the visit started) and never again: the flag lives in
+// memory only and is dropped when the visit ends, so the next visit is the
+// normal game wherever the first one stopped. Progress through it is tracked
+// in PostHog, not saved.
+// ---------------------------------------------------------------------------
+const firstSessionPlayers = new Set<string>()
+// DEBUG_FORCE_FIRST_SESSION players: fresh and in-memory only, never saved.
+const ephemeralPlayers = new Set<string>()
+// First-session one-off gifts already handed out this visit ("<address>:<gift>").
+const firstSessionGifts = new Set<string>()
+
+/** Grant a first-session one-off at most once per visit. False if not owed. */
+function takeFirstSessionGift(address: string, gift: string): boolean {
+  if (!firstSessionPlayers.has(address)) return false
+  const key = `${address}:${gift}`
+  if (firstSessionGifts.has(key)) return false
+  firstSessionGifts.add(key)
+  return true
+}
+
+export function isFirstSession(address: string): boolean {
+  return firstSessionPlayers.has(address)
+}
+
+/** The visit is over (server.ts departure): the next one is a normal session. */
+export function endFirstSession(address: string): void {
+  firstSessionPlayers.delete(address)
+  for (const key of [...firstSessionGifts]) if (key.startsWith(`${address}:`)) firstSessionGifts.delete(key)
+  freshPlayers.delete(address)
+  // A debug player is thrown away so the next entry starts fresh again.
+  if (ephemeralPlayers.delete(address)) players.delete(address)
+}
+
 export type Notify = { kind: string; message: string }
 
 function now(): number {
   return Date.now()
+}
+
+/** The Caretaker's Adult that the first session lends as breeding partner.
+ *  Built on the fly for the roll; it is never stored on the player. */
+function caretakerPartner(a: PetData): PetData {
+  const species = C.firstSessionPartnerSpecies(a)
+  const pet = newPet(species, `Caretaker's ${C.speciesLabel(species)}`)
+  pet.id = C.FIRST_SESSION_PARTNER_ID
+  pet.size = C.SIZE_MAX
+  pet.hunger = 100
+  pet.hygiene = 100
+  pet.energy = 100
+  pet.happiness = 100
+  return pet
 }
 
 function newPet(species: string, name: string): PetData {
@@ -360,14 +409,19 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
     return cached
   }
   let data: PlayerData | null = null
-  try {
-    data = await Storage.player.get<PlayerData>(address, STORAGE_KEY)
-  } catch (e) {
-    console.log('[Server] Storage load failed for', address, e)
+  if (C.DEBUG_FORCE_FIRST_SESSION) {
+    ephemeralPlayers.add(address) // skip the real save entirely, both ways
+  } else {
+    try {
+      data = await Storage.player.get<PlayerData>(address, STORAGE_KEY)
+    } catch (e) {
+      console.log('[Server] Storage load failed for', address, e)
+    }
   }
   if (!data || !data.address) {
     data = newPlayer(address)
     freshPlayers.add(address) // no prior saved state -> new user (for analytics)
+    firstSessionPlayers.add(address) // ...and this visit is their first session
   } else {
     // Migrate/sanitize loaded data, then apply offline decay.
     data = sanitize(address, data)
@@ -504,6 +558,7 @@ function checkJourney(p: PlayerData, notes: Notify[]): void {
 export async function savePlayer(address: string): Promise<void> {
   const p = players.get(address)
   if (!p) return
+  if (ephemeralPlayers.has(address)) return // DEBUG_FORCE_FIRST_SESSION: never touch the real save
   recordCollection(p)
   try {
     await Storage.player.set<PlayerData>(address, STORAGE_KEY, p)
@@ -669,7 +724,10 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   tickPlayer(p)
   const a = activePet(p)
   if (!a) return { notes: [{ kind: 'error', message: 'No active pet' }], rarity: null }
-  const b = p.pets.find((x) => x.id === partnerId && x.id !== a.id)
+  // First session: the Caretaker's lent Adult stands in as parent B, for free.
+  const lent = partnerId === C.FIRST_SESSION_PARTNER_ID && isFirstSession(p.address)
+  const b = lent ? caretakerPartner(a) : p.pets.find((x) => x.id === partnerId && x.id !== a.id)
+  const fee = lent ? 0 : C.BREED_COST
   if (!b) return { notes: [{ kind: 'error', message: 'Pick a different pet to breed with' }], rarity: null }
   if (C.petStage(a.size) !== 'ADULT' || C.petStage(b.size) !== 'ADULT') {
     return { notes: [{ kind: 'error', message: 'Both pets must be Adult to breed' }], rarity: null }
@@ -686,12 +744,15 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
     return { notes: [{ kind: 'error', message: `No ${C.RARITY_POTION_LABEL} in your inventory` }], rarity: null }
   }
 
-  if (p.currency < C.BREED_COST) {
+  if (p.currency < fee) {
     return { notes: [{ kind: 'error', message: `Breeding costs ${C.BREED_COST} coins` }], rarity: null }
+  }
+  if (lent && !takeFirstSessionGift(p.address, 'breed')) {
+    return { notes: [{ kind: 'error', message: 'Pick a different pet to breed with' }], rarity: null }
   }
 
   // Consumed here, after every check passed, so a rejected breed never eats it.
-  p.currency -= C.BREED_COST
+  p.currency -= fee
   if (usePotion) p.inventory.rarityPotions -= 1
   const rarity = rollRarity(a, b, usePotion)
   // Genetics: the offspring wears the ACTIVE pet's head and the PARTNER's body
@@ -708,7 +769,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   bump(p, 'breedCount')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
-  const notes: Notify[] = [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch! (-${C.BREED_COST} coins)` }]
+  const notes: Notify[] = [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!${fee > 0 ? ` (-${fee} coins)` : ''}` }]
   grantCaretakerXp(p, C.CARETAKER_XP_BREED, notes)
   checkJourney(p, notes)
   return { notes, rarity, species: child.species, name: child.name }
@@ -851,6 +912,9 @@ export function feedFromMinigame(p: PlayerData, caught: number, poisoned = false
   if (!cooldownOk(p.address, 'feed', C.ACTION_COOLDOWN_MS.feed)) {
     return [{ kind: 'cooldown', message: 'Pet is still busy...' }]
   }
+  // First session: a bad round still counts as a full meal, so the visit can't
+  // stall on the Feed step or end up without coins for the baby's slot.
+  if (isFirstSession(p.address)) caught = Math.max(caught, C.FEED_MIN_FRUITS)
   if (caught > 0) bump(p, 'feedAnyCount') // any feed counts for the Journey "Feed" step
   if (caught >= C.FEED_MIN_FRUITS) {
     // A real meal: growth + XP, and coins scaled by fruit caught (only if the pet
@@ -882,6 +946,8 @@ export function bathFromMinigame(p: PlayerData, popped: number): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
+  // First session: any bath counts as a full one (see feedFromMinigame).
+  if (isFirstSession(p.address)) popped = Math.max(popped, C.BATH_BUBBLE_GOAL)
   if (popped <= 0) return notes // nothing popped -> no clean
   const lockLeft = C.sleepLockRemaining(pet, now())
   if (lockLeft > 0) {
@@ -939,6 +1005,13 @@ export function cureSickness(p: PlayerData): Notify[] {
   pet.sick = false
   applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS, { caretakerXp: C.CARETAKER_XP_CURE })
   notes.push({ kind: 'success', message: `${pet.name} is cured!` })
+  // First session: the Caretaker rewards the first cure (once per visit).
+  if (takeFirstSessionGift(p.address, 'cureGift')) {
+    p.currency += C.FIRST_SESSION_CURE_GIFT
+    notes.push({ kind: 'reward', message: `The Caretaker gave you ${C.FIRST_SESSION_CURE_GIFT} coins for your bravery!` })
+    // ...and the chase left it muddy, so the next beat (Bath) is really needed.
+    pet.hygiene = Math.min(pet.hygiene, C.FIRST_SESSION_MUDDY_HYGIENE)
+  }
   return notes
 }
 
@@ -1216,6 +1289,42 @@ export function debugGrowAdult(p: PlayerData): Notify[] {
   return [{ kind: 'shop', message: `DEBUG: ${pet.name} is now Adult (Lv ${pet.petLevel}) — breeding unlocked.` }]
 }
 
+/** First session only, once per visit: the Fetch beat ran long without wearing
+ *  the pet out, so tire it now — the next beat is putting it to bed. */
+export function firstSessionTire(p: PlayerData): boolean {
+  const pet = activePet(p)
+  if (!pet || pet.sleeping) return false
+  if (!takeFirstSessionGift(p.address, 'tire')) return false
+  tickPlayer(p)
+  pet.energy = Math.min(pet.energy, C.PLAY_MIN_ENERGY - 2)
+  return true
+}
+
+/** First session only, once per visit: the baby needs a slot and the player
+ *  can't afford it, so the Caretaker covers the difference. */
+export function firstSessionSlotFunds(p: PlayerData): Notify[] | null {
+  if (p.pets.length < p.petSlots) return null // a slot is already free
+  const price = C.slotPrice(p.petSlots)
+  if (p.currency >= price) return null
+  if (!takeFirstSessionGift(p.address, 'slotFunds')) return null
+  const gift = price - p.currency
+  p.currency = price
+  return [{ kind: 'reward', message: `The Caretaker chipped in ${gift} coins for the baby's slot!` }]
+}
+
+/** First session only, once per visit: the Caretaker's grow mushroom takes the
+ *  given pet straight to Adult so it can breed — like the debug cheat, but
+ *  without the coins. */
+export function firstSessionGrow(p: PlayerData, petId: string): Notify[] | null {
+  const pet = p.pets.find((x) => x.id === petId)
+  if (!pet || C.petStage(pet.size) === 'ADULT') return null
+  if (!takeFirstSessionGift(p.address, 'grow')) return null
+  tickPlayer(p)
+  pet.careCount = Math.max(pet.careCount, 70) // keeps size maxed even after decay
+  pet.size = C.SIZE_MAX // Adult (>= PET_STAGE_ADULT_SIZE)
+  return [{ kind: 'shop', message: `${pet.name} grew into an Adult!` }]
+}
+
 /** Roll a weighted reward from the pool and apply it. Shared by spin + meteor. */
 function rollAndApplyReward(p: PlayerData): { reward: C.SpinReward; index: number } {
   const total = C.SPIN_REWARDS.reduce((s, r) => s + r.weight, 0)
@@ -1315,7 +1424,7 @@ export function presenceFor(p: PlayerData): PresenceEntry | null {
   }
 }
 
-export function snapshotFor(p: PlayerData): { player: PlayerData; activePet: PetData | null } {
+export function snapshotFor(p: PlayerData): { player: PlayerData; activePet: PetData | null; firstSession: boolean } {
   recordCollection(p)
-  return { player: p, activePet: activePet(p) }
+  return { player: p, activePet: activePet(p), firstSession: firstSessionPlayers.has(p.address) }
 }

@@ -38,6 +38,7 @@ import { applyDefaultTouchControls, applyFruitGameTouchControls } from './touchC
 import { mobile } from './ui/theme'
 import { applyFeedMinigameLocal } from './sim'
 import { startSicknessCinematicFromFeedBlackout } from './sicknessCinematic'
+import { takeFirstSessionPoison, firstSessionActive } from './firstSession'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import {
   getLocalPet,
@@ -1355,7 +1356,14 @@ function applyResults(): void {
   // left free through this long idle tail too, it silently drifted and popped
   // to a jarring angle the instant the camera released at the end.
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
-  const caught = clientState.feedGame.caught
+  let caught = clientState.feedGame.caught
+  // First session: a bad round still counts as a meal (the pet finds fruit on
+  // the ground), so the sickness arc, the coins and the Journey step always
+  // happen and nobody gets stuck. The server applies the same floor.
+  if (firstSessionActive() && caught < Cfg.FEED_MIN_FRUITS) {
+    caught = Cfg.FEED_MIN_FRUITS
+    clientState.feedGame.caught = caught
+  }
   if (drawerEntity) VisibilityComponent.getMutable(drawerEntity).visible = false
   for (const f of fruits) {
     Tween.deleteFrom(f.entity)
@@ -1370,6 +1378,15 @@ function applyResults(): void {
 
   const hungerStart = clientState.activePet?.hunger ?? 0
   const hungerTarget = Math.min(100, hungerStart + caught * Cfg.FEED_HUNGER_PER_FRUIT)
+  // First session: the first round always ends with the pet sick, so the cure
+  // arc is part of the visit instead of something the player might never see.
+  // If they dodged every poison fruit, the pet snapped one up anyway.
+  // Consumed on the first round either way, so only that round is ever forced.
+  if (takeFirstSessionPoison() && !caughtPoisonThisRound) {
+    caughtPoisonThisRound = true
+    const me = Transform.getOrNull(engine.PlayerEntity)
+    if (me) spawnPoisonPop(Vector3.create(me.position.x, me.position.y + 1.2, me.position.z))
+  }
   applyFeedMinigameLocal(caught) // optimistic stats; sickness waits for the server snapshot
   actions.feedResult(caught, caughtPoisonThisRound) // tell the server (it corrects via snapshot)
 

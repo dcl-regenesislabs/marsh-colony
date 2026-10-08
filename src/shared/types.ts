@@ -173,6 +173,10 @@ export interface LeaderboardEntry {
 export interface PlayerSnapshot {
   player: PlayerData
   activePet: PetData | null
+  // True only during the player's very first visit (no save existed when this
+  // visit started). Not persisted: the next visit is a normal one no matter how
+  // far the first session got.
+  firstSession?: boolean
   // Ark launches this player donated to but hasn't seen yet (they were away).
   arkUnseen?: ArkLaunchView[]
 }

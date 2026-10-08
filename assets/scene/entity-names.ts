@@ -59,6 +59,7 @@ export enum EntityNames {
   Grassmound01_glb_2 = "Grassmound01.glb_2",
   Grassmound01_glb_3 = "Grassmound01.glb_3",
   Grassmound01_glb_4 = "Grassmound01.glb_4",
+  Gypsy_mushroom = "Gypsy mushroom",
   Headpoint01 = "Headpoint01",
   Headpoint02 = "Headpoint02",
   Headpoint03 = "Headpoint03",

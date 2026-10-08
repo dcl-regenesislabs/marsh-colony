@@ -19,7 +19,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { dailyClaimable, meteorAvailable } from './sim'
-import { showHint } from './state'
+import { showHint, petActivityActive, pushToast } from './state'
 import { ui } from './ui'
 
 const METEOR_SOUND = 'assets/sounds/meteorland.mp3' // shared by the meteor's appearance AND its collection poof
@@ -152,6 +152,12 @@ function spawnMeteor(): void {
     { entity: meteor, opts: { button: InputAction.IA_POINTER, hoverText: 'Explore', maxDistance: 12 } },
     () => {
       if (disappearing) return
+      // Not in the middle of an activity (walking to the feeder or the bath, a
+      // minigame...): the reward panel would cut the flow. It waits in the world.
+      if (petActivityActive()) {
+        pushToast('Finish what your pet is doing first!')
+        return
+      }
       ui.openMeteorReward()
     }
   )

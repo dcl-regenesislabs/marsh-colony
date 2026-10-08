@@ -30,6 +30,20 @@ export const DEV_SKIP_SERVER_GATE = false
  */
 export const DEBUG_GROW_ENABLED = true
 
+/**
+ * DEBUG: treat EVERY scene entry as a brand-new player's first session, so the
+ * custom first session can be tested on an account that already has a save.
+ * The server hands out a fresh in-memory player and never writes it to Storage,
+ * so the real save is left untouched and each reload starts over. Must be
+ * `false` to ship.
+ */
+/** Game toast notifications (pushToast + server notes). Off: playtests found
+ *  them too heavy. The first session has its own sticky objective toast
+ *  (FirstSessionTask in ui.tsx), which this flag does not affect. */
+export const GAME_TOASTS_ENABLED = false
+
+export const DEBUG_FORCE_FIRST_SESSION = false
+
 // ---------------------------------------------------------------------------
 // Pet speech — what the pet says over its head to nudge the player into a care
 // action. The bubble is NOT on a timer: `need` names the stat that drives the
@@ -485,6 +499,25 @@ export const FEED_EAT_CINEMATIC_S = 6.6
 /** Caretaker's medicine is a completed care beat, not a repeatable HUD tap. */
 export const SICKNESS_CURE_XP = 14
 export const SICKNESS_CURE_COINS = 9
+/**
+ * First session only: the Caretaker's one-time gift when the first sickness is
+ * cured ("take this for your bravery"). Keeps the visit's coin budget (two pet
+ * slots, 50 + 75) a guarantee rather than a hope. Tune in playtest.
+ */
+export const FIRST_SESSION_CURE_GIFT = 30
+/** First session: hygiene after the Pepito chase, low enough that the Bath beat
+ *  is earned (and pays — Bath only pays coins below CARE_PAY_STAT_THRESHOLD). */
+export const FIRST_SESSION_MUDDY_HYGIENE = 35
+
+/** First session breed: the Caretaker lends his own Adult as parent B. The
+ *  client sends this id as partnerPetId; the server only honours it during the
+ *  first session, once, and charges no fee. The player never owns this pet. */
+export const FIRST_SESSION_PARTNER_ID = 'caretaker-partner'
+/** The lent partner's species: a Fluflito, or an Amebita when the player's pet
+ *  already has the Fluflito body (so the baby still comes out a real cross). */
+export function firstSessionPartnerSpecies(petA: { body?: string; species: string }): string {
+  return petBody(petA) === 'fluflito' ? 'amebita-original' : 'fluflito-original'
+}
 export const SICKNESS_CURE_COOLDOWN_MS = 8000
 // The server issues a short-lived cure authorization only after the player
 // reaches the Care Center. This leaves time for the theft/chase and prevents a

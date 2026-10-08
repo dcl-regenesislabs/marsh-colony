@@ -374,6 +374,38 @@ export function server(): void {
     broadcastPresence() // its size/level changed — mirror it for everyone
   })
 
+  room.onMessage('firstSessionTire', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    // Ignored outside a first session, and only ever applied once per visit.
+    if (!S.isFirstSession(ctx.from) || !S.firstSessionTire(p)) return
+    await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+  })
+
+  room.onMessage('firstSessionSlotFunds', async (_data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    if (!S.isFirstSession(ctx.from)) return
+    const notes = S.firstSessionSlotFunds(p)
+    if (!notes) return
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+  })
+
+  room.onMessage('firstSessionGrow', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    if (!S.isFirstSession(ctx.from)) return
+    const notes = S.firstSessionGrow(p, data.petId)
+    if (!notes) return
+    await S.savePlayer(ctx.from)
+    forwardNotes(ctx.from, notes)
+    pushSnapshot(p)
+    broadcastPresence() // its size changed — mirror it for everyone
+  })
+
   room.onMessage('buyPotion', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
@@ -524,6 +556,7 @@ export function server(): void {
         sessionStart.delete(addr)
         S.setCarriedState(addr, false)
         S.setEggCarriedState(addr, false)
+        S.endFirstSession(addr) // the next visit is a normal one, wherever this one stopped
       }
     }
 

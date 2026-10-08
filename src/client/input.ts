@@ -13,6 +13,7 @@ import { applyCareLocal, canPlayNow, sleepLockLeft } from './sim'
 import { startFeedTask } from './feed'
 import { actions, clientState, pushToast, hasPendingHatchling } from './state'
 import { ui } from './ui'
+import { firstSessionAllowsPetAction, type PetActionId } from './firstSession'
 
 const ACTION_CLIP: Record<CareAction, PetClip> = {
   feed: 'eat',
@@ -116,15 +117,27 @@ function onClick(name: string, hoverText: string, cb: () => void): void {
   pointerEventsSystem.onPointerDown({ entity: ent, opts: { button: InputAction.IA_POINTER, hoverText, maxDistance: 16 } }, cb)
 }
 
+/** First session: the feeder / pool / bed only answer when that is the action the
+ *  Caretaker is asking for (same gate as the pet panel's buttons). */
+function gated(action: PetActionId, cb: () => void): () => void {
+  return () => {
+    if (!firstSessionAllowsPetAction(action, !!clientState.activePet?.sleeping)) {
+      pushToast("Follow the Caretaker's instructions first!")
+      return
+    }
+    cb()
+  }
+}
+
 export function setupInput(): void {
   // Feed is no longer a walk-to-the-bowl care action — it starts the tree errand
   // (client/feed.ts): arrow to the tree, click it there, then the feeding game.
-  onClick(EntityNames.PetFeeder_glb, 'Feed', () => startFeedTask())
+  onClick(EntityNames.PetFeeder_glb, 'Feed', gated('feed', () => startFeedTask()))
   // Bath is a carry-then-minigame flow (like Feed), not an instant care action:
   // clicking the pool picks the pet up and carries it to the tub, where the bubble
   // minigame runs (pet.ts placePetAtStation). Keeps the 12-pop reward gate mandatory.
-  onClick(EntityNames.PetPool_glb, 'Bath', () => startCarryPet())
-  onClick(EntityNames.PetBed_glb, 'Sleep', () => triggerCare('sleep'))
+  onClick(EntityNames.PetPool_glb, 'Bath', gated('bath', () => startCarryPet()))
+  onClick(EntityNames.PetBed_glb, 'Sleep', gated('sleep', () => triggerCare('sleep')))
   // Old play action (pet walks to the ball) is suspended — Play now throws a
   // meteorite forward (see play.ts, wired to the Play button in ui.tsx).
   // onClick(EntityNames.Ball, 'Play', () => triggerCare('play'))

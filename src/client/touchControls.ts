@@ -75,6 +75,10 @@ let petTouchControlRequest: PetTouchControlRequest | null = null
 let fetchTouchButtonIcon: string | null = null
 let rockTouchButtonIcon: string | null = null
 let petTouchControlsVisible = false
+// First session only: while the Caretaker asks for My Pets, it leaves the "+"
+// overflow and becomes the ONLY companion button, on the Primary slot (where
+// Fetch's Throw button sits, so the calibrated hint bubble points at it).
+let myPetsSpotlight = false
 let appliedTouchControlLayoutKey = ''
 
 function resetTouchControlRequests(): void {
@@ -101,6 +105,14 @@ function requestedTouchControlLayout(): TouchControlLayout {
       key: `rock|${rockTouchButtonIcon}`,
       petControlsVisible: false,
       buttons: [{ action: ROCK_TOUCH_ACTION, icon: rockTouchButtonIcon }]
+    }
+  }
+
+  if (petTouchControlRequest && myPetsSpotlight) {
+    return {
+      key: 'pet|myPetsSpotlight',
+      petControlsVisible: false, // Follow / Pet Actions are off meanwhile (pet.ts reads this)
+      buttons: [{ action: MY_PETS_SPOTLIGHT_ACTION, icon: ROSTER_ICON }]
     }
   }
 
@@ -180,6 +192,20 @@ export function showPetTouchControls(following: boolean, petIcon: string): void 
 export function hidePetTouchControls(): void {
   petTouchControlRequest = null
   reconcileTouchControls()
+}
+
+export const MY_PETS_SPOTLIGHT_ACTION = InputAction.IA_PRIMARY
+
+/** First session: show My Pets alone, out of the overflow (see myPetsSpotlight). */
+export function setMyPetsSpotlight(on: boolean): void {
+  if (myPetsSpotlight === on) return
+  myPetsSpotlight = on
+  reconcileTouchControls()
+}
+
+/** Whether the lone My Pets button is on screen right now. */
+export function myPetsSpotlightVisible(): boolean {
+  return myPetsSpotlight && petTouchControlRequest !== null && !fetchTouchButtonIcon && !rockTouchButtonIcon
 }
 
 // Pepito's chase uses the secondary direct slot. The reconciler keeps it

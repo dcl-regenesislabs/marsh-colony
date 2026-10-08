@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { ARK_GOAL, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { ARK_GOAL, GAME_TOASTS_ENABLED, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -21,6 +21,8 @@ export type DialogState = {
   // Show the "Adopt" button art on the final page (only the Caretaker intro,
   // whose CTA is adopting). Everything else uses the neutral "Next" art.
   adoptCta: boolean
+  // Small caption next to the speaker's name (first session: "Chapter 4/6").
+  tag?: string
 }
 
 /** A brief, non-blocking visual acknowledgement for an earned care reward. */
@@ -57,6 +59,11 @@ export const clientState: {
   lastSpin: { reward: SpinReward; index: number; at: number } | null
   dialog: DialogState
   introShown: boolean
+  // The server says this is the player's very first visit (see firstSession.ts).
+  // Latched for the visit: once true it stays true until the scene reloads.
+  firstSession: boolean
+  // firstSession.ts is currently pointing the guide arrow (arrowOwnerActive in pet.ts).
+  firstSessionArrow: boolean
   // Whether the pet control panel (stats + care) is open. Closed by default so
   // it doesn't cover the screen; opens by clicking the pet, closes with the X.
   petPanelOpen: boolean
@@ -199,6 +206,8 @@ export const clientState: {
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
   introShown: false,
+  firstSession: false,
+  firstSessionArrow: false,
   petPanelOpen: false,
   viewingPetAddress: null,
   incomingSwap: null,
@@ -304,6 +313,7 @@ export function applySnapshot(snap: PlayerSnapshot): void {
   // optimistic. A different hatchling, or one after the grace period, wins.
   if (decision && !staleDecisionSnapshot) clientState.pendingHatchlingDecision = null
   clientState.player = snap.player
+  if (snap.firstSession) clientState.firstSession = true
   if (staleDecisionSnapshot) {
     clientState.player.hatchling = null
     if (decision.action === 'keep') {
@@ -355,20 +365,11 @@ function makeLocalPet(species: string, name: string): PetData {
   }
 }
 
-/** Make a stored pet the active one locally (and tell the server). */
-export function switchActivePet(petId: string): void {
-  const p = clientState.player
-  if (!p) return
-  const pet = p.pets.find((x) => x.id === petId)
-  if (!pet) return
-  // Don't swap the active pet out from under a running flow. The localPet entity
-  // is REUSED across the switch, so the newcomer would inherit a carry/errand it
-  // never started (see pet.ts reanchorLocalPet). Both entry points — the roster
-  // panel and clicking a stored pet in the world — funnel through here, so this
-  // is the one gate that covers them all. Sleeping / plain care actions are NOT
-  // blocked: reanchorLocalPet re-places the pet cleanly for those.
+/** The player is in the middle of a pet flow (carrying it to the feeder or the
+ *  bath, a minigame, an errand, breeding, hatching...). */
+export function petActivityActive(): boolean {
   const s = clientState
-  if (
+  return (
     hasPendingHatchling() ||
     s.hatch.active ||
     s.carryEgg.active ||
@@ -381,7 +382,22 @@ export function switchActivePet(petId: string): void {
     s.feedTask.active ||
     s.sicknessErrand.active ||
     s.pepitoChase.active
-  ) {
+  )
+}
+
+/** Make a stored pet the active one locally (and tell the server). */
+export function switchActivePet(petId: string): void {
+  const p = clientState.player
+  if (!p) return
+  const pet = p.pets.find((x) => x.id === petId)
+  if (!pet) return
+  // Don't swap the active pet out from under a running flow. The localPet entity
+  // is REUSED across the switch, so the newcomer would inherit a carry/errand it
+  // never started (see pet.ts reanchorLocalPet). Both entry points — the roster
+  // panel and clicking a stored pet in the world — funnel through here, so this
+  // is the one gate that covers them all. Sleeping / plain care actions are NOT
+  // blocked: reanchorLocalPet re-places the pet cleanly for those.
+  if (petActivityActive()) {
     pushToast('Finish what your pet is doing first!')
     return
   }
@@ -438,6 +454,7 @@ export function presenceFor(address: string): PresenceEntry | undefined {
 }
 
 export function pushToast(message: string, kind: string = 'info'): void {
+  if (!GAME_TOASTS_ENABLED) return // suspended (see config)
   clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }
@@ -450,6 +467,9 @@ export function pushToast(message: string, kind: string = 'info'): void {
 // ---------------------------------------------------------------------------
 const shownHints = new Set<string>()
 export function showHint(id: string, message: string, kind: string = 'info'): void {
+  // During the first session the Caretaker's objective bar is the only guide,
+  // so the one-off hints stay quiet instead of talking over it.
+  if (clientState.firstSession) return
   if (shownHints.has(id)) return
   shownHints.add(id)
   pushToast(message, kind)
@@ -541,6 +561,15 @@ export const actions = {
   },
   debugGrowAdult(): void {
     room.send('debugGrowAdult', {})
+  },
+  firstSessionGrow(petId: string): void {
+    room.send('firstSessionGrow', { petId })
+  },
+  firstSessionSlotFunds(): void {
+    room.send('firstSessionSlotFunds', {})
+  },
+  firstSessionTire(): void {
+    room.send('firstSessionTire', {})
   },
   buyPotion(): void {
     room.send('buyPotion', {})

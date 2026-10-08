@@ -66,6 +66,8 @@ export function playerName(): string {
 export function caretakerIntro(): string[] {
   return [
     `Welcome to the Mars colony, ${playerName()}. I'm the Caretaker — out here, every colony is built on the creatures we raise.`,
+    // First session only: name the goal the whole visit builds toward.
+    ...(clientState.firstSession ? ['Your goal today: raise a creature worth breeding. I will guide you every step of the way.'] : []),
     'Tap "Adopt a Pet" to take in your first Martian companion.',
     'Keep it thriving: Feed at the Bowl, Bath at the Pond, Sleep on the Bed, Play at the Ball. Tap it anytime for some love.',
     "A healthy, happy pet earns Coins — and soon you'll breed it with other settlers' pets to grow the colony. Let's begin!"
@@ -113,7 +115,10 @@ export const CURE_DIALOG: string[] = [
 ]
 
 export function openCureDialog(onDone?: () => void, onPage?: (page: number) => void): void {
-  openDialog('Caretaker', CURE_DIALOG, 'Thank you!', onDone, false, onPage)
+  // First session: the Caretaker also hands over his one-time gift (paid by the
+  // server on the cure itself, see cureSickness).
+  const pages = clientState.firstSession ? [...CURE_DIALOG, 'And take some coins for your bravery. You will need them soon!'] : CURE_DIALOG
+  openDialog('Caretaker', pages, 'Thank you!', onDone, false, onPage)
 }
 
 /** Shown after Pepito has stolen the medicine and before the throw control is
@@ -179,7 +184,10 @@ export function DialogBox() {
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: padTop, left: padH }, width: bubbleW - padH * 2, height: avatarH, flexDirection: 'row', alignItems: 'flex-start' }}>
           <UiEntity uiTransform={{ width: avatarW, height: avatarH }} uiBackground={{ texture: { src: portraitFor(d.npcName) }, textureMode: 'stretch' }} />
           <UiEntity uiTransform={{ width: textColW, height: avatarH, flexDirection: 'column', margin: { left: gapAvatarText } }}>
-            <Label value={d.npcName} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ width: textColW, height: titleH, margin: { top: S(14) } }} />
+            <UiEntity uiTransform={{ width: textColW, height: titleH, margin: { top: S(14) }, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Label value={d.npcName} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ height: titleH }} />
+              {d.tag ? <Label value={d.tag.toUpperCase()} fontSize={S(15)} color={LGT.body} textAlign="middle-right" uiTransform={{ height: titleH, margin: { right: S(8) } }} /> : null}
+            </UiEntity>
             <Label value={body} fontSize={S(18)} color={LGT.body} textAlign="top-left" textWrap="wrap" uiTransform={{ width: textColW, height: bodyTextH, margin: { top: rowGap } }} />
 
             {/* Page dots (left) + Next/final button (right) */}
