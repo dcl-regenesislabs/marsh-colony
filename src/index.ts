@@ -1,3 +1,4 @@
+import { engine, SkyboxTime } from '@dcl/sdk/ecs'
 import { isServer } from '@dcl/sdk/network'
 
 export async function main() {
@@ -9,6 +10,7 @@ export async function main() {
   }
 
   // Client: UI, pet rendering, input, and message handling.
+  SkyboxTime.createOrReplace(engine.RootEntity, { fixedTime: 36000 })
   const { setupClient } = await import('./client/setup')
   setupClient()
 }
