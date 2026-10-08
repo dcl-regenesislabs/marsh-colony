@@ -308,9 +308,6 @@ let closing = false
 const fruits: FruitRuntime[] = []
 let forcedPoisonFruit: FruitRuntime | null = null
 let forcedPoisonStartedAt = 0
-// The Show Cinematic control returns to the untouched Feed intro once its
-// self-contained preview ends. The actual tutorial path leaves this null.
-let forcedPoisonPreview: { caught: number; caughtPoison: boolean; timeLeft: number; introPhaseAt: number } | null = null
 const groundClutter: Entity[] = [] // decorative fallen fruit — see GROUND_CLUTTER_COUNT
 let clutterIndex = 0
 const catchBursts: Entity[] = []
@@ -972,19 +969,6 @@ function zoomToForcedPoison(player: Vector3): void {
   })
 }
 
-/** Show the red-fruit beat directly from the Feed intro, without starting a
- * round or contacting the Feed-result flow. */
-export function showForcedPoisonCinematic(): void {
-  if (phase !== 'intro') return
-  forcedPoisonPreview = {
-    caught: clientState.feedGame.caught,
-    caughtPoison: caughtPoisonThisRound,
-    timeLeft: clientState.feedGame.timeLeft,
-    introPhaseAt: phaseAt
-  }
-  beginForcedPoisonCinematic()
-}
-
 /** Fade out, then reveal the forced red-fruit close-up through a fade-in. */
 function beginForcedPoisonCinematic(): void {
   phase = 'forcedPoisonEnter'
@@ -1018,8 +1002,7 @@ function beginForcedPoisonCinematic(): void {
 function beginForcedPoisonFall(): void {
   const f = fruits[0]
   if (!f) {
-    if (forcedPoisonPreview) resumeAfterForcedPoisonPreview()
-    else applyResults()
+    applyResults()
     return
   }
 
@@ -1052,50 +1035,6 @@ function beginForcedPoisonFall(): void {
   phase = 'forcedPoison'
   phaseAt = clock
   clientState.feedGame.phase = 'forcedPoison'
-}
-
-/** Return a Show Cinematic preview to the untouched Feed intro. */
-function resumeAfterForcedPoisonPreview(): void {
-  const preview = forcedPoisonPreview
-  if (!preview) return
-  forcedPoisonPreview = null
-  clientState.feedGame.caught = preview.caught
-  clientState.feedGame.timeLeft = preview.timeLeft
-  caughtPoisonThisRound = preview.caughtPoison
-  forcedPoisonFruit = null
-  forcedPoisonStartedAt = 0
-
-  // The forced shot hides the fruit pool and attaches its red fruit to the
-  // drawer. Rebuild the static intro composition before handing control back.
-  for (const fruit of fruits) {
-    Tween.deleteFrom(fruit.entity)
-    const transform = Transform.getMutable(fruit.entity)
-    transform.parent = undefined
-    transform.position = randomCanopySpot()
-    transform.scale = Vector3.scale(Vector3.One(), FRUIT_SCALE)
-    GltfContainer.createOrReplace(fruit.entity, { src: randomFruitModel(), ...NO_COLLISION })
-    VisibilityComponent.createOrReplace(fruit.entity, { visible: true })
-    fruit.phase = 'idle'
-    fruit.poison = false
-  }
-  InputModifier.createOrReplace(engine.PlayerEntity, {
-    mode: InputModifier.Mode.Standard({ disableJump: true, disableDoubleJump: true, disableGliding: true })
-  })
-  phase = 'intro'
-  phaseAt = preview.introPhaseAt
-  clientState.feedGame.phase = 'intro'
-  if (cinCam && Transform.has(cinCam)) {
-    const current = Transform.get(cinCam)
-    Tween.deleteFrom(cinCam)
-    Tween.createOrReplace(cinCam, {
-      mode: Tween.Mode.MoveRotateScale({
-        position: { start: current.position, end: pendingCamPos },
-        rotation: { start: current.rotation, end: Quaternion.fromLookAt(pendingCamPos, pendingLookTarget) }
-      }),
-      duration: POISON_CINEMATIC_ZOOM_MS,
-      easingFunction: EasingFunction.EF_EASEOUTQUAD
-    })
-  }
 }
 
 function forcedPoisonTick(): void {
@@ -1136,8 +1075,7 @@ function finishPoisonCinematic(): void {
       clientState.screenFade.alpha = Math.min(1, elapsedMs / POISON_CINEMATIC_FADE_MS)
       if (elapsedMs < POISON_CINEMATIC_FADE_MS) return
       clientState.screenFade.alpha = 1
-      if (forcedPoisonPreview) resumeAfterForcedPoisonPreview()
-      else applyResults()
+      applyResults()
       stage = 'in'
       elapsedMs = 0
       return
@@ -2181,7 +2119,6 @@ export function startFruitGame(mascotaId: string): void {
   caughtPoisonThisRound = false
   forcedPoisonFruit = null
   forcedPoisonStartedAt = 0
-  forcedPoisonPreview = null
   introEmotePlayed = false
   drawerRevealed = false
   phase = 'arrival'

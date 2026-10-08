@@ -52,7 +52,6 @@ import {
   getFeedPetSitTuning,
   nudgeFeedPetSit,
   resetFeedPetSitTuning,
-  showForcedPoisonCinematic,
   type FeedPetSitAxis
 } from './fruitGame'
 import { getBubbles, getPops, popBubble, startBathCountdown, exitBathResults, cancelBathGame, BUBBLE_GOAL, BATH_COUNTDOWN_S, BUBBLE_POP_FRAMES, BUBBLE_POP_MS, type Bubble, type PopFx } from './bathGame'
@@ -3433,9 +3432,8 @@ function FeedStartCard() {
   const width = S(540)
   const height = Math.round(width / FEED_START_ASPECT)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height: height + S(48), flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
       <TactileButton id="feed_start" label="" texture={FEED_HUD_SHEET} uvs={FEED_START_UVS} width={width} height={height} onClick={() => startCatchingCountdown()} />
-      <TactileButton id="show_forced_poison_cinematic" label="Show Cinematic" width={S(210)} height={S(36)} bg={C.greenDark} fontSize={S(15)} onClick={() => showForcedPoisonCinematic()} />
     </UiEntity>
   )
 }
