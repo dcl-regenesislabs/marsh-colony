@@ -2321,22 +2321,17 @@ function endBreedCamera(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Ground arrow guide — a flowing arrow on the floor that points from the player
-// toward a destination (e.g. home while carrying the egg). Reusable, but there
-// is only ONE arrow, so every user claims it under an ArrowOwner tag: set a
-// target with showArrowTo(target, owner), clear it with hideArrow(owner).
+// 3D compass guide — a floating arrow in front of the player that points toward
+// a destination (e.g. home while carrying the egg). Reusable, but there is only
+// ONE arrow, so every user claims it under an ArrowOwner tag: set a target with
+// showArrowTo(target, owner), clear it with hideArrow(owner).
 // ---------------------------------------------------------------------------
-const ARROW_MODEL = 'models/arrow_indicator.glb'
-const ARROW_LEAD = 1 // metres ahead of the player, toward the target
-const ARROW_GROUND_CLEARANCE = 0.05 // desired world height above the floor (~player's feet at rest)
-const ARROW_INDOOR_LIFT = 0.6 // extra world height indoors so the arrow clears raised floors / trim
-const ARROW_YAW_OFFSET = 180 // model points backwards; flip it to point at the target
-const ARROW_SCALE = 1 // tune the arrow size
-const CARE_CENTER_ARROW_RADIUS = 4.5 // arrow-only footprint around the Care Center interior
-// The sickness pickup is on the Care Center's raised floor. Keep its former
-// visibility tuning local to that errand instead of changing every world arrow.
-const SICKNESS_CARE_CENTER_ARROW_RADIUS = 7
-const SICKNESS_CARE_CENTER_ARROW_LIFT = 0.9
+const ARROW_MODEL = 'assets/scene/Models/PathArrow/PathArrow.glb'
+const ARROW_ANIMATION = 'Cube.008Action'
+const ARROW_FLOOR_LIFT = 0.05
+const ARROW_FORWARD_OFFSET = 0.75
+const ARROW_ARRIVE_DISTANCE = 1.8
+const ARROW_SCALE = 1
 let arrow: Entity | null = null
 let arrowTarget: Vector3 | null = null
 
@@ -2374,28 +2369,18 @@ function arrowOwnerActive(): boolean {
   return false
 }
 
-function indoorArrowLift(pos: Vector3): number {
-  if (zoneOf(pos) !== null) return ARROW_INDOOR_LIFT
-  const caretaker = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
-  if (!caretaker || !Transform.has(caretaker)) return 0
-  const isSicknessErrand = arrowOwner === 'sickness'
-  const radius = isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_RADIUS : CARE_CENTER_ARROW_RADIUS
-  if (distFlat(pos, Transform.get(caretaker).position) > radius) return 0
-  return isSicknessErrand ? SICKNESS_CARE_CENTER_ARROW_LIFT : ARROW_INDOOR_LIFT
-}
-// Parented to the player (body-fixed, same trick as AvatarAttach) instead of
-// positioned each frame from a world-space read of the player's Transform — that
-// read lags behind the avatar's actual (render-smooth) movement and looked
-// jittery/stuck while running, same root cause the carried pet had before it was
-// switched to AvatarAttach. With native parenting the renderer supplies the
-// player's *current* position every render frame; we only ever compute the
-// (slowly-changing) bearing to the target, expressed as a small local offset/yaw.
+// The arrow is parented to the player, so it follows smoothly at a fixed local
+// height and does not need the old raised-floor compensation logic.
 function updateArrow(): void {
   if (!arrow) {
     arrow = engine.addEntity()
-    Transform.create(arrow, { parent: engine.PlayerEntity, scale: Vector3.scale(Vector3.One(), ARROW_SCALE) })
+    Transform.create(arrow, {
+      parent: engine.PlayerEntity,
+      position: Vector3.create(0, ARROW_FLOOR_LIFT, 0),
+      scale: Vector3.scale(Vector3.One(), ARROW_SCALE)
+    })
     GltfContainer.create(arrow, { src: ARROW_MODEL })
-    Animator.create(arrow, { states: [{ clip: 'flow', playing: true, loop: true }] })
+    Animator.create(arrow, { states: [{ clip: ARROW_ANIMATION, playing: true, loop: true, speed: 1 }] })
     VisibilityComponent.create(arrow, { visible: false })
   }
   const vis = VisibilityComponent.getMutable(arrow)
@@ -2414,7 +2399,7 @@ function updateArrow(): void {
   if (!pt) return
   const dx = arrowTarget.x - pt.position.x
   const dz = arrowTarget.z - pt.position.z
-  if (dx * dx + dz * dz < 0.01) {
+  if (dx * dx + dz * dz < ARROW_ARRIVE_DISTANCE * ARROW_ARRIVE_DISTANCE) {
     if (vis.visible) vis.visible = false
     return
   }
@@ -2427,15 +2412,13 @@ function updateArrow(): void {
   const playerYaw = (Math.atan2(fwd.x, fwd.z) * 180) / Math.PI
   const localYaw = worldYaw - playerYaw
   const rad = (localYaw * Math.PI) / 180
-  // Parenting fixes horizontal jitter, but a fixed local Y would ride up with the
-  // player during a jump (local space moves with the parent on every axis). Cancel
-  // the player's current height so the arrow stays near the actual ground instead.
-  // Indoors, add a small fixed lift so the same floor arrow stays visible over the
-  // house / Care Center floors without turning into a floating waypoint.
-  const localY = ARROW_GROUND_CLEARANCE + indoorArrowLift(pt.position) - pt.position.y
   const t = Transform.getMutable(arrow)
-  t.position = Vector3.create(Math.sin(rad) * ARROW_LEAD, localY, Math.cos(rad) * ARROW_LEAD)
-  t.rotation = Quaternion.fromEulerDegrees(0, localYaw + ARROW_YAW_OFFSET, 0)
+  t.position = Vector3.create(
+    Math.sin(rad) * ARROW_FORWARD_OFFSET,
+    ARROW_FLOOR_LIFT,
+    Math.cos(rad) * ARROW_FORWARD_OFFSET
+  )
+  t.rotation = Quaternion.fromEulerDegrees(0, localYaw, 0)
   t.scale = Vector3.scale(Vector3.One(), ARROW_SCALE)
   if (!vis.visible) vis.visible = true
 }

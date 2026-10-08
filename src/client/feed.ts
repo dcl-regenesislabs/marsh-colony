@@ -48,7 +48,7 @@ export function startFeedTask(): void {
   // canStartPetInteraction() now, so without this the second press would report
   // a generic "your pet is busy" instead of pointing at the walk in progress.
   if (clientState.feedTask.active) {
-    pushToast('Head to the tree — follow the arrow!')
+    pushToast('Head to the tree — follow the green arrow!')
     return
   }
   if (!canStartPetInteraction()) {
@@ -70,7 +70,7 @@ export function startFeedTask(): void {
   clientState.feedTask = { active: true, petId: clientState.activePet.id }
   showArrowTo(Transform.get(tree).position, 'feed')
   clientState.petPanelOpen = false // the panel covers the screen; the errand is out in the world
-  pushToast('Follow the arrow to the tree!')
+  pushToast('Follow the green arrow to the tree!')
 }
 
 /** Drop the errand (arrow off). Used by the BACK button and by the guards below. */
