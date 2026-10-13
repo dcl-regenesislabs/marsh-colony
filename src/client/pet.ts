@@ -58,7 +58,7 @@ import { EntityNames } from '../../assets/scene/entity-names'
 import { objectPosition } from './objects'
 import { navStepToward, zoneOf, nearWall, pointInsideAnyBuilding, nudgeOutsideBuildings } from './nav'
 import { applyCreatureSkin } from './creatureSkins'
-import { mobile } from './ui/theme'
+import { bevy, mobile } from './ui/theme'
 import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import { petOverheadTuning } from './petOverheadCalibration'
 import { isInsidePrivateAvatarArea } from './privacyAreas'
@@ -1740,7 +1740,9 @@ const BATH_CAM_TRANSITION_S = 0.8 // blend-in time, mirrors the fruit minigame's
 const HATCH_CAM_TRANSITION_S = 0.6
 
 function bathCameraPosition(bathPos: Vector3): Vector3 {
-  if (!mobile()) return Vector3.create(bathPos.x, bathPos.y + BATH_CAM_HEIGHT, bathPos.z - BATH_CAM_DIST)
+  // Bevy needs the elevated side shot too: the desktop -Z shot can land behind
+  // the bath wall in that renderer.
+  if (!mobile() && !bevy()) return Vector3.create(bathPos.x, bathPos.y + BATH_CAM_HEIGHT, bathPos.z - BATH_CAM_DIST)
   const radians = (BATH_MOBILE_CAM_BEARING_DEG * Math.PI) / 180
   return Vector3.create(
     bathPos.x + Math.sin(radians) * BATH_MOBILE_CAM_DIST,
