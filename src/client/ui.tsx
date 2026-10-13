@@ -379,18 +379,23 @@ function CoinsBar(props: { height: number }) {
   const w = Math.round(h * BAR_COIN_ASPECT)
   const p = clientState.player
   if (!p) return <UiEntity uiTransform={{ width: w, height: h }} />
+  const textW = Math.round(w * 0.56)
   return (
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_COIN_UVS }}>
-      <Label
-        value={`${Math.floor(p.currency)}`}
-        // Unity/Bevy render a given fontSize wider than mobile, so the number
-        // overflowed the pill there. Mobile is perfect at S(24); shrink it a touch
-        // (and widen the text box) only off mobile so the digits stay inside.
-        fontSize={mobile() ? S(24) : S(18)}
-        color={PET_UI.ink}
-        textAlign="middle-right"
-        uiTransform={{ positionType: 'absolute', position: { right: S(14), top: 0 }, width: Math.round(w * (mobile() ? 0.5 : 0.56)), height: h }}
-      />
+      {/* nowrap + overflow:'hidden' (same idiom as PetsCountBar) keeps a long
+          balance on ONE line, clipped inside the pill. Without textWrap the balance
+          wrapped on Bevy (protocol TW_WRAP default → stacked digits, #409) and got
+          cut off on Unity. Font matches the neighbour pill on desktop. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { right: S(14), top: 0 }, width: textW, height: h, overflow: 'hidden' }}>
+        <Label
+          value={`${Math.floor(p.currency)}`}
+          fontSize={mobile() ? S(24) : S(22)}
+          color={PET_UI.ink}
+          textAlign="middle-right"
+          textWrap="nowrap"
+          uiTransform={{ width: textW, height: h }}
+        />
+      </UiEntity>
     </UiEntity>
   )
 }
