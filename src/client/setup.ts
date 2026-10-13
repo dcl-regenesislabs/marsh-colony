@@ -24,7 +24,6 @@ import { setupInput } from './input'
 import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
-import { setupDebugGrow } from './debugGrow'
 import { setupArk } from './ark'
 import { applyArkStatus, enqueueArkLaunch, onArkDonateResult, setupArkCinematics } from './arkCinematics'
 import { setupArkRedeem } from './arkRedeem'
@@ -315,7 +314,6 @@ export function setupClient(): void {
   setupCaretaker() // click collider + Idle/Talk animation
   setupCaretakerPet() // Golden Pepito-body/Fluflito-head familiar hovering by the Caretaker
   setupMeteor() // meteor reward drop (falls, settles, clickable)
-  setupDebugGrow() // DEBUG totem: click to grow the active pet to Adult (breeding test)
   setupCaptain() // the Captain by the Ark's ramp: hand over Adult pets (issue #248)
   setupArk() // Ark ship: dome door on demand, "X / 100" counter, placeholder lift-off
   setupArkRedeem() // "Send to Ark" from the pet panel: walk to the Captain, then confirm

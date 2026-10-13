@@ -40,8 +40,6 @@ export const Messages = {
   discardPet: Schemas.Map({}),
   // Buy an extra pet slot with currency.
   buySlot: Schemas.Map({}),
-  // DEBUG cheat: grow the active pet straight to Adult + Lv5 (unlocks breeding).
-  debugGrowAdult: Schemas.Map({}),
   // First session only: the player has played Fetch for a while without wearing
   // the pet out — tire it so the "rest on the bed" beat can't strand them.
   firstSessionTire: Schemas.Map({}),

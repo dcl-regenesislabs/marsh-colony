@@ -4,7 +4,7 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
 import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, FirstSessionStep, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
-import { ARK_GOAL, GAME_TOASTS_ENABLED, levelForXp, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, SIZE_MAX, slotPrice, speciesLabel, xpForLevel, type SpinReward } from '../shared/config'
+import { ARK_GOAL, GAME_TOASTS_ENABLED, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, speciesLabel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
 
@@ -559,9 +559,6 @@ export const actions = {
   buySlot(): void {
     room.send('buySlot', {})
   },
-  debugGrowAdult(): void {
-    room.send('debugGrowAdult', {})
-  },
   firstSessionGrow(petId: string): void {
     room.send('firstSessionGrow', { petId })
   },
@@ -607,22 +604,4 @@ export const actions = {
   requestArkLeaderboard(): void {
     room.send('requestArkLeaderboard', {})
   }
-}
-
-/** DEBUG cheat: optimistically grow the active pet to Adult + Lv5 locally (so the
- *  HUD updates instantly), then tell the server, which persists it and re-broadcasts
- *  the authoritative snapshot. Mirrors server/state.ts debugGrowAdult(). */
-export function debugGrowAdultLocal(): void {
-  const pet = clientState.activePet
-  if (!pet) return
-  pet.careCount = Math.max(pet.careCount, 70)
-  pet.size = SIZE_MAX
-  pet.petXp = Math.max(pet.petXp, xpForLevel(5))
-  pet.petLevel = levelForXp(pet.petXp)
-  if (clientState.player) {
-    // Buffer for the next two slots (buy slot 2, grow, buy slot 3 -> breeding).
-    const bump = slotPrice(clientState.player.petSlots) + slotPrice(clientState.player.petSlots + 1)
-    clientState.player.currency = Math.max(clientState.player.currency, bump)
-  }
-  actions.debugGrowAdult()
 }
