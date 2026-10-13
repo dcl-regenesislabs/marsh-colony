@@ -58,11 +58,15 @@ function ensureClickHandler(captain: Entity): void {
   pointerEventsSystem.onPointerDown(
     { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to the Captain', maxDistance: ARK_CAPTAIN_CLICK_DISTANCE, showHighlight: true } },
     () => {
-      if (!firstSessionAllowsInteraction('captain')) return
+      if (clientState.dialog.open) return
+      if (!firstSessionAllowsInteraction('captain')) {
+        pushToast("Follow the Caretaker's instructions first!", 'info', true)
+        return
+      }
       // Never open over an existing dialog (openDialog replaces clientState.dialog
       // wholesale, dropping the other dialog's onDone), an Ark cinematic, or a
       // donation still waiting on the server.
-      if (clientState.dialog.open || clientState.ark.cinematic !== 'none' || clientState.ark.pendingDonation) return
+      if (clientState.ark.cinematic !== 'none' || clientState.ark.pendingDonation) return
       // Nor over an active activity (Pepito chase / feed / carry / breeding /
       // sickness errand) — its pet would board the Ark mid-flow. A sleeping
       // active pet is fine: the player can still donate another one.

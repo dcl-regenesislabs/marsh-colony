@@ -468,12 +468,14 @@ export function server(): void {
   room.onMessage('setEggCarried', async (data, ctx) => {
     if (!ctx) return
     S.setEggCarriedState(ctx.from, data.carried)
+    // Presence is transient and should reach nearby players immediately; saving
+    // the tutorial's resume marker must not delay this visual state change.
+    broadcastPresence()
     const p = await S.loadPlayer(ctx.from)
     if (S.setFirstSessionEggState(p, data.carried ? 'carrying' : 'hatching')) {
       await S.savePlayer(ctx.from)
       pushSnapshot(p)
     }
-    broadcastPresence() // remote clients need the carried egg immediately
   })
 
   room.onMessage('proposeSwap', async (data, ctx) => {

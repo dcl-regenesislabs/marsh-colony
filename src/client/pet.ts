@@ -862,7 +862,10 @@ function registerPetOpenClick(entity: Entity): void {
   pointerEventsSystem.onPointerDown(
     { entity, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
     () => {
-      if (!firstSessionAllowsInteraction('petPanel')) return
+      if (!firstSessionAllowsInteraction('petPanel')) {
+        if (!clientState.dialog.open) pushToast("Follow the Caretaker's instructions first!", 'info', true)
+        return
+      }
       // Feed owns the pet's transform, camera and input while it is active.
       // The staged pet remains visible beside the catch lane, but must not
       // reopen its action panel from a world click during that sequence.
@@ -2494,7 +2497,7 @@ function updateGetEgg(): void {
   }
 }
 
-export function startCarryEgg(species: string, name: string, isBreed = false): void {
+export function startCarryEgg(species: string, name: string, isBreed = false, announce = true): void {
   carryIsBreed = isBreed
   clientState.carryEgg = { active: true, species, name, atHome: false }
   actions.setEggCarried(true)
@@ -2511,9 +2514,11 @@ export function startCarryEgg(species: string, name: string, isBreed = false): v
 
   playHoldEmote() // pose the arms as if holding the egg
 
-  openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!', () =>
-    pushToast('Take your egg home to hatch it!')
-  )
+  if (announce) {
+    openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!', () =>
+      pushToast('Take your egg home to hatch it!')
+    )
+  }
 }
 
 /** Per-frame while carrying: flag whether the player is home (drives the Hatch button). */
@@ -2712,7 +2717,11 @@ function petTouchControlsInputSystem(): void {
     }
   }
   if (inputSystem.isTriggered(PET_ACTIONS_TOUCH_ACTION, PointerEventType.PET_DOWN)) {
-    if (!firstSessionAllowsInteraction('petPanel') || !clientState.activePet || hasPendingHatchling()) return
+    if (!firstSessionAllowsInteraction('petPanel')) {
+      if (!clientState.dialog.open) pushToast("Follow the Caretaker's instructions first!", 'info', true)
+      return
+    }
+    if (!clientState.activePet || hasPendingHatchling()) return
     clientState.petPanelOpen = true
   }
 }

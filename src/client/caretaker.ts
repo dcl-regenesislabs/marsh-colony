@@ -48,10 +48,14 @@ function ensureClickHandler(caretaker: Entity): void {
       // Once the tutorial has handed over the first egg, its only next step is
       // taking it home to hatch. Do not replay the Caretaker intro on click.
       if (firstSessionActive() && clientState.carryEgg.active) {
-        pushToast('Take your egg home first!')
+        pushToast('Take your egg home first!', 'info', true)
         return
       }
-      if (clientState.dialog.open || !firstSessionAllowsInteraction('caretaker')) return
+      if (clientState.dialog.open) return
+      if (!firstSessionAllowsInteraction('caretaker')) {
+        pushToast("Follow the Caretaker's instructions first!", 'info', true)
+        return
+      }
       playTalkSound()
       ui.openCaretaker()
     }

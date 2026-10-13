@@ -453,8 +453,11 @@ export function presenceFor(address: string): PresenceEntry | undefined {
   return clientState.presence.find((e) => e.address.toLowerCase() === address.toLowerCase())
 }
 
-export function pushToast(message: string, kind: string = 'info'): void {
-  if (!GAME_TOASTS_ENABLED) return // suspended (see config)
+/** Queue a lightweight notice. Tutorial gates pass `force` so the player gets
+ * immediate feedback without re-enabling the game's intentionally quiet
+ * ambient/server toasts. */
+export function pushToast(message: string, kind: string = 'info', force = false): void {
+  if (!force && !GAME_TOASTS_ENABLED) return // suspended (see config)
   clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }

@@ -218,9 +218,13 @@ export function endFirstSession(address: string): void {
   if (ephemeralPlayers.delete(address)) players.delete(address)
 }
 
-/** Persist a client checkpoint after validating it against the shared set. */
+/** Persist exactly the next tutorial checkpoint. Client messages are only a
+ * progress signal: they can neither rewind a player nor jump straight to done. */
 export function setFirstSessionProgress(p: PlayerData, step: string): boolean {
-  if (!firstSessionPlayers.has(p.address) || !(FIRST_SESSION_STEPS as readonly string[]).includes(step)) return false
+  if (!firstSessionPlayers.has(p.address)) return false
+  const next = FIRST_SESSION_STEPS.indexOf(step as FirstSessionStep)
+  const current = FIRST_SESSION_STEPS.indexOf(p.firstSessionStep ?? 'intro')
+  if (next < 0 || current < 0 || next !== current + 1) return false
   p.firstSessionStep = step as FirstSessionStep
   if (step === 'done') firstSessionPlayers.delete(p.address)
   return true

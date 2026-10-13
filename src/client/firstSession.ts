@@ -27,6 +27,7 @@ import {
 import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
+import { FIRST_SESSION_STEPS } from '../shared/types'
 import { getEggPending, setFirstSessionBreedPartner, growthCinematicActive, startCarryEgg, startGetEgg, startHatch } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
@@ -46,7 +47,7 @@ export function firstSessionActive(): boolean {
 /** Entry points which can be used while a first-session objective is waiting.
  * Keep this at the boundary of optional game activities so tutorial steps stay
  * focused without changing the normal-game paths. */
-export type FirstSessionInteraction = 'adopt' | 'roster' | 'petPanel' | 'caretaker' | 'captain'
+export type FirstSessionInteraction = 'adopt' | 'roster' | 'petPanel' | 'caretaker' | 'caretakerPet' | 'captain'
 
 export function firstSessionAllowsInteraction(interaction: FirstSessionInteraction): boolean {
   if (!firstSessionActive()) return true
@@ -59,6 +60,9 @@ export function firstSessionAllowsInteraction(interaction: FirstSessionInteracti
       return step === 'slot3'
     case 'petPanel':
       return BUTTON[step] !== undefined
+    case 'caretakerPet':
+      // The familiar is the Caretaker's deliberately placed breeding hint.
+      return step === 'nest' || step === 'breed'
     case 'captain':
       return step === 'captain'
   }
@@ -66,7 +70,8 @@ export function firstSessionAllowsInteraction(interaction: FirstSessionInteracti
 }
 
 // ---------------------------------------------------------------------------
-// Steps. Client-only and never saved: they just follow what the player does.
+// Steps. The server persists the matching shared checkpoint; this local mirror
+// drives the active objective and transient presentation state.
 // ---------------------------------------------------------------------------
 export type FirstSessionStep =
   | 'intro' // Caretaker intro → adopt → carry the egg → hatch → keep (existing flow)
@@ -392,8 +397,12 @@ export function restoreFirstSession(savedStep: FirstSessionStep | undefined): vo
   feedsAtStart = savedStep === 'feeding' && feedCount > 0 ? feedCount - 1 : feedCount
   playsAtStart = savedStep === 'play' && playCount > 0 ? playCount - 1 : playCount
   firstPetId = p?.pets[0]?.id ?? ''
-  poisonTaken = !!clientState.activePet?.sick
-  stepIndex = Math.max(stepIndex, 1)
+  // Only the Feed beat can still need its forced poison. Later checkpoints have
+  // already crossed that boundary even if the pet was cured before reconnecting.
+  poisonTaken = savedStep !== 'intro' && savedStep !== 'meet' && savedStep !== 'feed' && savedStep !== 'feeding'
+  // `reportStep()` increments before reporting the next boundary. Restore the
+  // durable ordinal so resumed PostHog events keep their original funnel depth.
+  stepIndex = Math.max(stepIndex, FIRST_SESSION_STEPS.indexOf(savedStep))
 
   const pet = clientState.activePet
   const lendPartner = step === 'nest' || step === 'slot3' || step === 'breed' || step === 'breeding'
@@ -403,7 +412,7 @@ export function restoreFirstSession(savedStep: FirstSessionStep | undefined): vo
   if (egg) {
     const isBreedEgg = egg.generation > 0
     if (p.firstSessionEggState === 'hatching') startHatch(egg.species, egg.name)
-    else if (p.firstSessionEggState === 'carrying' || step === 'hatch3') startCarryEgg(egg.species, egg.name, isBreedEgg)
+    else if (p.firstSessionEggState === 'carrying' || step === 'hatch3') startCarryEgg(egg.species, egg.name, isBreedEgg, false)
     else startGetEgg(egg.species, egg.name)
   }
 

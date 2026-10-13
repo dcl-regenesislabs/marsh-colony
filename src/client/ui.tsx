@@ -203,22 +203,27 @@ function syncMobileMagnifierSystem(): void {
 function firstSessionAllowsPanel(panel: Panel): boolean {
   if (panel === 'adopt') return firstSessionAllowsInteraction('adopt')
   if (panel === 'roster') return firstSessionAllowsInteraction('roster')
+  // The Captain's first-session CTA opens this exact panel after its dialog
+  // closes. Keep the normal guard for every other Ark entry point.
+  if (panel === 'arkDonate') return firstSessionAllowsInteraction('captain')
   return !firstSessionActive()
 }
 
 function blockFirstSessionActivity(): boolean {
-  pushToast("Follow the Caretaker's instructions first!")
+  pushToast("Follow the Caretaker's instructions first!", 'info', true)
   return false
 }
 
 export const ui = {
   openAdopt(): void {
-    if (!firstSessionAllowsPanel('adopt')) return void blockFirstSessionActivity()
     // First session: after the second pet, the third one comes from breeding.
+    // This must run before the generic panel guard: the + card in My Pets is
+    // intentionally reachable during `slot3` so the Caretaker can explain it.
     if (firstSessionAdoptLocked()) {
       uiState.panel = 'none'
       return
     }
+    if (!firstSessionAllowsPanel('adopt')) return void blockFirstSessionActivity()
     // One hatchling at a time: finish (keep/discard) the current one first.
     if (hasPendingHatchling()) {
       pushToast('Place or discard your current pet first.')
