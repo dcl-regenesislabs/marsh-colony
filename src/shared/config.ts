@@ -22,15 +22,6 @@ export const SERVER_TIMEOUT_MS = 10000
 export const DEV_SKIP_SERVER_GATE = false
 
 /**
- * DEBUG cheat: the "grow to Adult" totem (client) AND the `debugGrowAdult` server
- * grant. This single flag gates BOTH halves — the totem is only spawned and the
- * server handler only applies the grant while it is true. Flip to `false` to ship
- * (see issue #275): that removes the totem AND closes the server grant that any
- * client could otherwise reach directly, totem or not.
- */
-export const DEBUG_GROW_ENABLED = true
-
-/**
  * DEBUG: treat EVERY scene entry as a brand-new player's first session, so the
  * custom first session can be tested on an account that already has a save.
  * The server hands out a fresh in-memory player and never writes it to Storage,

@@ -5,7 +5,7 @@ import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
 import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
-import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE, DEBUG_GROW_ENABLED } from '../shared/config'
+import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE } from '../shared/config'
 import type { ArkDonateResult } from '../shared/types'
 import * as S from './state'
 import * as Ark from './ark'
@@ -361,17 +361,6 @@ export function server(): void {
     await S.savePlayer(ctx.from)
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)
-  })
-
-  room.onMessage('debugGrowAdult', async (_data, ctx) => {
-    if (!ctx) return
-    if (!DEBUG_GROW_ENABLED) return // cheat off -> ignore the grant entirely (see #275)
-    const p = await S.loadPlayer(ctx.from)
-    const notes = S.debugGrowAdult(p)
-    await S.savePlayer(ctx.from)
-    forwardNotes(ctx.from, notes)
-    pushSnapshot(p)
-    broadcastPresence() // its size/level changed — mirror it for everyone
   })
 
   room.onMessage('firstSessionTire', async (_data, ctx) => {
