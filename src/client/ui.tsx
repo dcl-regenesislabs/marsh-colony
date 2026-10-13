@@ -383,10 +383,13 @@ function CoinsBar(props: { height: number }) {
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_COIN_UVS }}>
       <Label
         value={`${Math.floor(p.currency)}`}
-        fontSize={S(24)}
+        // Unity/Bevy render a given fontSize wider than mobile, so the number
+        // overflowed the pill there. Mobile is perfect at S(24); shrink it a touch
+        // (and widen the text box) only off mobile so the digits stay inside.
+        fontSize={mobile() ? S(24) : S(18)}
         color={PET_UI.ink}
         textAlign="middle-right"
-        uiTransform={{ positionType: 'absolute', position: { right: S(14), top: 0 }, width: Math.round(w * 0.5), height: h }}
+        uiTransform={{ positionType: 'absolute', position: { right: S(14), top: 0 }, width: Math.round(w * (mobile() ? 0.5 : 0.56)), height: h }}
       />
     </UiEntity>
   )
