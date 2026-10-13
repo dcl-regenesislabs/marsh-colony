@@ -379,15 +379,23 @@ function CoinsBar(props: { height: number }) {
   const w = Math.round(h * BAR_COIN_ASPECT)
   const p = clientState.player
   if (!p) return <UiEntity uiTransform={{ width: w, height: h }} />
+  const textW = Math.round(w * 0.56)
   return (
     <UiEntity uiTransform={{ width: w, height: h }} uiBackground={{ texture: { src: HUD_SHEET }, textureMode: 'stretch', uvs: BAR_COIN_UVS }}>
-      <Label
-        value={`${Math.floor(p.currency)}`}
-        fontSize={S(24)}
-        color={PET_UI.ink}
-        textAlign="middle-right"
-        uiTransform={{ positionType: 'absolute', position: { right: S(14), top: 0 }, width: Math.round(w * 0.5), height: h }}
-      />
+      {/* nowrap + overflow:'hidden' (same idiom as PetsCountBar) keeps a long
+          balance on ONE line, clipped inside the pill. Without textWrap the balance
+          wrapped on Bevy (protocol TW_WRAP default → stacked digits, #409) and got
+          cut off on Unity. Font matches the neighbour pill on desktop. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { right: S(14), top: 0 }, width: textW, height: h, overflow: 'hidden' }}>
+        <Label
+          value={`${Math.floor(p.currency)}`}
+          fontSize={mobile() ? S(24) : S(22)}
+          color={PET_UI.ink}
+          textAlign="middle-right"
+          textWrap="nowrap"
+          uiTransform={{ width: textW, height: h }}
+        />
+      </UiEntity>
     </UiEntity>
   )
 }
