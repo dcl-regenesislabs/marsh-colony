@@ -3,11 +3,9 @@
 // (dev-docs/first-session-tutorial.md, plan in
 // dev-docs/first-session-implementation-plan.md).
 //
-// It is NOT a resumable tutorial: it only runs during the very first visit
-// (the server sets PlayerSnapshot.firstSession), and the next visit is the
-// normal game wherever this one stopped. Every hook this module adds to the
-// game must go through firstSessionActive(), which is false for every
-// returning player — so for them the game behaves exactly as before.
+// The server persists a checkpoint for this guided visit. Every hook this
+// module adds still goes through firstSessionActive(), which is false for an
+// established player — so their normal game behaves exactly as before.
 //
 // The Caretaker is the only voice that teaches, always through the normal
 // dialog (tagged "Chapter x/6"). Each objective is said once when the screen is
@@ -29,7 +27,8 @@ import {
 import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
-import { getEggPending, setFirstSessionBreedPartner, growthCinematicActive } from './pet'
+import { FIRST_SESSION_STEPS } from '../shared/types'
+import { getEggPending, setFirstSessionBreedPartner, growthCinematicActive, startCarryEgg, startGetEgg, startHatch } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog, CAPTAIN_NPC_NAME } from './state'
@@ -45,8 +44,34 @@ export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
 }
 
+/** Entry points which can be used while a first-session objective is waiting.
+ * Keep this at the boundary of optional game activities so tutorial steps stay
+ * focused without changing the normal-game paths. */
+export type FirstSessionInteraction = 'adopt' | 'roster' | 'petPanel' | 'caretaker' | 'caretakerPet' | 'captain'
+
+export function firstSessionAllowsInteraction(interaction: FirstSessionInteraction): boolean {
+  if (!firstSessionActive()) return true
+  if (clientState.dialog.open) return false
+  switch (interaction) {
+    case 'adopt':
+    case 'caretaker':
+      return step === 'intro' && !clientState.activePet
+    case 'roster':
+      return step === 'slot3'
+    case 'petPanel':
+      return BUTTON[step] !== undefined
+    case 'caretakerPet':
+      // The familiar is the Caretaker's deliberately placed breeding hint.
+      return step === 'nest' || step === 'breed'
+    case 'captain':
+      return step === 'captain'
+  }
+  return false
+}
+
 // ---------------------------------------------------------------------------
-// Steps. Client-only and never saved: they just follow what the player does.
+// Steps. The server persists the matching shared checkpoint; this local mirror
+// drives the active objective and transient presentation state.
 // ---------------------------------------------------------------------------
 export type FirstSessionStep =
   | 'intro' // Caretaker intro → adopt → carry the egg → hatch → keep (existing flow)
@@ -340,12 +365,58 @@ export type PetActionId = 'feed' | 'bath' | 'sleep' | 'play' | 'pet' | 'breed' |
  *  always allowed. Outside the first session everything is open. */
 export function firstSessionAllowsPetAction(action: PetActionId, petSleeping: boolean): boolean {
   if (!firstSessionActive()) return true
+  if (clientState.dialog.open) return false
   if (action === 'sleep' && petSleeping) return true
   return BUTTON[step] === action
 }
 
 export function firstSessionStep(): FirstSessionStep {
   return step
+}
+
+/** Rebuild the durable tutorial boundary after a fresh client connection. The
+ * server has already restored the pet/account snapshot; transient minigames
+ * restart at the surrounding objective, while egg handoffs resume visually. */
+export function restoreFirstSession(savedStep: FirstSessionStep | undefined): void {
+  if (!firstSessionActive() || !savedStep || savedStep === 'done') return
+
+  step = savedStep
+  captainHeard = false
+  said = ''
+  breatheLeft = 0
+  resetNudges()
+  const p = clientState.player
+  const c = p?.counters ?? {}
+  const bathCount = c['bathCount'] ?? 0
+  const feedCount = c['feedAnyCount'] ?? 0
+  const playCount = c['playCount'] ?? 0
+  // A reload can land between the authoritative result and the client's next
+  // tick. Treat that already-recorded action as the completion it was, instead
+  // of asking the player to repeat a finished lesson.
+  bathsAtStart = savedStep === 'bath' && bathCount > 0 ? bathCount - 1 : bathCount
+  feedsAtStart = savedStep === 'feeding' && feedCount > 0 ? feedCount - 1 : feedCount
+  playsAtStart = savedStep === 'play' && playCount > 0 ? playCount - 1 : playCount
+  firstPetId = p?.pets[0]?.id ?? ''
+  // Only the Feed beat can still need its forced poison. Later checkpoints have
+  // already crossed that boundary even if the pet was cured before reconnecting.
+  poisonTaken = savedStep !== 'intro' && savedStep !== 'meet' && savedStep !== 'feed' && savedStep !== 'feeding'
+  // `reportStep()` increments before reporting the next boundary. Restore the
+  // durable ordinal so resumed PostHog events keep their original funnel depth.
+  stepIndex = Math.max(stepIndex, FIRST_SESSION_STEPS.indexOf(savedStep))
+
+  const pet = clientState.activePet
+  const lendPartner = step === 'nest' || step === 'slot3' || step === 'breed' || step === 'breeding'
+  setFirstSessionBreedPartner(lendPartner && pet ? firstSessionPartnerSpecies(pet) : null)
+
+  const egg = p?.hatchling
+  if (egg) {
+    const isBreedEgg = egg.generation > 0
+    if (p.firstSessionEggState === 'hatching') startHatch(egg.species, egg.name)
+    else if (p.firstSessionEggState === 'carrying' || step === 'hatch3') startCarryEgg(egg.species, egg.name, isBreedEgg, false)
+    else startGetEgg(egg.species, egg.name)
+  }
+
+  console.log('[FirstSession] resumed at', step)
 }
 
 function goTo(next: FirstSessionStep, breathe = 0): void {
@@ -358,6 +429,7 @@ function goTo(next: FirstSessionStep, breathe = 0): void {
   feedsAtStart = c['feedAnyCount'] ?? 0
   playsAtStart = c['playCount'] ?? 0
   playTime = 0
+  actions.firstSessionProgress(next)
   console.log('[FirstSession] step ->', next)
   reportStep(next)
 }

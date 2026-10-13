@@ -4,6 +4,15 @@
 export type CareAction = 'feed' | 'clean' | 'sleep' | 'play'
 export type StatKey = 'hunger' | 'hygiene' | 'energy' | 'happiness'
 
+/** Checkpoints for the guided first visit. Stored with the player so a reload
+ * can resume the tutorial instead of dropping them into the unrestricted game. */
+export const FIRST_SESSION_STEPS = [
+  'intro', 'meet', 'feed', 'feeding', 'sick', 'cured', 'bath', 'play',
+  'grow', 'nest', 'slot3', 'breed', 'breeding', 'hatch3', 'wrapup', 'captain', 'done'
+] as const
+export type FirstSessionStep = (typeof FIRST_SESSION_STEPS)[number]
+export type FirstSessionEggState = 'pending' | 'carrying' | 'hatching'
+
 /** Offspring cosmetic rarity tiers, common -> legendary. Three tiers, one per
  *  creature skin: common (base), rare (alt), legendary (gold). */
 export type Rarity = 'common' | 'rare' | 'legendary'
@@ -88,6 +97,11 @@ export interface PlayerData {
   // Ark (community goal): launches already shown to this player + the wearables
   // they earned. Optional so saves from before the Ark still load.
   ark?: ArkPlayerData
+  // Resumable first-session state. Undefined on saves created before the
+  // tutorial shipped or on established players using the normal game.
+  firstSessionStep?: FirstSessionStep
+  firstSessionGifts?: string[]
+  firstSessionEggState?: FirstSessionEggState
   // Bookkeeping
   createdAt: number
   lastUpdated: number
@@ -173,9 +187,8 @@ export interface LeaderboardEntry {
 export interface PlayerSnapshot {
   player: PlayerData
   activePet: PetData | null
-  // True only during the player's very first visit (no save existed when this
-  // visit started). Not persisted: the next visit is a normal one no matter how
-  // far the first session got.
+  // True while a new player's guided first visit is incomplete. Its checkpoint
+  // is persisted on PlayerData so reconnecting resumes it.
   firstSession?: boolean
   // Ark launches this player donated to but hasn't seen yet (they were away).
   arkUnseen?: ArkLaunchView[]

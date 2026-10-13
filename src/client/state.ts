@@ -3,7 +3,7 @@
 
 import { getPlayer } from '@dcl/sdk/players'
 import { room } from '../shared/messages'
-import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
+import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, CareAction, FirstSessionStep, LeaderboardEntry, PetData, PlayerData, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { ARK_GOAL, GAME_TOASTS_ENABLED, NEW_PET_STATS, SERVER_TIMEOUT_MS, SIZE_BASE, speciesLabel, type SpinReward } from '../shared/config'
 
 const OPTIMISTIC_PET_TIMEOUT_MS = 12000
@@ -313,7 +313,7 @@ export function applySnapshot(snap: PlayerSnapshot): void {
   // optimistic. A different hatchling, or one after the grace period, wins.
   if (decision && !staleDecisionSnapshot) clientState.pendingHatchlingDecision = null
   clientState.player = snap.player
-  if (snap.firstSession) clientState.firstSession = true
+  clientState.firstSession = !!snap.firstSession
   if (staleDecisionSnapshot) {
     clientState.player.hatchling = null
     if (decision.action === 'keep') {
@@ -453,8 +453,11 @@ export function presenceFor(address: string): PresenceEntry | undefined {
   return clientState.presence.find((e) => e.address.toLowerCase() === address.toLowerCase())
 }
 
-export function pushToast(message: string, kind: string = 'info'): void {
-  if (!GAME_TOASTS_ENABLED) return // suspended (see config)
+/** Queue a lightweight notice. Tutorial gates pass `force` so the player gets
+ * immediate feedback without re-enabling the game's intentionally quiet
+ * ambient/server toasts. */
+export function pushToast(message: string, kind: string = 'info', force = false): void {
+  if (!force && !GAME_TOASTS_ENABLED) return // suspended (see config)
   clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }
@@ -564,6 +567,9 @@ export const actions = {
   },
   firstSessionSlotFunds(): void {
     room.send('firstSessionSlotFunds', {})
+  },
+  firstSessionProgress(step: FirstSessionStep): void {
+    room.send('firstSessionProgress', { step })
   },
   firstSessionTire(): void {
     room.send('firstSessionTire', {})

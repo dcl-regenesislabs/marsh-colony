@@ -4,7 +4,7 @@
 // validated and persisted in one place.
 
 import { Storage } from '@dcl/sdk/server'
-import type { CareAction, PetData, PlayerData, PresenceEntry, Rarity, StatKey } from '../shared/types'
+import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
 
@@ -185,24 +185,23 @@ export function isFreshPlayer(address: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Custom first session. A player is in it for the whole of their FIRST visit
-// (no save existed when the visit started) and never again: the flag lives in
-// memory only and is dropped when the visit ends, so the next visit is the
-// normal game wherever the first one stopped. Progress through it is tracked
-// in PostHog, not saved.
+// Custom first session. Its checkpoint lives on PlayerData so a new player can
+// safely reload or reconnect without being dropped into the normal game.
 // ---------------------------------------------------------------------------
 const firstSessionPlayers = new Set<string>()
 // DEBUG_FORCE_FIRST_SESSION players: fresh and in-memory only, never saved.
 const ephemeralPlayers = new Set<string>()
-// First-session one-off gifts already handed out this visit ("<address>:<gift>").
-const firstSessionGifts = new Set<string>()
 
-/** Grant a first-session one-off at most once per visit. False if not owed. */
-function takeFirstSessionGift(address: string, gift: string): boolean {
-  if (!firstSessionPlayers.has(address)) return false
-  const key = `${address}:${gift}`
-  if (firstSessionGifts.has(key)) return false
-  firstSessionGifts.add(key)
+function isIncompleteFirstSessionStep(step: unknown): step is FirstSessionStep {
+  return typeof step === 'string' && step !== 'done' && (FIRST_SESSION_STEPS as readonly string[]).includes(step)
+}
+
+/** Grant a first-session one-off at most once across reconnects. */
+function takeFirstSessionGift(p: PlayerData, gift: string): boolean {
+  if (!firstSessionPlayers.has(p.address)) return false
+  const gifts = p.firstSessionGifts ?? (p.firstSessionGifts = [])
+  if (gifts.includes(gift)) return false
+  gifts.push(gift)
   return true
 }
 
@@ -210,13 +209,32 @@ export function isFirstSession(address: string): boolean {
   return firstSessionPlayers.has(address)
 }
 
-/** The visit is over (server.ts departure): the next one is a normal session. */
+/** A departure clears only the live-session marker. Incomplete saved progress
+ * is reactivated by loadPlayer when the player returns. */
 export function endFirstSession(address: string): void {
   firstSessionPlayers.delete(address)
-  for (const key of [...firstSessionGifts]) if (key.startsWith(`${address}:`)) firstSessionGifts.delete(key)
   freshPlayers.delete(address)
   // A debug player is thrown away so the next entry starts fresh again.
   if (ephemeralPlayers.delete(address)) players.delete(address)
+}
+
+/** Persist exactly the next tutorial checkpoint. Client messages are only a
+ * progress signal: they can neither rewind a player nor jump straight to done. */
+export function setFirstSessionProgress(p: PlayerData, step: string): boolean {
+  if (!firstSessionPlayers.has(p.address)) return false
+  const next = FIRST_SESSION_STEPS.indexOf(step as FirstSessionStep)
+  const current = FIRST_SESSION_STEPS.indexOf(p.firstSessionStep ?? 'intro')
+  if (next < 0 || current < 0 || next !== current + 1) return false
+  p.firstSessionStep = step as FirstSessionStep
+  if (step === 'done') firstSessionPlayers.delete(p.address)
+  return true
+}
+
+/** Save where an in-progress egg handoff is, so its visual flow can resume. */
+export function setFirstSessionEggState(p: PlayerData, state: FirstSessionEggState): boolean {
+  if (!firstSessionPlayers.has(p.address) || !p.hatchling || p.firstSessionEggState === state) return false
+  p.firstSessionEggState = state
+  return true
 }
 
 export type Notify = { kind: string; message: string }
@@ -291,6 +309,8 @@ function newPlayer(address: string): PlayerData {
     collection: [],
     albumClaims: [],
     ark: { launchSeen: 0, grants: [] },
+    firstSessionStep: 'intro',
+    firstSessionGifts: [],
     createdAt: t,
     lastUpdated: t
   }
@@ -405,6 +425,7 @@ export function deriveMood(pet: PetData): number {
 export async function loadPlayer(address: string): Promise<PlayerData> {
   if (players.has(address)) {
     const cached = players.get(address)!
+    if (isIncompleteFirstSessionStep(cached.firstSessionStep)) firstSessionPlayers.add(address)
     tickPlayer(cached)
     return cached
   }
@@ -425,6 +446,7 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
   } else {
     // Migrate/sanitize loaded data, then apply offline decay.
     data = sanitize(address, data)
+    if (isIncompleteFirstSessionStep(data.firstSessionStep)) firstSessionPlayers.add(address)
     tickPlayer(data)
   }
   applyDailyStreak(data)
@@ -481,6 +503,13 @@ function sanitize(address: string, d: PlayerData): PlayerData {
   if (!d.albumClaims) {
     addRosterToCollection(out)
     out.albumClaims = satisfiedAlbumClaims(out)
+  }
+  // `newPlayer()` supplies the defaults for a genuinely new account. Do not
+  // accidentally put every existing save back into the tutorial on migration.
+  if (!d.firstSessionStep) {
+    delete out.firstSessionStep
+    delete out.firstSessionGifts
+    delete out.firstSessionEggState
   }
   return out
 }
@@ -684,6 +713,7 @@ export function adopt(p: PlayerData, species: string, name: string): Notify[] {
   // A newly adopted pet hatches into `hatchling` — the player then keeps it (into
   // a slot) or discards it. Not added to the roster yet.
   p.hatchling = newPet(species, name)
+  if (isFirstSession(p.address)) p.firstSessionEggState = 'pending'
   return []
 }
 
@@ -695,6 +725,7 @@ export function keepPet(p: PlayerData): Notify[] {
   }
   const pet = p.hatchling
   p.hatchling = null
+  delete p.firstSessionEggState
   p.pets.push(pet)
   p.activePetId = pet.id
   bump(p, 'adoptCount')
@@ -710,6 +741,7 @@ export function discardPet(p: PlayerData): Notify[] {
   if (!p.hatchling) return []
   const name = p.hatchling.name
   p.hatchling = null
+  delete p.firstSessionEggState
   return [{ kind: 'adopt', message: `${name} was sent back to the Care Center.` }]
 }
 
@@ -747,7 +779,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   if (p.currency < fee) {
     return { notes: [{ kind: 'error', message: `Breeding costs ${C.BREED_COST} coins` }], rarity: null }
   }
-  if (lent && !takeFirstSessionGift(p.address, 'breed')) {
+  if (lent && !takeFirstSessionGift(p, 'breed')) {
     return { notes: [{ kind: 'error', message: 'Pick a different pet to breed with' }], rarity: null }
   }
 
@@ -766,6 +798,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   // Offspring is delivered as an EGG: it becomes the hatchling (carried home and
   // hatched, then kept into a slot), exactly like a fresh adoption.
   p.hatchling = child
+  if (isFirstSession(p.address)) p.firstSessionEggState = 'carrying'
   bump(p, 'breedCount')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
@@ -1005,8 +1038,8 @@ export function cureSickness(p: PlayerData): Notify[] {
   pet.sick = false
   applyCompletedCare(p, pet, {}, 'cureCount', notes, C.SICKNESS_CURE_XP, C.SICKNESS_CURE_COINS, { caretakerXp: C.CARETAKER_XP_CURE })
   notes.push({ kind: 'success', message: `${pet.name} is cured!` })
-  // First session: the Caretaker rewards the first cure (once per visit).
-  if (takeFirstSessionGift(p.address, 'cureGift')) {
+  // First session: the Caretaker rewards the first cure once across resumes.
+  if (takeFirstSessionGift(p, 'cureGift')) {
     p.currency += C.FIRST_SESSION_CURE_GIFT
     notes.push({ kind: 'reward', message: `The Caretaker gave you ${C.FIRST_SESSION_CURE_GIFT} coins for your bravery!` })
     // ...and the chase left it muddy, so the next beat (Bath) is really needed.
@@ -1273,36 +1306,36 @@ export function buySlot(p: PlayerData): Notify[] {
   return [{ kind: 'shop', message: `Unlocked pet slot ${p.petSlots}!` }]
 }
 
-/** First session only, once per visit: the Fetch beat ran long without wearing
+/** First session only, once across resumes: the Fetch beat ran long without wearing
  *  the pet out, so tire it now — the next beat is putting it to bed. */
 export function firstSessionTire(p: PlayerData): boolean {
   const pet = activePet(p)
   if (!pet || pet.sleeping) return false
-  if (!takeFirstSessionGift(p.address, 'tire')) return false
+  if (!takeFirstSessionGift(p, 'tire')) return false
   tickPlayer(p)
   pet.energy = Math.min(pet.energy, C.PLAY_MIN_ENERGY - 2)
   return true
 }
 
-/** First session only, once per visit: the baby needs a slot and the player
+/** First session only, once across resumes: the baby needs a slot and the player
  *  can't afford it, so the Caretaker covers the difference. */
 export function firstSessionSlotFunds(p: PlayerData): Notify[] | null {
   if (p.pets.length < p.petSlots) return null // a slot is already free
   const price = C.slotPrice(p.petSlots)
   if (p.currency >= price) return null
-  if (!takeFirstSessionGift(p.address, 'slotFunds')) return null
+  if (!takeFirstSessionGift(p, 'slotFunds')) return null
   const gift = price - p.currency
   p.currency = price
   return [{ kind: 'reward', message: `The Caretaker chipped in ${gift} coins for the baby's slot!` }]
 }
 
-/** First session only, once per visit: the Caretaker's grow mushroom takes the
+/** First session only, once across resumes: the Caretaker's grow mushroom takes the
  *  given pet straight to Adult so it can breed — like the debug cheat, but
  *  without the coins. */
 export function firstSessionGrow(p: PlayerData, petId: string): Notify[] | null {
   const pet = p.pets.find((x) => x.id === petId)
   if (!pet || C.petStage(pet.size) === 'ADULT') return null
-  if (!takeFirstSessionGift(p.address, 'grow')) return null
+  if (!takeFirstSessionGift(p, 'grow')) return null
   tickPlayer(p)
   pet.careCount = Math.max(pet.careCount, 70) // keeps size maxed even after decay
   pet.size = C.SIZE_MAX // Adult (>= PET_STAGE_ADULT_SIZE)

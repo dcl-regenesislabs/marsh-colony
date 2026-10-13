@@ -11,6 +11,7 @@ import { applyCreatureSkin } from './creatureSkins'
 import { clientState } from './state'
 import { canStartPetInteraction, playPetVoice } from './pet'
 import { openLegendaryCreatureDialog } from './ui/dialog'
+import { firstSessionAllowsInteraction } from './firstSession'
 
 // pepito_fluflito.glb = PepitoArmature body + Fluflito head (see creatureSkins
 // SKIN_NODES). Its clips ride the Pepito rig (Pepito_Idle, Pepito_Walk, …).
@@ -47,7 +48,7 @@ function spawnFamiliar(anchor: Vector3, baseRot: Quaternion): Entity {
       // on top would drop that onDone and soft-lock the frozen, pet-less player.
       // dialog.open blocks that; canStartPetInteraction() also keeps it from
       // popping over feed/bath/petting/fetch/carry/sleep (mirrors world clicks).
-      if (clientState.dialog.open || !canStartPetInteraction()) return
+      if (clientState.dialog.open || !canStartPetInteraction() || !firstSessionAllowsInteraction('caretakerPet')) return
       playPetVoice(SPECIES)
       openLegendaryCreatureDialog()
     }

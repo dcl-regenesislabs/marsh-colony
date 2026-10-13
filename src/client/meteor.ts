@@ -21,6 +21,7 @@ import { Vector3, Quaternion } from '@dcl/sdk/math'
 import { dailyClaimable, meteorAvailable } from './sim'
 import { showHint, petActivityActive, pushToast } from './state'
 import { ui } from './ui'
+import { firstSessionActive } from './firstSession'
 
 const METEOR_SOUND = 'assets/sounds/meteorland.mp3' // shared by the meteor's appearance AND its collection poof
 let meteorSfx: Entity | null = null
@@ -151,7 +152,7 @@ function spawnMeteor(): void {
   pointerEventsSystem.onPointerDown(
     { entity: meteor, opts: { button: InputAction.IA_POINTER, hoverText: 'Explore', maxDistance: 12 } },
     () => {
-      if (disappearing) return
+      if (firstSessionActive() || disappearing) return
       // Not in the middle of an activity (walking to the feeder or the bath, a
       // minigame...): the reward panel would cut the flow. It waits in the world.
       if (petActivityActive()) {
