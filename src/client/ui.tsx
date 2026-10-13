@@ -39,7 +39,7 @@ import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible,
 import { musicState, playSong, setMusicVolume, SONGS, type SongId, toggleMute } from './music'
 import { triggerCare, careActive, queueLength } from './input'
 import { cancelFeedTask, startFeedTask } from './feed'
-import { firstSessionHud, firstSessionStep, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS, firstSessionHidesBack, fetchBackAllowed, firstSessionAllowsPetAction } from './firstSession'
+import { firstSessionHud, firstSessionStep, firstSessionActive, firstSessionAdoptLocked, FIRST_SESSION_CHAPTERS, firstSessionHidesBack, fetchBackAllowed, firstSessionAllowsInteraction, firstSessionAllowsPetAction } from './firstSession'
 import {
   cancelFruitGame,
   exitFeedResults,
@@ -200,8 +200,20 @@ function syncMobileMagnifierSystem(): void {
   }
 }
 
+function firstSessionAllowsPanel(panel: Panel): boolean {
+  if (panel === 'adopt') return firstSessionAllowsInteraction('adopt')
+  if (panel === 'roster') return firstSessionAllowsInteraction('roster')
+  return !firstSessionActive()
+}
+
+function blockFirstSessionActivity(): boolean {
+  pushToast("Follow the Caretaker's instructions first!")
+  return false
+}
+
 export const ui = {
   openAdopt(): void {
+    if (!firstSessionAllowsPanel('adopt')) return void blockFirstSessionActivity()
     // First session: after the second pet, the third one comes from breeding.
     if (firstSessionAdoptLocked()) {
       uiState.panel = 'none'
@@ -223,52 +235,65 @@ export const ui = {
     resetMobileMagnifier()
   },
   openShop(): void {
+    if (!firstSessionAllowsPanel('shop')) return void blockFirstSessionActivity()
     uiState.panel = 'shop'
   },
   openRoster(): void {
+    if (!firstSessionAllowsPanel('roster')) return void blockFirstSessionActivity()
     uiState.panel = 'roster'
     uiState.rosterPage = 0
   },
   openInventory(): void {
+    if (!firstSessionAllowsPanel('inventory')) return void blockFirstSessionActivity()
     uiState.panel = 'inventory'
   },
   openSpin(): void {
+    if (!firstSessionAllowsPanel('spin')) return void blockFirstSessionActivity()
     uiState.panel = 'spin'
   },
   openGoals(): void {
+    if (!firstSessionAllowsPanel('goals')) return void blockFirstSessionActivity()
     uiState.panel = 'goals'
   },
   openDaily(): void {
+    if (!firstSessionAllowsPanel('daily')) return void blockFirstSessionActivity()
     uiState.panel = 'daily'
   },
   openMeteorReward(): void {
+    if (!firstSessionAllowsPanel('meteor')) return void blockFirstSessionActivity()
     uiState.panel = 'meteor'
   },
   openJukebox(): void {
+    if (!firstSessionAllowsPanel('jukebox')) return void blockFirstSessionActivity()
     uiState.panel = 'jukebox'
   },
   openAlbum(): void {
+    if (!firstSessionAllowsPanel('album')) return void blockFirstSessionActivity()
     uiState.panel = 'album'
     uiState.albumPage = 0
   },
   openLeaderboard(): void {
+    if (!firstSessionAllowsPanel('leaderboard')) return void blockFirstSessionActivity()
     uiState.panel = 'leaderboard'
     actions.requestLeaderboard() // fetch fresh standings each time it opens
   },
   // The Captain's panel: pick an Adult pet to send aboard the Ark.
   openArkDonate(): void {
+    if (!firstSessionAllowsPanel('arkDonate')) return void blockFirstSessionActivity()
     uiState.panel = 'arkDonate'
     uiState.arkPage = 0
   },
   openArkRanking(): void {
+    if (!firstSessionAllowsPanel('arkRanking')) return void blockFirstSessionActivity()
     uiState.panel = 'arkRanking'
     actions.requestArkLeaderboard() // fetch fresh standings each time it opens
   },
   // Auto-open the daily reward only when the screen is idle (no clashing popup).
   tryAutoOpenDaily(): void {
-    if (uiState.panel === 'none' && !clientState.dialog.open) uiState.panel = 'daily'
+    if (firstSessionAllowsPanel('daily') && uiState.panel === 'none' && !clientState.dialog.open) uiState.panel = 'daily'
   },
   openCaretaker(): void {
+    if (!firstSessionAllowsInteraction('caretaker')) return void blockFirstSessionActivity()
     const p = clientState.player
     const hasFreeSlot = !!p && p.pets.length < p.petSlots
     if (!clientState.activePet) {

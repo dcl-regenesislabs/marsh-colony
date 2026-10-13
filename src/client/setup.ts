@@ -39,7 +39,7 @@ import { setupCaretaker, startCaretakerIntroLock, endCaretakerIntroLock, isCaret
 import { setupCaretakerPet } from './caretakerPet'
 import { setupCaptain } from './captain'
 import { setupFeedTask } from './feed'
-import { setupFirstSession } from './firstSession'
+import { restoreFirstSession, setupFirstSession } from './firstSession'
 import { setupFruitGame } from './fruitGame'
 import { setupBathGame } from './bathGame'
 import { queueSicknessCinematic, setupSicknessCinematic } from './sicknessCinematic'
@@ -144,7 +144,13 @@ function registerHandlers(): void {
       // lands, there's no need to guess early — decide once, for real.
       if (!firstSnapshotSeen) {
         firstSnapshotSeen = true
-        if (snap.activePet) {
+        if (snap.firstSession) {
+          restoreFirstSession(snap.player.firstSessionStep)
+          // The initial Caretaker introduction is the only checkpoint that
+          // needs its spawn lock. Every later one resumes in place.
+          if (snap.player.firstSessionStep === 'intro' && !snap.activePet) showIntro()
+          else introTriggered = true
+        } else if (snap.activePet) {
           introTriggered = true // returning player already has a pet -> skip the tutorial
           // No "Choose Location" modal / teleport for returning players — they
           // just land wherever scene.json's spawn point puts them (currently

@@ -7,13 +7,13 @@
 
 ## 0. Cómo se decide "primera vez"
 
-**No es un tutorial que se retoma: es una primera sesión a medida.** Solo existe durante la primera visita; la segunda vez que entran caen en la escena normal, sin importar hasta dónde llegaron. El avance se mide en PostHog (más adelante), no se guarda.
+**Es una primera sesión a medida y se puede retomar.** Mientras no esté terminada, una recarga o reconexión restablece su checkpoint y deja al jugador en la misma lección. El avance se mide también en PostHog.
 
-- El server ya sabe si un jugador es nuevo: al cargarlo no tenía save (`freshPlayers`). Ese mismo momento lo anota en un set en memoria `firstSessionPlayers`.
-- El snapshot lleva `firstSession: true` mientras dure esa visita. El cliente lo guarda en `clientState.firstSession`.
-- Cuando el server detecta que el jugador se fue (el mismo lugar que hoy dispara `session ended`), lo saca del set. Como al entrar se creó su save, la próxima visita ya no es "nueva": juego normal.
-- **No se guarda nada nuevo en Storage.** Un jugador que ya existe nunca entra en la primera sesión, así que para él el juego queda exactamente igual.
-- Los premios de un solo uso (regalo, cría gratis) se validan en el server contra ese mismo flag en memoria, así que no se pueden pedir fuera de la primera visita.
+- El server detecta a un jugador nuevo cuando no tiene save (`freshPlayers`) y crea su checkpoint `firstSessionStep`.
+- El snapshot lleva `firstSession: true` mientras el checkpoint no sea `done`; el cliente restaura el paso, la pareja prestada y la entrega del huevo cuando corresponde.
+- Al salir se limpia sólo el marcador de conexión. Al volver, `loadPlayer()` reactiva una primera sesión incompleta desde Storage.
+- Los campos del tutorial sólo se agregan a jugadores nuevos; saves existentes no reciben el tutorial retroactivamente.
+- Los premios de un solo uso quedan registrados en `firstSessionGifts`, por lo que una recarga no permite repetirlos.
 - **Para probar:** `DEBUG_FORCE_FIRST_SESSION` en `config.ts`. Con `true`, cada entrada es un jugador nuevo en memoria que nunca se guarda: tu save real no se toca y cada reload arranca de cero. Va en `false` para publicar.
 
 ## 1. Cambios respecto a la spec (por cómo está el juego hoy)
@@ -34,7 +34,7 @@
 > **Cambio (oct 2026):** la primera sesión se juega con **una sola mascota**. Como la cría usa la mascota del Caretaker, se sacaron la siesta, el segundo huevo, el tiempo libre y el cambio de mascota. Adoptar queda cerrado desde que se queda la primera mascota hasta el final. Son 5 capítulos.
 
 - Viven **solo en el cliente** (`src/client/firstSession.ts`) y avanzan con los eventos reales del juego (keep, resultado del Feed, cura, baño, rondas de fetch, cría…), igual que hoy los snapshots actualizan el HUD.
-- Si recargan a mitad, ya no es su primera visita: juego normal. No hay checkpoints.
+- Si recargan a mitad, el checkpoint guardado reanuda la misma lección. Las actividades transitorias vuelven a su límite seguro (por ejemplo, al objetivo anterior al minijuego).
 - Cada paso alcanzado se reporta a PostHog (`first_session_step`) cuando hagamos el tracking.
 
 ## 3. Sistema de guía (sin arte nuevo)

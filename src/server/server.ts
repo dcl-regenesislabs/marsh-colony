@@ -406,6 +406,14 @@ export function server(): void {
     broadcastPresence() // its size changed — mirror it for everyone
   })
 
+  room.onMessage('firstSessionProgress', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    if (!S.setFirstSessionProgress(p, data.step)) return
+    await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+  })
+
   room.onMessage('buyPotion', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
@@ -468,9 +476,14 @@ export function server(): void {
     broadcastPresence() // remote clients need the carry pose immediately
   })
 
-  room.onMessage('setEggCarried', (data, ctx) => {
+  room.onMessage('setEggCarried', async (data, ctx) => {
     if (!ctx) return
     S.setEggCarriedState(ctx.from, data.carried)
+    const p = await S.loadPlayer(ctx.from)
+    if (S.setFirstSessionEggState(p, data.carried ? 'carrying' : 'hatching')) {
+      await S.savePlayer(ctx.from)
+      pushSnapshot(p)
+    }
     broadcastPresence() // remote clients need the carried egg immediately
   })
 
@@ -556,7 +569,7 @@ export function server(): void {
         sessionStart.delete(addr)
         S.setCarriedState(addr, false)
         S.setEggCarriedState(addr, false)
-        S.endFirstSession(addr) // the next visit is a normal one, wherever this one stopped
+        S.endFirstSession(addr) // live marker only; saved progress resumes next visit
       }
     }
 

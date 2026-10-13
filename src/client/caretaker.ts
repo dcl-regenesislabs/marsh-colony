@@ -5,8 +5,9 @@ import { engine, Entity, Transform, Animator, AudioSource, pointerEventsSystem, 
 import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
-import { clientState } from './state'
+import { clientState, pushToast } from './state'
 import { ui } from './ui'
+import { firstSessionActive, firstSessionAllowsInteraction } from './firstSession'
 
 const TALK_SOUND = 'assets/sounds/AlienNod.mp3'
 let talkSfx: Entity | null = null
@@ -44,6 +45,13 @@ function ensureClickHandler(caretaker: Entity): void {
   pointerEventsSystem.onPointerDown(
     { entity: caretaker, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to Caretaker', maxDistance: 16, showHighlight: true } },
     () => {
+      // Once the tutorial has handed over the first egg, its only next step is
+      // taking it home to hatch. Do not replay the Caretaker intro on click.
+      if (firstSessionActive() && clientState.carryEgg.active) {
+        pushToast('Take your egg home first!')
+        return
+      }
+      if (clientState.dialog.open || !firstSessionAllowsInteraction('caretaker')) return
       playTalkSound()
       ui.openCaretaker()
     }

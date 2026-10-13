@@ -49,6 +49,9 @@ export const Messages = {
   firstSessionGrow: Schemas.Map({ petId: Schemas.String }),
   // First session only, once: not enough coins for the baby's slot, the Caretaker tops them up.
   firstSessionSlotFunds: Schemas.Map({}),
+  // Client checkpoint for the resumable first-session tutorial. The server
+  // validates the step name and persists it.
+  firstSessionProgress: Schemas.Map({ step: Schemas.String }),
   // Shop: buy one rarity potion (boosts the next breeding roll it is used on).
   buyPotion: Schemas.Map({}),
   // Spend a spin ticket on the wheel.
