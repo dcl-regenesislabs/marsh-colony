@@ -47,7 +47,7 @@ const STATIC_UI_ASSETS: readonly string[] = [
   'assets/images/revamp/keepbutton.png',
   'assets/images/revamp/discardbutton.png',
   'assets/images/backbutton2.png',
-  'assets/images/revamp/feed_hud.png',
+  'assets/images/revamp/feed_hud_green.png',
   'assets/images/revamp/fruit_caught.png',
   'assets/images/revamp/bath_hud.png',
   'assets/images/bubbleFrame/spritesheet_6x1_512.png',
