@@ -1511,6 +1511,7 @@ function BreedNoticePill(props: { marginTop: number }) {
 
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
+  const named = uiState.breedName.trim().length > 0
   const potions = clientState.player?.inventory.rarityPotions ?? 0
   const coins = clientState.player?.currency ?? 0
   const hasPotion = potions > 0
@@ -1602,9 +1603,9 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={noticeOn ? breedNotice.text : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
+          value={noticeOn ? breedNotice.text : !named ? 'Give your offspring a name to continue.' : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
           fontSize={S(15)}
-          color={noticeOn ? LOC.orange : PET_UI.muted}
+          color={noticeOn || !named ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
           uiTransform={{ width: '100%', height: S(24) }}
         />
@@ -1620,7 +1621,10 @@ function BreedNamePanel() {
           height={breedH}
           fontSize={S(21)}
           pulse
+          disabled={!named}
           onClick={() => {
+            const name = uiState.breedName.trim()
+            if (!name) return
             // Nest flow: the partner is already placed; run the egg cinematic
             // (which sends the breed). If the flow was cancelled (world BACK) while
             // this modal was still open, just close — no stale actions.breed('').
@@ -1629,7 +1633,7 @@ function BreedNamePanel() {
               showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
               return
             }
-            if (clientState.breed.active) startBreedCross(uiState.breedName, usingPotion)
+            if (clientState.breed.active) startBreedCross(name, usingPotion)
             uiState.breedName = ''
             uiState.breedUsePotion = false
             ui.close()
