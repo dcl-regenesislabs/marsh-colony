@@ -3448,7 +3448,7 @@ function sheetUvRect(x0: number, y0: number, x1: number, y1: number, w: number, 
 
 // The feed HUD art is a 1024px sheet. Crop each card at its native aspect so
 // the illustrated borders and icons never get stretched by the responsive UI.
-const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud.png'
+const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud_green.png'
 const FEED_HUD_W = 1024
 const FEED_HUD_H = 1024
 function feedHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
