@@ -48,9 +48,10 @@ import {
   suppressPetTags
 } from './pet'
 
-// Safe (edible) fruit. Fruit01 is the poisonous one and is kept OUT of this
-// list on purpose — see POISON_FRUIT_MODEL. Only the tutorial lesson
-// adds a single red fruit when the player avoided all poisonous drops.
+// Safe fruit used for regular drops, ground decor and the feeding pile.
+// Fruit01 is poisonous and stays outside this list. The tutorial adds one
+// forced red drop if needed; tutorialPoisonBite also makes the pile's first
+// fruit and the first held/eaten fruit red to connect the catch to sickness.
 const FRUIT_MODELS = [
   'assets/Models/Fruit02.glb',
   'assets/Models/Fruit04.glb',
@@ -286,9 +287,10 @@ const POISON_LESSON_WALK_S = 1.2
 const POISON_LESSON_REVEAL_S = POISON_LESSON_WALK_S + 0.3
 const POISON_LESSON_DROP_S = POISON_LESSON_REVEAL_S + 0.6
 const POISON_LESSON_CAMERA_DISTANCE = 6
+const POISON_LESSON_MAX_S = POISON_LESSON_DROP_S + FALL_DURATION_MS / 1000 + 2
 let lessonFruitRevealed = false
 let lessonFallStarted = false
-let lessonCaughtAt = 0
+let lessonResolvedAt = 0
 // Exit keeps the results scene mounted until the screen is fully black. That
 // prevents Unity from briefly exposing the HUD/avatar re-mount while handing
 // its camera rig back to the player.
@@ -1371,7 +1373,7 @@ function beginPoisonLesson(): void {
   clientState.feedGame.timeLeft = 0
   lessonFruitRevealed = false
   lessonFallStarted = false
-  lessonCaughtAt = 0
+  lessonResolvedAt = 0
   InputModifier.createOrReplace(engine.PlayerEntity, {
     mode: InputModifier.Mode.Standard({
       disableWalk: true,
@@ -1400,13 +1402,12 @@ function beginPoisonLesson(): void {
   void movePlayerTo({ newRelativePosition: target, avatarTarget: pendingCamPos, duration: POISON_LESSON_WALK_S }).catch(() => {})
   if (cinCam) {
     const current = Transform.get(cinCam)
-    // Frame the avatar and basket inside the letterbox; the fruit enters
-    // the close shot from above as it falls from the canopy.
-    // Moving the camera closer makes this a real push-in from the canopy shot.
-    const look = Vector3.create(target.x, groundY + 2.4, target.z)
+    // Push in on the canopy first, then follow the fruit down to the basket.
+    // Keeping the fruit at the center avoids hiding its reveal behind the bars.
+    const look = Vector3.create(target.x, canopyCenter.y, target.z)
     const closeCamPos = Vector3.create(
       target.x - localForward.x * POISON_LESSON_CAMERA_DISTANCE,
-      groundY + 2.8,
+      groundY + 4.5,
       target.z - localForward.z * POISON_LESSON_CAMERA_DISTANCE
     )
     Tween.createOrReplace(cinCam, {
@@ -1420,13 +1421,30 @@ function beginPoisonLesson(): void {
   }
 }
 
+/** A missed/stalled drop still teaches sickness, without awarding a catch. */
+function finishPoisonLesson(caught: boolean): void {
+  resolveFruit(fruits[0], caught)
+  if (!caught) {
+    caughtPoisonThisRound = true
+    spawnPoisonPop(playerPos())
+  }
+  lessonResolvedAt = clock
+}
+
 function poisonLessonTick(): void {
-  const fruit = fruits[0]
-  if (caughtPoisonThisRound) {
-    if (clock - lessonCaughtAt >= 0.9) applyResults()
+  const elapsed = clock - phaseAt
+  // Absolute watchdog: never depend on renderer tween write-back to leave
+  // this input-locked phase. Mark poison first so applyResults cannot re-enter.
+  if (elapsed >= POISON_LESSON_MAX_S) {
+    if (!caughtPoisonThisRound) finishPoisonLesson(false)
+    applyResults()
     return
   }
-  const elapsed = clock - phaseAt
+  const fruit = fruits[0]
+  if (caughtPoisonThisRound) {
+    if (clock - lessonResolvedAt >= 0.9) applyResults()
+    return
+  }
   if (elapsed < POISON_LESSON_REVEAL_S) return
   if (!lessonFruitRevealed) {
     // Read the actual arrival position so renderer differences in the slide
@@ -1448,9 +1466,18 @@ function poisonLessonTick(): void {
     lessonFallStarted = true
   }
   const pos = Transform.get(fruit.entity).position
-  if (pos.y <= groundY + CATCH_MAX_Y) {
-    resolveFruit(fruit, true)
-    lessonCaughtAt = clock
+  if (cinCam) {
+    // The intro push-in has finished by drop time. Tilt this same camera down
+    // with the actual fruit instead of holding a close shot aimed at the ground.
+    Tween.deleteFrom(cinCam)
+    const cam = Transform.getMutable(cinCam)
+    cam.rotation = Quaternion.fromLookAt(cam.position, Vector3.create(pos.x, Math.max(groundY + 2.2, pos.y), pos.z))
+  }
+  const inCatchBand = pos.y >= groundY + CATCH_MIN_Y && pos.y <= groundY + CATCH_MAX_Y
+  if (inCatchBand && distFlat(playerPos(), pos) <= CATCH_RADIUS) {
+    finishPoisonLesson(true)
+  } else if (tweenSystem.tweenCompleted(fruit.entity) || elapsed >= POISON_LESSON_DROP_S + FALL_DURATION_MS / 1000 + 1) {
+    finishPoisonLesson(false)
   }
 }
 
@@ -1708,6 +1735,11 @@ function finalizeAndClose(): void {
   hideHeldFruit()
   hideFoodSet()
   stopEatCinematic()
+  stopHoldEmote()
+  for (const f of fruits) {
+    Tween.deleteFrom(f.entity)
+    VisibilityComponent.createOrReplace(f.entity, { visible: false })
+  }
   returnCameraToPlayer()
   setLaneColliders(false)
   applyDefaultTouchControls()
@@ -1721,9 +1753,14 @@ function finalizeAndClose(): void {
   }
 }
 
-/** The Back button follows the same completion path as a natural timeout. */
+/** Before gameplay, BACK exits without submitting or consuming the lesson.
+ * During catching it follows the same completion path as a natural timeout. */
 export function cancelFruitGame(): void {
-  if (phase === 'idle' || phase === 'results' || phase === 'feeding' || phase === 'poisonLesson') return
+  if (closing || phase === 'idle' || phase === 'results' || phase === 'feeding' || phase === 'poisonLesson') return
+  if (phase === 'arrival' || phase === 'intro' || phase === 'countdown') {
+    finalizeAndClose()
+    return
+  }
   applyResults()
 }
 
@@ -1742,6 +1779,7 @@ function tick(dt: number): void {
   catchBurstTick()
   poisonPopTick()
   scorchTick()
+  if (closing) return
   if (phase === 'arrival') {
     arrivalTick()
   } else if (phase === 'intro') {
