@@ -120,7 +120,7 @@ export const clientState: {
   // countdownAt/resultsAt (Date.now() ms) mark the animated phases.
   feedGame: {
     active: boolean
-    phase: 'arrival' | 'intro' | 'countdown' | 'catching' | 'feeding' | 'results'
+    phase: 'arrival' | 'intro' | 'countdown' | 'catching' | 'poisonLesson' | 'feeding' | 'results'
     caught: number
     timeLeft: number
     catchFlashUntil: number
