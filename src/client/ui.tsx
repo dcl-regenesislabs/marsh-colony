@@ -3560,7 +3560,7 @@ function FeedPetSitTuner() {
 
 function FeedGameOverlay() {
   const st = clientState.feedGame
-  if (!st.active) return <UiEntity />
+  if (!st.active || st.phase === 'poisonLesson') return <UiEntity />
   if (st.phase === 'feeding' || st.phase === 'results') {
     return (
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
@@ -4910,7 +4910,7 @@ function cinematicBarsActive(): boolean {
     clientState.ark.cinematic !== 'none' ||
     (clientState.breed.active && clientState.breed.phase === 'animating') ||
     (clientState.hatch.active && clientState.hatch.progress >= 1) ||
-    (clientState.feedGame.active && clientState.feedGame.phase === 'feeding') ||
+    (clientState.feedGame.active && (clientState.feedGame.phase === 'poisonLesson' || clientState.feedGame.phase === 'feeding')) ||
     growthCinematicActive() ||
     sadCinematicIsActive() ||
     cureCinematicIsActive() ||
