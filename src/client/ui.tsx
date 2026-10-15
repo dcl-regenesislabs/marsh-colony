@@ -33,6 +33,9 @@ import {
   getBreedFx,
   BREED_ORB_FRAMES,
   BREED_BURST_FRAMES,
+  growthCinematicActive,
+  sadCinematicIsActive,
+  cureCinematicIsActive,
   playPetVoice
 } from './pet'
 import { hidePetTouchControls, MY_PETS_SPOTLIGHT_ACTION, myPetsSpotlightVisible, NAV_GOALS_TOUCH_ACTION, NAV_INVENTORY_TOUCH_ACTION, NAV_ROSTER_TOUCH_ACTION, setMyPetsSpotlight, showPetTouchControls } from './touchControls'
@@ -4900,6 +4903,50 @@ function LoadingGate() {
 // ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
+// Only passive story beats get letterboxing; rubbing the egg and playing the
+// minigames keep their full viewport and touch targets.
+function cinematicBarsActive(): boolean {
+  return clientState.serverReady && (
+    clientState.ark.cinematic !== 'none' ||
+    (clientState.breed.active && clientState.breed.phase === 'animating') ||
+    (clientState.hatch.active && clientState.hatch.progress >= 1) ||
+    (clientState.feedGame.active && clientState.feedGame.phase === 'feeding') ||
+    growthCinematicActive() ||
+    sadCinematicIsActive() ||
+    cureCinematicIsActive() ||
+    pepitoStealHidesHud()
+  )
+}
+
+let cinematicBarsProgress = 0
+function syncCinematicBarsSystem(dt: number): void {
+  const target = cinematicBarsActive() ? 1 : 0
+  const step = Math.max(0, dt) / 0.3
+  cinematicBarsProgress = target > cinematicBarsProgress
+    ? Math.min(target, cinematicBarsProgress + step)
+    : Math.max(target, cinematicBarsProgress - step)
+}
+
+function CinematicBars() {
+  if (cinematicBarsProgress <= 0) return null
+  const eased = cinematicBarsProgress * cinematicBarsProgress * (3 - 2 * cinematicBarsProgress)
+  // Fractions of the viewport remain consistent across resolution and DPR.
+  // Mobile gets a thinner frame to preserve the view on a small screen.
+  const height = `${(mobile() ? 4 : 10) * eased}%` as `${number}%`
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height, pointerFilter: 'none' }}
+        uiBackground={{ color: { r: 0, g: 0, b: 0, a: 1 } }}
+      />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: '100%', height, pointerFilter: 'none' }}
+        uiBackground={{ color: { r: 0, g: 0, b: 0, a: 1 } }}
+      />
+    </UiEntity>
+  )
+}
+
 const Root = () => {
   // In petting mode the camera is locked on the pet — hide the whole HUD so
   // nothing covers it, leaving only the petting overlay (BACK + swipe hint).
@@ -4992,6 +5039,7 @@ const Root = () => {
     )
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
+      <CinematicBars />
       {content}
       <RewardPopup />
       {UI_DEBUG_MODE && <DebugBrowserBar />}
@@ -5036,6 +5084,7 @@ export function setupUi(): void {
   if (!uiRendererSyncRegistered) {
     uiRendererSyncRegistered = true
     engine.addSystem(syncUiRendererSystem)
+    engine.addSystem(syncCinematicBarsSystem)
     engine.addSystem(syncPetTouchControlsSystem)
     engine.addSystem(syncMobileMagnifierSystem)
     engine.addSystem(dialogClosesPanelsSystem)
