@@ -672,6 +672,8 @@ const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
 const PILL_HALF_ASPECT = (PILL_BOX.half_green.x1 - PILL_BOX.half_green.x0) / (PILL_BOX.half_green.y1 - PILL_BOX.half_green.y0)
 // Soft tan edge for the name field on the revamp panels' cream background.
 const ADOPT_INPUT_BORDER: Color = { r: 0.87, g: 0.8, b: 0.71, a: 1 }
+const PET_NAME_CHARACTER_LIMIT = 12
+const PET_NAME_LIMIT_MESSAGE = `Max characters: ${PET_NAME_CHARACTER_LIMIT}`
 
 function PillButton(props: {
   id: string
@@ -1368,6 +1370,8 @@ function AdoptPanel() {
   // players can't skip past the input (many missed it and got stuck wondering why
   // nothing happened).
   const named = uiState.adoptName.trim().length > 0
+  const nameAtLimit = uiState.adoptName.length >= PET_NAME_CHARACTER_LIMIT
+  const nameTooLong = uiState.adoptName.length > PET_NAME_CHARACTER_LIMIT
   const halfW = S(165)
   const halfH = Math.round(halfW / PILL_HALF_ASPECT)
   return (
@@ -1387,6 +1391,7 @@ function AdoptPanel() {
       >
         <Input
           placeholder="Type a name..."
+          value={uiState.adoptName}
           fontSize={S(19)}
           color={PET_UI.ink}
           placeholderColor={PET_UI.muted}
@@ -1406,8 +1411,9 @@ function AdoptPanel() {
         />
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(6) }, alignItems: 'center', justifyContent: 'center' }}>
-        {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {slotsFree && !named && <Label value="Give your pet a name to continue." fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {!slotsFree && !nameAtLimit && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {nameAtLimit && <Label value={PET_NAME_LIMIT_MESSAGE} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {slotsFree && !named && !nameAtLimit && <Label value="Give your pet a name to continue." fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(4) } }}>
         <PillButton id="adopt_back" label="Back" shape="half" color="pink" width={halfW} height={halfH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; resetMobileMagnifier() }} />
@@ -1421,7 +1427,7 @@ function AdoptPanel() {
             height={halfH}
             fontSize={S(21)}
             pulse
-            disabled={!named}
+            disabled={!named || nameTooLong}
             onClick={() => {
               // Adoption gives an egg — but you collect it FROM the Caretaker
               // (an arrow guides you there), not spawned into your hand from
@@ -1458,6 +1464,7 @@ function AdoptPanel() {
  * modal underneath, preserving native keyboard focus without intercepting taps. */
 function MobileNameMagnifier(props: { target: MobileNameInput }) {
   const value = props.target === 'adopt' ? uiState.adoptName : uiState.breedName
+  const nameAtLimit = value.length >= PET_NAME_CHARACTER_LIMIT
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
   // The mobile virtual canvas grows with DPR. Use canvas fractions so the lens
   // starts on top of the actual input on any density, rather than at a fixed px.
@@ -1477,8 +1484,9 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', pointerFilter: 'none', zIndex: 100 }}
     >
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
-        <Label value={value.trim() ? value : 'Type a name...'} fontSize={fontSize} color={value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: nameAtLimit ? LOC.red : LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
+        <Label value={value.trim() ? value : 'Type a name...'} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
+        {nameAtLimit && <Label value={`${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${PET_NAME_LIMIT_MESSAGE}`} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
       </UiEntity>
     </UiEntity>
   )
@@ -1515,6 +1523,8 @@ function BreedNoticePill(props: { marginTop: number }) {
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
   const named = uiState.breedName.trim().length > 0
+  const nameAtLimit = uiState.breedName.length >= PET_NAME_CHARACTER_LIMIT
+  const nameTooLong = uiState.breedName.length > PET_NAME_CHARACTER_LIMIT
   const potions = clientState.player?.inventory.rarityPotions ?? 0
   const coins = clientState.player?.currency ?? 0
   const hasPotion = potions > 0
@@ -1541,6 +1551,7 @@ function BreedNamePanel() {
       >
         <Input
           placeholder="Type a name..."
+          value={uiState.breedName}
           fontSize={S(19)}
           color={PET_UI.ink}
           placeholderColor={PET_UI.muted}
@@ -1606,9 +1617,9 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={noticeOn ? breedNotice.text : !named ? 'Give your offspring a name to continue.' : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
+          value={nameAtLimit ? PET_NAME_LIMIT_MESSAGE : noticeOn ? breedNotice.text : !named ? 'Give your offspring a name to continue.' : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
           fontSize={S(15)}
-          color={noticeOn || !named ? LOC.orange : PET_UI.muted}
+          color={nameAtLimit ? LOC.red : noticeOn || !named ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
           uiTransform={{ width: '100%', height: S(24) }}
         />
@@ -1624,7 +1635,7 @@ function BreedNamePanel() {
           height={breedH}
           fontSize={S(21)}
           pulse
-          disabled={!named}
+          disabled={!named || nameTooLong}
           onClick={() => {
             const name = uiState.breedName.trim()
             if (!name) return
