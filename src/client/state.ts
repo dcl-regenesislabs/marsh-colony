@@ -453,9 +453,8 @@ export function presenceFor(address: string): PresenceEntry | undefined {
   return clientState.presence.find((e) => e.address.toLowerCase() === address.toLowerCase())
 }
 
-/** Queue a lightweight notice. Tutorial gates pass `force` so the player gets
- * immediate feedback without re-enabling the game's intentionally quiet
- * ambient/server toasts. */
+/** Queue a lightweight notice. Tutorial gates and arrow route instructions pass
+ * `force` so the player gets guidance without re-enabling ambient/server toasts. */
 export function pushToast(message: string, kind: string = 'info', force = false): void {
   if (!force && !GAME_TOASTS_ENABLED) return // suspended (see config)
   clientState.toasts.push({ message, kind })
