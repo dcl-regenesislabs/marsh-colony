@@ -1718,7 +1718,6 @@ export function startCarryPet(): void {
   actions.setCarried(true)
   playHoldPetEmote()
   showArrowTo(objectPosition(EntityNames.PetPool_glb), 'carryPet')
-  pushToast('Carry your pet to the bath!')
 }
 
 /** Cancel the bath carry (BACK): drop the flow, the pet just resumes following. */
@@ -2066,7 +2065,6 @@ export function startBreedErrand(): void {
   actions.setCarried(true)
   playHoldPetEmote()
   showArrowTo(breedNestPos(), 'breed')
-  pushToast('Carry your pet to the breeding nest!')
   clientState.petPanelOpen = false
 }
 
@@ -2350,9 +2348,29 @@ let arrowTarget: Vector3 | null = null
 export type ArrowOwner = 'feed' | 'sickness' | 'carryEgg' | 'carryPet' | 'breed' | 'getEgg' | 'firstSession' | 'ark'
 let arrowOwner: ArrowOwner | null = null
 
+// Route instructions must remain visible even while ambient game toasts are
+// disabled. The tutorial shows these in its persistent chapter card; other
+// players get a toast when a route starts, not on its per-frame refresh.
+const ARROW_INSTRUCTIONS: Record<ArrowOwner, string> = {
+  feed: 'Follow the green arrow to the tree to feed your pet!',
+  sickness: 'Take your sick pet to the Caretaker at the Care Center!',
+  carryEgg: 'Take your egg home to hatch it!',
+  carryPet: 'Carry your pet to the bath!',
+  breed: 'Carry your pet to the breeding nest!',
+  getEgg: 'Go to the Caretaker to pick up your egg!',
+  firstSession: 'Follow the green arrow to your next objective!',
+  ark: 'Walk your pet to the Captain at the Ark!'
+}
+
 export function showArrowTo(target: Vector3, owner: ArrowOwner): void {
+  if (arrowOwner !== owner && !firstSessionActive()) pushToast(ARROW_INSTRUCTIONS[owner], 'info', true)
   arrowTarget = target
   arrowOwner = owner
+}
+
+/** Current route text for the tutorial's persistent chapter objective. */
+export function getArrowInstruction(): string {
+  return arrowTarget && arrowOwner && arrowOwnerActive() ? ARROW_INSTRUCTIONS[arrowOwner] : ''
 }
 /** Clear the arrow. Pass the owner that raised it so a flow that is shutting
  *  down can't yank an arrow another flow has just taken over. */
@@ -2465,7 +2483,6 @@ export function startGetEgg(species: string, name: string): void {
   }
   pendingEgg = { species, name }
   showArrowTo(caretaker, 'getEgg')
-  pushToast('Go to the Caretaker to pick up your egg!')
 }
 
 /** Abandon a pending pickup (BACK on GetEggOverlay). Nothing is committed
@@ -2515,9 +2532,7 @@ export function startCarryEgg(species: string, name: string, isBreed = false, an
   playHoldEmote() // pose the arms as if holding the egg
 
   if (announce) {
-    openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!', () =>
-      pushToast('Take your egg home to hatch it!')
-    )
+    openDialog('Your Egg', ['Take it home and hatch it! Walk back to your house, then tap Hatch.'], 'Got it!')
   }
 }
 

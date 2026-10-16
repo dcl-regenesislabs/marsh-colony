@@ -29,7 +29,8 @@ export const DEV_SKIP_SERVER_GATE = false
  * `false` to ship.
  */
 /** Game toast notifications (pushToast + server notes). Off: playtests found
- *  them too heavy. The first session has its own sticky objective toast
+ *  them too heavy. Arrow route instructions bypass this flag; the first
+ *  session also has its own sticky objective toast
  *  (FirstSessionTask in ui.tsx), which this flag does not affect. */
 export const GAME_TOASTS_ENABLED = false
 

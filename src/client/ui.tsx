@@ -18,6 +18,7 @@ import {
   hatchTap,
   startGetEgg,
   getEggPending,
+  getArrowInstruction,
   cancelGetEgg,
   beginHatchFromCarry,
   startCarryPet,
@@ -2814,7 +2815,7 @@ function actionHudLayout() {
 
 function toastIsVisible(now: number): boolean {
   if (bigUiOpen()) return false
-  if (firstSessionHud.task) return true // the first session's sticky objective sits in the toast row
+  if (firstSessionTaskText()) return true // the sticky chapter objective sits in the toast row
   return !!clientState.currentToast && clientState.currentToast.until > now
 }
 
@@ -2905,15 +2906,28 @@ const TASK_THROB_MS = 2400
 let taskShown = ''
 let taskShownAt = 0
 
+function firstSessionTaskText(): string {
+  if (firstSessionActive()) {
+    if (clientState.carryEgg.active && clientState.carryEgg.atHome) return 'You are home! Press Hatch to hatch your egg.'
+    const route = getArrowInstruction()
+    if (route) return route
+  }
+  return firstSessionHud.task
+}
+
 function FirstSessionTask() {
   const hud = firstSessionHud
+  const task = firstSessionTaskText()
   const now = Date.now()
-  if (!hud.task || bigUiOpen()) {
-    if (!hud.task) taskShown = ''
+  if (!task || bigUiOpen()) {
+    if (!task) taskShown = ''
     return <UiEntity />
   }
-  if (hud.task !== taskShown) {
-    taskShown = hud.task
+  // Forced notices share this row. Resume the persistent chapter card after
+  // the notice; tutorial route instructions themselves never enter that queue.
+  if (clientState.currentToast && clientState.currentToast.until > now) return <UiEntity />
+  if (task !== taskShown) {
+    taskShown = task
     taskShownAt = now
   }
   const layout = actionHudLayout()
@@ -2946,7 +2960,7 @@ function FirstSessionTask() {
               uiBackground={{ color: withAlpha(TOAST_CREAM, e) }}
             >
               <Label value={`CHAPTER ${hud.chapter}/${FIRST_SESSION_CHAPTERS}`} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
-              <Label value={hud.task} fontSize={S(15)} color={withAlpha(PET_UI.ink, e)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: h - S(40) }} />
+              <Label value={task} fontSize={S(15)} color={withAlpha(PET_UI.ink, e)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: h - S(40) }} />
             </UiEntity>
           </UiEntity>
         </UiEntity>

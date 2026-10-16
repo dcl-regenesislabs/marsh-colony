@@ -70,7 +70,6 @@ export function startFeedTask(): void {
   clientState.feedTask = { active: true, petId: clientState.activePet.id }
   showArrowTo(Transform.get(tree).position, 'feed')
   clientState.petPanelOpen = false // the panel covers the screen; the errand is out in the world
-  pushToast('Follow the green arrow to the tree!')
 }
 
 /** Drop the errand (arrow off). Used by the BACK button and by the guards below. */
