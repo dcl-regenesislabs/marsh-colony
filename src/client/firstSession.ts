@@ -516,8 +516,14 @@ function advance(dt: number): void {
       }
       if (breatheLeft <= 0) playTime += dt
       const rounds = (p?.counters['playCount'] ?? 0) - playsAtStart
-      // One fetch is enough: once the player leaves Fetch (or never plays), move on.
-      if (!clientState.fetch.active && (rounds >= 1 || playTime >= PLAY_FALLBACK_SECONDS)) goTo('grow', 2)
+      const st = clientState.fetch
+      // One fetch is the whole lesson, and it's a long minigame — don't make the
+      // player hunt for the Back button. The moment the pet brings the ball back
+      // once (and nothing is mid-throw), close Fetch for them, exactly as Back
+      // would, so the tutorial moves straight on instead of dragging.
+      if (st.active && rounds >= 1 && !st.busy && !st.charging) st.active = false
+      // Move on once Fetch is closed (one round done, or the player never played).
+      if (!st.active && (rounds >= 1 || playTime >= PLAY_FALLBACK_SECONDS)) goTo('grow', 2)
       return
     }
     case 'grow': {
