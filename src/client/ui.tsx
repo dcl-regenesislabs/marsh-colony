@@ -954,6 +954,15 @@ function RemotePetPanel() {
   const pad = Math.round(64 * k)
   const contentW = w - pad * 2
   const close = () => (clientState.viewingPetAddress = null)
+  // You can only offer a pet you actually have. With no slotted pet (e.g. you
+  // donated yours to the Ark) the Swap button is disabled, not just a toast on
+  // tap — so it's clear up front that a swap needs a pet of your own to offer.
+  const canSwap = !!clientState.activePet && !hasPendingHatchling()
+  const swapLabel = canSwap
+    ? `Propose Swap  ·  ${clientState.activePet?.name ?? ''}`
+    : hasPendingHatchling()
+      ? 'Finish with your new pet first'
+      : 'Adopt a pet to swap'
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
@@ -990,15 +999,17 @@ function RemotePetPanel() {
           />
           <PillButton
             id="propose_swap"
-            label={`Propose Swap  ·  ${clientState.activePet ? clientState.activePet.name : '—'}`}
+            label={swapLabel}
             shape="pass"
             color="purple"
+            disabled={!canSwap}
             width={contentW}
             height={S(56)}
             fontSize={S(19)}
             margin={{ top: S(10) }}
             onClick={() => {
               // Offer YOUR active pet for theirs; the server forwards it for approval.
+              // Disabled when you have no pet, so this guard is only defensive.
               if (!clientState.activePet || hasPendingHatchling()) {
                 pushToast('Select one of your pets first to offer it.')
                 return
