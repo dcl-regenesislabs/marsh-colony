@@ -674,6 +674,22 @@ function firstSessionSystem(dt: number): void {
   // Once the dialog is closed, the objective stays on screen until it is done.
   firstSessionHud.task = heard && !clientState.dialog.open ? objective : ''
 
+  // Lost on the very first step with no pet — they closed every UI before
+  // adopting, or hit Discard instead of Keep on the first egg and don't know
+  // what to do. Point them back to the Caretaker (tapping him re-opens adopt).
+  // Only when nothing is mid-flight (no egg to carry, nothing hatching, no
+  // Keep/Discard pending); FirstSessionTask hides this while any panel/dialog
+  // is open, so it surfaces exactly when they're stranded on an empty screen.
+  const p = clientState.player
+  const introStuck =
+    step === 'intro' &&
+    !clientState.activePet &&
+    !p?.hatchling &&
+    !clientState.carryEgg.active &&
+    !clientState.hatch.active &&
+    !getEggPending()
+  if (introStuck) firstSessionHud.task = 'Talk to the Caretaker to get your first pet!'
+
   // No arrows: the player finds things. Only the right button pulses — the pet
   // panel's once it is open, My Pets right away.
   const button = heard ? BUTTON[step] : undefined
