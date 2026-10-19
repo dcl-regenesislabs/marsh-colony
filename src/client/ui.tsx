@@ -424,7 +424,7 @@ function CoinsBar(props: { height: number }) {
           value={`${Math.floor(p.currency)}`}
           fontSize={mobile() ? S(24) : S(22)}
           color={PET_UI.ink}
-          textAlign="middle-right"
+          textAlign="middle-center"
           textWrap="nowrap"
           uiTransform={{ width: textW, height: h }}
         />
@@ -1929,6 +1929,7 @@ function InventoryPanel() {
   const t2 = p?.inventory.tier2 ?? 0
   const potions = p?.inventory.rarityPotions ?? 0
   const coins = p?.currency ?? 0
+  const coinStr = `${Math.floor(coins)}`
   // The Rarity Potion is the only way to buy the breeding consumable while the
   // Shop is suspended (SideButtons() is empty). It's TAPPED to buy (150 coins) —
   // it's spent later by the breed that toggles it on, not "used" from here.
@@ -1965,6 +1966,21 @@ function InventoryPanel() {
           <InvCard key="inv-potion" id="use_potion" title={`${Cfg.RARITY_POTION_LABEL}  ${Cfg.RARITY_POTION_PRICE}`} bowlSrc="assets/images/revamp/potion.png" bowlAspect={1} bowlScale={0.56} bowlTop={0.18} count={potions} enabled={potions > 0} onClick={() => pushToast('Rarity Potions are used when breeding')} />
           <BuyButton id="buy_potion" width={buyW} enabled={canAffordPotion} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
         </InvColumn>
+      </UiEntity>
+      {/* Opening Inventory hides the top bar, so the player can't see their balance
+          while shopping. Mirror it at the base: coin icon + current coins, so BUY
+          prices make sense without closing the panel. Anchored absolutely to the
+          panel base (not in flow) — Bevy's flex column pushed an in-flow row too
+          low — and centered as a fixed-width icon+number block so it reads centered
+          on both renderers regardless of how many digits the balance has. */}
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { bottom: S(30), left: 0 }, width: '100%', height: S(44), flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}
+      >
+        <UiEntity uiTransform={{ width: S(34), height: S(34), margin: { right: S(8) } }} uiBackground={{ texture: { src: REWARD_COIN_ICON }, textureMode: 'stretch' }} />
+        {/* Width tracks the digit count so the icon+number block hugs its content —
+            a fixed-width label left empty slack that pushed the number off-centre,
+            worse on mobile where S() scales larger. Tight block → truly centred. */}
+        <Label value={coinStr} fontSize={S(28)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: S(coinStr.length * 17 + 6), height: S(40) }} />
       </UiEntity>
     </RevampPanel>
   )
