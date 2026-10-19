@@ -424,7 +424,7 @@ function CoinsBar(props: { height: number }) {
           value={`${Math.floor(p.currency)}`}
           fontSize={mobile() ? S(24) : S(22)}
           color={PET_UI.ink}
-          textAlign="middle-center"
+          textAlign="middle-right"
           textWrap="nowrap"
           uiTransform={{ width: textW, height: h }}
         />
