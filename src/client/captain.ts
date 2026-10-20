@@ -46,7 +46,8 @@ function captainIntro(): string[] {
   return [
     `Welcome aboard, ${playerName()}! This Ark will carry our companions to a new colony among the stars.`,
     'Bring me an Adult pet and it will board the Ark. Rarer pets earn you more XP and coins — and your very first donation earns you the Caretaker Head wearable!',
-    `When ${s.goal} pets are aboard, the Ark launches and everyone who sent a pet receives a special wearable. ${s.donated} / ${s.goal} aboard so far!`
+    `When ${s.goal} pets are aboard, the Ark launches and everyone who sent a pet receives a special wearable. ${s.donated} / ${s.goal} aboard so far!`,
+    'Keep breeding to discover amazing creatures, climb the leaderboard and get more wearables!'
   ]
 }
 
