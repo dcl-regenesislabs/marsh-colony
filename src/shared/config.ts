@@ -28,11 +28,14 @@ export const DEV_SKIP_SERVER_GATE = false
  * so the real save is left untouched and each reload starts over. Must be
  * `false` to ship.
  */
-/** Game toast notifications (pushToast + server notes). Off: playtests found
- *  them too heavy. Arrow route instructions bypass this flag; the first
- *  session also has its own sticky objective toast
- *  (FirstSessionTask in ui.tsx), which this flag does not affect. */
-export const GAME_TOASTS_ENABLED = false
+/** Game toast notifications (pushToast + server notes). ON for normal play, but
+ *  pushToast still suppresses them DURING the first session (clientState.firstSession),
+ *  where the Caretaker's sticky objective bar is the only guide. So a returning
+ *  player — and a player who just finished the tutorial — gets ambient/server
+ *  toasts (e.g. "You need a second Adult pet to breed with"), while the tutorial
+ *  stays clean. Forced toasts (arrow routes, tutorial gates) bypass this flag.
+ *  Set to false to kill all non-forced toasts everywhere. */
+export const GAME_TOASTS_ENABLED = true
 
 export const DEBUG_FORCE_FIRST_SESSION = false
 

@@ -454,9 +454,11 @@ export function presenceFor(address: string): PresenceEntry | undefined {
 }
 
 /** Queue a lightweight notice. Tutorial gates and arrow route instructions pass
- * `force` so the player gets guidance without re-enabling ambient/server toasts. */
+ * `force` so they show even where ambient/server toasts are suppressed: globally
+ * when GAME_TOASTS_ENABLED is off, and always during the first session, where the
+ * Caretaker's objective bar is the only guide (same gate as showHint). */
 export function pushToast(message: string, kind: string = 'info', force = false): void {
-  if (!force && !GAME_TOASTS_ENABLED) return // suspended (see config)
+  if (!force && (!GAME_TOASTS_ENABLED || clientState.firstSession)) return // suspended (see config)
   clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }
