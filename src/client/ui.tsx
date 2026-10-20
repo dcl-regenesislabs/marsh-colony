@@ -873,8 +873,12 @@ function PetPanel() {
           disabled={off('breed')}
           pulse={unlocked}
           onClick={() => {
+            // These fire with the Pet panel open, so a plain toast is invisible
+            // (Toasts() hard-returns under bigUiOpen) and would also replay later
+            // once the panel closes (#186). Route them through the in-panel
+            // BreedNoticePill (#384) so the player reads them AT tap time.
             if (!unlocked) {
-              pushToast('Grow your pet to Adult to unlock breeding!')
+              showBreedNotice('Grow your pet to Adult to unlock breeding!')
               return
             }
             // First session: the Caretaker lends his own pet, so no partner check.
@@ -883,11 +887,11 @@ function PetPanel() {
               return
             }
             if (otherPets.length === 0) {
-              pushToast('You need a second pet to breed with.')
+              showBreedNotice('You need a second pet to breed with.')
               return
             }
             if (!partner) {
-              pushToast('You need a second Adult pet to breed with.')
+              showBreedNotice('You need a second Adult pet to breed with.')
               return
             }
             // New flow: carry this pet to the breeding nest, place it, pick the
@@ -914,6 +918,9 @@ function PetPanel() {
           }}
         />
       </UiEntity>
+      {/* In-panel notice for the Breed button's tap-time rejections (adult /
+          second-pet requirements) — a toast can't show over this open panel. */}
+      <BreedNoticePill marginTop={S(10)} />
     </PetHudCard>
   )
 }
