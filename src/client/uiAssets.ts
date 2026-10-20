@@ -35,6 +35,7 @@ const STATIC_UI_ASSETS: readonly string[] = [
   'assets/images/revamp/choose_partner_panel.png',
   'assets/images/revamp/board_ark.png',
   'assets/images/revamp/ark_lifted.png',
+  'assets/images/revamp/ark_thanks.png',
   'assets/images/revamp/adopt_choose_panel.png',
   'assets/images/revamp/adopt_name_panel.png',
   'assets/images/revamp/pet_actions_panel.png',

@@ -4629,26 +4629,33 @@ function WearablePreview(props: { key?: string; wearableId: string }) {
   )
 }
 
+// Same revamp frame as the other Ark panels, with "Thank you!" + the Ark icon
+// baked in. The subtitle names the pet, so it's a Label set where the other
+// panels bake theirs (texture y ~144), in the same muted brown.
+const ARK_THANKS_PANEL = 'assets/images/revamp/ark_thanks.png'
+const ARK_THANKS_CONTENT_TOP = 138 // the subtitle line, right under the baked title
+const ARK_SUBTITLE_COLOR = { r: 0.61, g: 0.47, b: 0.4, a: 1 } as Color
+
 function ArkThanksPanel() {
   const r = clientState.ark.thanks
   if (!r) return <UiEntity />
+  const width = navPanelWidth()
+  const textW = width - S(120)
   const btnW = S(190)
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
-  const height = S(560)
   return (
-    <PetHudModal title="Thank you!" subtitle={`${r.petName} boarded the Ark.`} width={S(620)} height={height} onClose={() => closeArkThanks()}>
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
-        <Label value={`+${r.xp} Caretaker XP  ·  +${r.coins} coins`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30) }} />
-        <ArkProgress width={S(420)} />
-        {r.firstWearableId !== '' && (
-          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(10) } }}>
-            <Label value="First donation! You'll receive this wearable:" fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
-            <WearablePreview wearableId={r.firstWearableId} />
-          </UiEntity>
-        )}
-        <PillButton id="ark_thanks_ok" label="Great!" shape="half" color="green" width={btnW} height={btnH} pulse margin={{ top: S(10) }} onClick={() => closeArkThanks()} />
-      </UiEntity>
-    </PetHudModal>
+    <RevampPanel src={ARK_THANKS_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={ARK_THANKS_CONTENT_TOP} onClose={() => closeArkThanks()}>
+      <Label value={`${r.petName} boarded the Ark.`} fontSize={S(20)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" uiTransform={{ width: textW, height: S(28) }} />
+      <Label value={`+${r.xp} Caretaker XP  ·  +${r.coins} coins`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) } }} />
+      <ArkProgress width={width - S(200)} />
+      {r.firstWearableId !== '' && (
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(8) } }}>
+          <Label value="First donation! You'll receive this wearable:" fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+          <WearablePreview wearableId={r.firstWearableId} />
+        </UiEntity>
+      )}
+      <PillButton id="ark_thanks_ok" label="Great!" shape="half" color="green" width={btnW} height={btnH} pulse margin={{ top: S(6) }} onClick={() => closeArkThanks()} />
+    </RevampPanel>
   )
 }
 
