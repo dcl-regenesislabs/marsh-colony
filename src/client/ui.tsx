@@ -3355,18 +3355,63 @@ function FetchOverlay() {
 // single-axis left/right button, since the lane only allows that anyway.
 // uiInputBinding holds the action down for as long as the button is pressed,
 // same as a native on-screen button.
+/** A lightweight desktop reticle for Pepito's chase. Green means the rock's
+ * soft lock has found Pepito; it is only possible while the player is charging.
+ * Mobile keeps only the Explorer's native crosshair, which remains unobstructed. */
+function PepitoAimReticle(props: { locked: boolean; charging: boolean }) {
+  const size = S(70)
+  const corner = S(18)
+  const stroke = S(3)
+  const ring = size - S(24)
+  const isLocked = props.charging && props.locked
+  const tint = isLocked
+    ? { r: 0.62, g: 0.96, b: 0.37, a: 0.98 }
+    : { r: 1, g: 0.92, b: 0.68, a: 0.82 }
+
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '50%', left: '50%' }, margin: { top: -size / 2, left: -size / 2 }, width: size, height: size, pointerFilter: 'none' }}>
+      {/* Open corners keep the center of the view unobstructed while aiming. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: corner, height: stroke, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: stroke, height: corner, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, right: 0 }, width: corner, height: stroke, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, right: 0 }, width: stroke, height: corner, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: corner, height: stroke, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 0, left: 0 }, width: stroke, height: corner, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 0, right: 0 }, width: corner, height: stroke, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 0, right: 0 }, width: stroke, height: corner, borderRadius: stroke / 2 }} uiBackground={{ color: tint }} />
+      {isLocked && (
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { top: '50%', left: '50%' }, margin: { top: -ring / 2, left: -ring / 2 }, width: ring, height: ring, borderRadius: ring / 2, borderWidth: S(2), borderColor: tint }}
+          />
+          <Label
+            value="PEPITO"
+            fontSize={S(12)}
+            color={tint}
+            textAlign="middle-center"
+            uiTransform={{ positionType: 'absolute', position: { top: size + S(4), left: -S(15) }, width: size + S(30), height: S(16) }}
+          />
+        </UiEntity>
+      )}
+    </UiEntity>
+  )
+}
+
 // Pepito's rock uses the same hold/release language as Fetch. Mobile keeps the
 // native custom button and its vertical meter; desktop has compact keyboard and
 // mouse guidance instead of a center-screen button.
 function PepitoRockChargeOverlay() {
   const st = clientState.pepitoChase
-  if (!st.active || clientState.dialog.open) return <UiEntity />
+  // Once the rock has left the player's hand, there is no target to aim at.
+  // Keep the screen clear until it either lands or knocks Pepito's potion down.
+  if (!st.active || st.rockBusy || clientState.dialog.open) return <UiEntity />
   const isM = mobile()
   const charging = st.charging
   const locked = st.targetLocked
   const pct = Math.round(st.charge * 100)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
+      {!isM && <PepitoAimReticle locked={locked} charging={charging} />}
       {charging && isM && (
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { bottom: S(barBottomRaw), right: S(barRightRaw) }, width: S(14), height: S(90), borderRadius: S(7), pointerFilter: 'none' }}

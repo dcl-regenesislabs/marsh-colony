@@ -125,7 +125,7 @@ export function openCureDialog(onDone?: () => void, onPage?: (page: number) => v
  * enabled, so the player receives the objective from the Caretaker in-world. */
 export const PEPITO_STOLE_DIALOG: string[] = [
   'That Pepito stole your cure! Look — it is circling above the Care Center with it.',
-  'Use a rock to knock it down. Hit Pepito and it will drop the medicine!'
+  'Throw rocks at Pepito to make it drop the stolen medicine. Aim at it, then hold and release the rock throw control.'
 ]
 
 export function openPepitoStoleDialog(onDone?: () => void): void {
