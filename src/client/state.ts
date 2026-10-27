@@ -505,6 +505,9 @@ export const actions = {
     console.log('[Client] -> requestState')
     room.send('requestState', { guestName: p?.name ?? 'Guest' })
   },
+  setLanguage(language: 'en' | 'es' | 'pt'): void {
+    room.send('setLanguage', { language })
+  },
   requestLeaderboard(): void {
     room.send('requestLeaderboard', {})
   },

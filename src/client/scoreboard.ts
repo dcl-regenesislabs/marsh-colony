@@ -28,6 +28,7 @@ import {
 import { getPlayer } from '@dcl/sdk/players'
 import { Vector3, Quaternion, Color4 } from '@dcl/sdk/math'
 import { actions, clientState } from './state'
+import { t } from './i18n'
 import { mobile } from './ui/theme'
 import { requestPlayerFace, getPlayerFaceUrl } from './snapshots'
 
@@ -153,7 +154,7 @@ function refreshBlock(b: Block): void {
       TextShape.getMutable(row.name).text = `#${i + 1}`
       TextShape.getMutable(row.name).textColor = DIM_COLOR
       TextShape.getMutable(row.dash).text = DASHES
-      TextShape.getMutable(row.xp).text = 'soon'
+      TextShape.getMutable(row.xp).text = t('leaderboard.soon')
       TextShape.getMutable(row.xp).textColor = DIM_COLOR
       VisibilityComponent.getMutable(row.face).visible = false
     })

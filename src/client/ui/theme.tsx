@@ -2,10 +2,17 @@
 // scaling, outlined labels, tactile (animated) buttons, pills, stat bars, and a
 // panel shell that blocks the mobile joystick. Inspired by the cozy-farm UI.
 
-import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { Label as EcsLabel, UiEntity } from '@dcl/sdk/react-ecs'
 import { AudioSource, engine, Entity, Transform, UiCanvasInformation } from '@dcl/sdk/ecs'
 import { getExplorerInformation } from '~system/Runtime'
 import { getPress, triggerPress, attentionPulse } from './anim'
+import { translateText } from '../i18n'
+
+// Shared primitives are used by screens outside ui.tsx too. Translate at
+// render time so an Explorer Settings change updates these captions instantly.
+function Label(props: any) {
+  return <EcsLabel {...props} value={translateText(String(props.value ?? ''))} />
+}
 
 // Generic UI tap/click feedback — played from every shared button/close/nav
 // primitive below so it's heard across the whole HUD without wiring each

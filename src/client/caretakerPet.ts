@@ -12,6 +12,7 @@ import { clientState } from './state'
 import { canStartPetInteraction, playPetVoice } from './pet'
 import { openLegendaryCreatureDialog } from './ui/dialog'
 import { firstSessionAllowsInteraction } from './firstSession'
+import { onLanguageChanged, translateText } from './i18n'
 
 // pepito_fluflito.glb = PepitoArmature body + Fluflito head (see creatureSkins
 // SKIN_NODES). Its clips ride the Pepito rig (Pepito_Idle, Pepito_Walk, …).
@@ -33,14 +34,10 @@ const SWAY_DEG = 16 // gentle yaw sway amplitude
 const SWAY_PERIOD_S = 5.0
 const TAU = Math.PI * 2
 
-function spawnFamiliar(anchor: Vector3, baseRot: Quaternion): Entity {
-  const e = engine.addEntity()
-  Transform.create(e, { position: Vector3.create(anchor.x, anchor.y, anchor.z), scale: Vector3.create(SCALE, SCALE, SCALE), rotation: baseRot })
-  // POINTER-only collider: clickable (opens the teaser dialog) but it never blocks
-  // the player's movement.
-  GltfContainer.createOrReplace(e, { src: modelForSpecies(SPECIES), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
+function registerFamiliarPointer(e: Entity): void {
+  pointerEventsSystem.removeOnPointerDown(e)
   pointerEventsSystem.onPointerDown(
-    { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: 'Examine', maxDistance: 16, showHighlight: true } },
+    { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Examine'), maxDistance: 16, showHighlight: true } },
     () => {
       // GUARD: never open over another dialog or interaction. In particular the
       // first-boot intro dialog owns an onDone that unfreezes the player + opens
@@ -53,6 +50,15 @@ function spawnFamiliar(anchor: Vector3, baseRot: Quaternion): Entity {
       openLegendaryCreatureDialog()
     }
   )
+}
+
+function spawnFamiliar(anchor: Vector3, baseRot: Quaternion): Entity {
+  const e = engine.addEntity()
+  Transform.create(e, { position: Vector3.create(anchor.x, anchor.y, anchor.z), scale: Vector3.create(SCALE, SCALE, SCALE), rotation: baseRot })
+  // POINTER-only collider: clickable (opens the teaser dialog) but it never blocks
+  // the player's movement.
+  GltfContainer.createOrReplace(e, { src: modelForSpecies(SPECIES), visibleMeshesCollisionMask: ColliderLayer.CL_POINTER, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
+  registerFamiliarPointer(e)
   // Play WALK, not idle: it's the liveliest clip (idle is nearly static), so the
   // creature reads as animated while it hovers. NB the rig is a ground walk cycle
   // (Head/Neck/Arms/Legs/Tail — there are no wing bones); played in the air over
@@ -70,6 +76,9 @@ export function setupCaretakerPet(): void {
   let anchor = Vector3.Zero()
   let baseRot = Quaternion.Identity()
   let t = 0
+  onLanguageChanged(() => {
+    if (e !== null) registerFamiliarPointer(e)
+  })
   engine.addSystem((dt: number) => {
     if (e === null) {
       // Wait for the Caretaker to load, then anchor to its live transform (once).

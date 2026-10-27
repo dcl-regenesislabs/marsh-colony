@@ -39,6 +39,7 @@ import { petTouchControlsAreVisible } from './touchControls'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 import { showMushroomGlow } from './mushroomGlow'
+import { translateText } from './i18n'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
@@ -205,7 +206,7 @@ function findMushroom(): Entity | null {
   })
   MeshCollider.setBox(hit, ColliderLayer.CL_NONE)
   pointerEventsSystem.onPointerDown(
-    { entity: hit, opts: { button: InputAction.IA_POINTER, hoverText: 'Pick the mushroom', maxDistance: 16 } },
+    { entity: hit, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Pick the mushroom'), maxDistance: 16 } },
     () => eatMushroom()
   )
   mushroomHit = hit

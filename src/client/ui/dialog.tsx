@@ -9,6 +9,7 @@ import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { advanceDialog, clientState, openDialog, CAPTAIN_NPC_NAME } from '../state'
 import { S, TactileButton } from './theme'
+import { translateText } from '../i18n'
 
 const SHEET = 'assets/images/revamp/dialogue.png'
 const SHEET_W = 1024
@@ -136,7 +137,7 @@ export function DialogBox() {
   const d = clientState.dialog
   if (!d.open) return <UiEntity />
   const isLast = d.page >= d.pages.length - 1
-  const body = d.pages[d.page] ?? ''
+  const body = translateText(d.pages[d.page] ?? '')
   const isAdoptCta = isLast && d.adoptCta
 
   const bubbleW = S(880)
@@ -185,8 +186,8 @@ export function DialogBox() {
           <UiEntity uiTransform={{ width: avatarW, height: avatarH }} uiBackground={{ texture: { src: portraitFor(d.npcName) }, textureMode: 'stretch' }} />
           <UiEntity uiTransform={{ width: textColW, height: avatarH, flexDirection: 'column', margin: { left: gapAvatarText } }}>
             <UiEntity uiTransform={{ width: textColW, height: titleH, margin: { top: S(14) }, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Label value={d.npcName} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ height: titleH }} />
-              {d.tag ? <Label value={d.tag.toUpperCase()} fontSize={S(15)} color={LGT.body} textAlign="middle-right" uiTransform={{ height: titleH, margin: { right: S(8) } }} /> : null}
+              <Label value={translateText(d.npcName)} fontSize={S(28)} color={LGT.title} textAlign="middle-left" uiTransform={{ height: titleH }} />
+              {d.tag ? <Label value={translateText(d.tag).toUpperCase()} fontSize={S(15)} color={LGT.body} textAlign="middle-right" uiTransform={{ height: titleH, margin: { right: S(8) } }} /> : null}
             </UiEntity>
             <Label value={body} fontSize={S(18)} color={LGT.body} textAlign="top-left" textWrap="wrap" uiTransform={{ width: textColW, height: bodyTextH, margin: { top: rowGap } }} />
 

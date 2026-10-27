@@ -5,7 +5,7 @@
 //  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
-import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
+import ReactEcs, { InteractableArea, ReactEcsRenderer, Label as EcsLabel, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import { cancelArkRedeem, confirmArkRedeem, openArkConfirm, startArkRedeem } from './arkRedeem'
@@ -68,6 +68,7 @@ import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 import { pepitoStealHidesHud } from './pepitoSteal'
 import { areCriticalUiAssetsReady } from './uiAssets'
+import { getLanguage, languageName, selectDesktopLanguage, t, translateText, usesPlatformLanguage, type AppLanguage } from './i18n'
 import {
   ARK_HANDOVER_TUNER_ENABLED,
   ARK_LAUNCH_DEBUG_ENABLED,
@@ -81,6 +82,13 @@ import {
   toggleArkHandoverPause,
   type ArkTuneKey
 } from './arkCinematics'
+
+// Existing HUD copy predates localization and is spread across this large
+// renderer. Keeping this narrow adapter means it is translated at render time
+// (including a live Explorer language change) without touching gameplay state.
+function Label(props: any) {
+  return <EcsLabel {...props} value={translateText(String(props.value ?? ''))} />
+}
 
 export type Panel =
   | 'none'
@@ -126,7 +134,10 @@ const uiState = {
   // Choose a Partner (breeding) page — same 4-per-row paging as My Pets.
   breedPickerPage: 0,
   // Ark (Captain) panel: pet-picker page.
-  arkPage: 0
+  arkPage: 0,
+  // Mobile explains the Explorer setting; desktop/Bevy uses this same modal as
+  // a persisted in-scene language picker.
+  languageInfoOpen: false
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
@@ -350,6 +361,7 @@ export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 
 function bigUiOpen(): boolean {
   return (
     uiState.panel !== 'none' ||
+    uiState.languageInfoOpen ||
     clientState.dialog.open ||
     clientState.petPanelOpen ||
     clientState.viewingPetAddress !== null ||
@@ -399,7 +411,7 @@ function NameLevelBar(props: { height: number }) {
         uiTransform={{ positionType: 'absolute', position: { left: circleLeft, top: circleTop }, width: circleW, height: circleH }}
       />
       <UiEntity uiTransform={{ positionType: 'absolute', position: { left: circleLeft + circleW + S(10), top: 0 }, width: textW, height: h, flexDirection: 'column', justifyContent: 'center' }}>
-        <Label value={`${playerName()}  ·  Lv ${lvl}`} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: textW, height: S(18) }} />
+        <Label value={t('pet.level', { name: playerName(), level: lvl })} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: textW, height: S(18) }} />
         <UiEntity uiTransform={{ width: Math.round(textW * 0.55), height: S(10), borderRadius: S(5), margin: { top: S(3) } }} uiBackground={{ color: LOC.tile }}>
           <UiEntity uiTransform={{ width: `${Math.round(frac * 100)}%`, height: '100%', borderRadius: S(5) }} uiBackground={{ color: C.gold }} />
         </UiEntity>
@@ -477,6 +489,9 @@ function TopBars() {
     !clientState.breed.active &&
     !clientState.hatch.active
   const iconsW = gap + iconSize + gap + iconSize // music + album (leaderboard is now the physical in-world board)
+  const languageGap = S(10)
+  const languageFlagW = (mobile() ? S(60) : S(48)) + S(12)
+  const languageFlagH = (mobile() ? S(40) : S(32)) + S(12)
   const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
   const rightShift = S(TOP_HUD_CENTER_SHIFT) // nudged off-center — plenty of clearance either side of this row
   return (
@@ -495,6 +510,9 @@ function TopBars() {
           <TactileButton id="hud_album" label="" texture={ALBUM_ICON} width={iconSize} height={iconSize} onClick={() => ui.openAlbum()} />
         </UiEntity>
       ) : null}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round((h - languageFlagH) / 2), right: -(languageGap + languageFlagW) }, width: languageFlagW, height: languageFlagH }}>
+        <LanguageIndicator />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -618,9 +636,9 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
       </UiEntity>
       <UiEntity uiTransform={{ width: textW, flexDirection: 'column', justifyContent: 'center' }}>
         {props.name !== undefined && (
-          <Label value={`${props.name}  ·  Lv ${props.level}`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
+          <Label value={t('pet.level', { name: props.name, level: props.level ?? 1 })} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
         )}
-        <Label value={Cfg.rarityLabel(props.rarity).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
+        <Label value={t(`rarity.${props.rarity}`).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
         <StageProgress size={props.size} color={rarityColor} />
       </UiEntity>
     </UiEntity>
@@ -860,10 +878,10 @@ function PetPanel() {
           pill (its 4:1 cell matches a third of the row). Breed and the Ark are
           for Adults only. */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="half" color="pink" width={thirdW} height={thirdH} fontSize={S(16)} disabled={locked || off('pet')} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
+        <PillButton id="pet_gesture" label={t('pet.action.pet')} shape="half" color="pink" width={thirdW} height={thirdH} fontSize={S(16)} disabled={locked || off('pet')} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
         <PillButton
           id="breed_teaser"
-          label={unlocked ? 'Breed' : 'Breed  ·  Adult'}
+          label={unlocked ? 'Breed' : t('pet.action.breedLocked')}
           shape="half"
           color={unlocked ? 'purple' : 'gray'}
           width={thirdW}
@@ -901,7 +919,7 @@ function PetPanel() {
         />
         <PillButton
           id="ark_send"
-          label={unlocked ? 'Send to Ark' : 'Ark  ·  Adult'}
+          label={unlocked ? 'Send to Ark' : t('pet.action.arkLocked')}
           shape="half"
           color={unlocked ? 'green' : 'gray'}
           width={thirdW}
@@ -983,7 +1001,7 @@ function RemotePetPanel() {
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round((PASSPORT_TEX.top + 64) * k), left: pad }, width: contentW, flexDirection: 'column', alignItems: 'center' }}
         >
-          <Label value={`${entry.name}  ·  Lv ${entry.level}`} fontSize={S(26)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(40), margin: { bottom: S(8) } }} />
+          <Label value={t('pet.level', { name: entry.name, level: entry.level })} fontSize={S(26)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(40), margin: { bottom: S(8) } }} />
           <PetIdentityRow species={entry.species} rarity={entry.rarity} size={entry.size} width={contentW} ring />
           <Label value="Mood" fontSize={S(15)} color={ALBUM_INK} textAlign="middle-center" uiTransform={{ width: contentW, height: S(22) }} />
           <PassportBar value={entry.mood} color={C.happy} width={contentW} height={S(22)} />
@@ -2113,7 +2131,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
         }
       />
       <Label value={pet.name} fontSize={rosterPx(17)} color={isActive ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
-      <Label value={`Lv ${pet.petLevel}`} fontSize={rosterPx(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+      <Label value={t('pet.level.short', { level: pet.petLevel })} fontSize={rosterPx(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
     </PetGridCard>
   )
 }
@@ -2940,7 +2958,10 @@ function firstSessionTaskText(): string {
 
 function FirstSessionTask() {
   const hud = firstSessionHud
-  const task = firstSessionTaskText()
+  // Tutorial objectives can come from the state machine or the route arrow.
+  // Translate here explicitly so neither path can bypass the regular Label
+  // adapter when the objective changes while the scene is running.
+  const task = translateText(firstSessionTaskText())
   const now = Date.now()
   if (!task || bigUiOpen()) {
     if (!task) taskShown = ''
@@ -2982,7 +3003,7 @@ function FirstSessionTask() {
               uiTransform={{ width: '100%', height: '100%', borderRadius: h / 2 - border, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: S(44), right: S(44) } }}
               uiBackground={{ color: withAlpha(TOAST_CREAM, e) }}
             >
-              <Label value={`CHAPTER ${hud.chapter}/${FIRST_SESSION_CHAPTERS}`} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
+              <Label value={t('tutorial.chapter', { current: hud.chapter, total: FIRST_SESSION_CHAPTERS })} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
               <Label value={task} fontSize={S(15)} color={withAlpha(PET_UI.ink, e)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: h - S(40) }} />
             </UiEntity>
           </UiEntity>
@@ -4331,7 +4352,7 @@ function PartnerCard(props: { key?: string; pet: PetData }) {
         uiBackground={img ? { texture: { src: img }, textureMode: 'stretch', color: adult ? undefined : { r: 1, g: 1, b: 1, a: 0.5 } } : { color: speciesColor(pet.species) }}
       />
       <Label value={pet.name} fontSize={rosterPx(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
-      <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+      <Label value={adult ? t('pet.level.short', { level: pet.petLevel }) : 'Not Adult'} fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
     </PetGridCard>
   )
 }
@@ -4457,7 +4478,7 @@ function ArkPetCard(props: { key?: string; pet: PetData }) {
       />
       <Label value={pet.name} fontSize={rosterPx(17)} color={blocked ? PET_UI.muted : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
       <Label
-        value={blocked || Cfg.rarityLabel(pet.rarity)}
+        value={blocked || t(`rarity.${pet.rarity}`)}
         fontSize={rosterPx(13)}
         color={blocked ? PET_UI.muted : rarityColor(pet.rarity)}
         textAlign="middle-center"
@@ -4967,6 +4988,183 @@ function LoadingGate() {
 }
 
 // ---------------------------------------------------------------------------
+// Language indicator + picker. Flags and controls reuse Cozy Farm's shipped
+// artwork and layout. Only the panel background is the Marsh Colony UI frame.
+// ---------------------------------------------------------------------------
+const LANGUAGE_FLAGS_IMG = 'assets/images/revamp/languages.png'
+const LANGUAGE_ATLAS_SIZE = 1024
+const LANGUAGE_FLAG_RECTS: Record<AppLanguage, { x: number; y: number; w: number; h: number }> = {
+  en: { x: 12, y: 450, w: 512, h: 342 },
+  es: { x: 244, y: 60, w: 510, h: 338 },
+  pt: { x: 555, y: 450, w: 457, h: 344 }
+}
+const LANGUAGE_PICKER_BACKGROUND = 'assets/images/revamp/pet_actions_panel.png'
+const LANGUAGE_BUTTON_PRIMARY = 'assets/images/revamp/Type=Primary, State=Focused.png'
+const LANGUAGE_BUTTON_SECONDARY = 'assets/images/revamp/Type=Secondary, State=Default.png'
+// Keep the language panel at the same visual scale as the rest of the desktop
+// HUD (Pet Actions, My Pets and the other revamp cards).  The flag layout is
+// authored on Cozy Farm's 1024px canvas, then fitted inside Marsh's 700px card.
+const LANGUAGE_PICKER_DESIGN_WIDTH = 1024
+const LANGUAGE_PICKER_WIDTH = S(700)
+const LANGUAGE_PICKER_HEIGHT = Math.round(PET_ACTIONS_TEX_H * (LANGUAGE_PICKER_WIDTH / PET_ACTIONS_TEX_W))
+const LS = (value: number) => Math.round(value * (LANGUAGE_PICKER_WIDTH / LANGUAGE_PICKER_DESIGN_WIDTH))
+
+function languageFlagUvs(rect: { x: number; y: number; w: number; h: number }): number[] {
+  const left = rect.x / LANGUAGE_ATLAS_SIZE
+  const right = (rect.x + rect.w) / LANGUAGE_ATLAS_SIZE
+  const top = 1 - rect.y / LANGUAGE_ATLAS_SIZE
+  const bottom = 1 - (rect.y + rect.h) / LANGUAGE_ATLAS_SIZE
+  return [left, bottom, left, top, right, top, right, bottom]
+}
+
+function LanguageFlag(props: { language?: AppLanguage; width?: number; height?: number }) {
+  const language = props.language ?? getLanguage()
+  return (
+    <UiEntity
+      uiTransform={{ width: props.width ?? S(48), height: props.height ?? S(32) }}
+      uiBackground={{ texture: { src: LANGUAGE_FLAGS_IMG, wrapMode: 'clamp' }, textureMode: 'stretch', uvs: languageFlagUvs(LANGUAGE_FLAG_RECTS[language]) }}
+    />
+  )
+}
+
+let languagePickerPreview: AppLanguage = 'en'
+
+function CozyLanguageFlag(props: { language: AppLanguage }) {
+  const selected = languagePickerPreview === props.language
+  const boxSize = selected ? LS(168) : LS(150)
+  const innerMax = boxSize - LS(16)
+  const rect = LANGUAGE_FLAG_RECTS[props.language]
+  const aspect = rect.w / rect.h
+  let width = innerMax
+  let height = Math.round(width / aspect)
+  if (height > innerMax) {
+    height = innerMax
+    width = Math.round(height * aspect)
+  }
+  return (
+    <UiEntity
+      uiTransform={{ width: boxSize, height: boxSize, margin: { left: LS(20), right: LS(20) }, borderWidth: LS(4), borderColor: selected ? { r: 0.85, g: 0.65, b: 0.15, a: 1 } : { r: 0.6, g: 0.4, b: 0.19, a: 0.5 }, borderRadius: LS(16), alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: { r: 1, g: 1, b: 1, a: 0.1 } }}
+      onMouseDown={() => {
+        playUiClick()
+        languagePickerPreview = props.language
+      }}
+    >
+      <LanguageFlag language={props.language} width={width} height={height} />
+    </UiEntity>
+  )
+}
+
+function CozyLanguageButton(props: { label: string; primary?: boolean; width: number; height: number; fontSize: number; onClick: () => void }) {
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
+      <UiEntity
+        uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center', borderRadius: S(8) }}
+        uiBackground={{ texture: { src: props.primary ? LANGUAGE_BUTTON_PRIMARY : LANGUAGE_BUTTON_SECONDARY, wrapMode: 'clamp' }, textureMode: 'stretch' }}
+      >
+        <EcsLabel value={`<b>${props.label}</b>`} fontSize={props.fontSize} color={props.primary ? { r: 1, g: 1, b: 1, a: 1 } : { r: 0.34, g: 0.2, b: 0.1, a: 1 }} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { top: -1, left: 0 }, width: props.width, height: props.height }} />
+      </UiEntity>
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height, pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={props.onClick} />
+    </UiEntity>
+  )
+}
+
+function PlatformLanguageInfo() {
+  // Mobile follows the Explorer language, but keeps Marsh Colony's own frame,
+  // baked close X and safe content margins.
+  const panelW = S(500)
+  const panelH = Math.round(PET_ACTIONS_TEX_H * (panelW / PET_ACTIONS_TEX_W))
+  const MS = (value: number) => Math.round(value * (panelW / LANGUAGE_PICKER_DESIGN_WIDTH))
+  const close = () => {
+    playUiClick()
+    uiState.languageInfoOpen = false
+  }
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}>
+      <UiEntity uiTransform={{ width: panelW, height: panelH, alignItems: 'center', pointerFilter: 'block' }} uiBackground={{ texture: { src: LANGUAGE_PICKER_BACKGROUND, wrapMode: 'clamp' }, textureMode: 'stretch' }}>
+        <EcsLabel value={t('language.notice.title')} fontSize={MS(50)} color={{ r: 0.29, g: 0.17, b: 0.07, a: 1 }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: MS(132), left: 0 }, width: panelW, height: MS(64) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: MS(224), left: Math.round((panelW - MS(130)) / 2) }, width: MS(130), height: MS(88), pointerFilter: 'none' }}>
+          <LanguageFlag width={MS(130)} height={MS(88)} />
+        </UiEntity>
+        <EcsLabel value={t('language.notice.body', { language: languageName() })} fontSize={MS(30)} color={{ r: 0.29, g: 0.17, b: 0.07, a: 1 }} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: MS(332), left: MS(90) }, width: panelW - MS(180), height: MS(210) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: MS(18), left: panelW - MS(132) }, width: MS(116), height: MS(108), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={close} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function DesktopLanguagePicker() {
+  const panelW = LANGUAGE_PICKER_WIDTH
+  const panelH = LANGUAGE_PICKER_HEIGHT
+  const selectW = LS(280)
+  const cancelW = LS(160)
+  const buttonH = LS(70)
+  const gap = LS(6)
+  const totalW = selectW + gap + cancelW
+  const selectLeft = Math.round((panelW - totalW) / 2)
+  const cancelLeft = selectLeft + selectW + gap
+  const close = () => {
+    playUiClick()
+    uiState.languageInfoOpen = false
+  }
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}>
+      <UiEntity uiTransform={{ width: panelW, height: panelH, alignItems: 'center', pointerFilter: 'block' }} uiBackground={{ texture: { src: LANGUAGE_PICKER_BACKGROUND, wrapMode: 'clamp' }, textureMode: 'stretch' }}>
+        <EcsLabel value={t('language.picker.title', {}, languagePickerPreview)} fontSize={LS(38)} color={{ r: 0.29, g: 0.17, b: 0.07, a: 1 }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: LS(160), left: 0 }, width: panelW, height: LS(56) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: LS(280) - Math.round((LS(168) - LS(150)) / 2), left: 0 }, width: panelW, height: LS(168), flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+          <CozyLanguageFlag language="en" />
+          <CozyLanguageFlag language="es" />
+          <CozyLanguageFlag language="pt" />
+        </UiEntity>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: LS(500), left: 0 }, width: panelW, height: buttonH }}>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: selectLeft }, width: selectW, height: buttonH }}>
+            <CozyLanguageButton label={t('language.select', {}, languagePickerPreview)} primary width={selectW} height={buttonH} fontSize={LS(26)} onClick={() => {
+              playUiClick()
+              selectDesktopLanguage(languagePickerPreview)
+              actions.setLanguage(languagePickerPreview)
+              uiState.languageInfoOpen = false
+            }} />
+          </UiEntity>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: cancelLeft }, width: cancelW, height: buttonH }}>
+            <CozyLanguageButton label={t('language.cancel', {}, languagePickerPreview)} width={cancelW} height={buttonH} fontSize={LS(24)} onClick={close} />
+          </UiEntity>
+        </UiEntity>
+        {/* This close target belongs to Marsh Colony's replacement background. */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: LS(18), left: panelW - LS(132) }, width: LS(116), height: LS(108), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={close} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function LanguageInfoModal() {
+  if (!uiState.languageInfoOpen) return null
+  return usesPlatformLanguage() ? <PlatformLanguageInfo /> : <DesktopLanguagePicker />
+}
+
+function LanguageIndicator() {
+  const isMobile = mobile()
+  const flagWidth = isMobile ? S(60) : S(48)
+  const flagHeight = isMobile ? S(40) : S(32)
+  const pad = S(6)
+  const width = flagWidth + pad * 2
+  const height = flagHeight + pad * 2
+  const hudFrame = { r: 0.32, g: 0.2, b: 0.11, a: 0.88 }
+  return (
+    <UiEntity
+      uiTransform={{ width, height, borderRadius: S(8), borderWidth: S(2), borderColor: hudFrame, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: { r: 1, g: 0.93, b: 0.79, a: 0.68 } }}
+      onMouseDown={() => {
+        playUiClick()
+        languagePickerPreview = getLanguage()
+        uiState.languageInfoOpen = true
+      }}
+    >
+      <LanguageFlag width={flagWidth} height={flagHeight} />
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 // Only passive story beats get letterboxing; rubbing the egg and playing the
@@ -5107,6 +5305,7 @@ const Root = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       <CinematicBars />
       {content}
+      <LanguageInfoModal />
       <RewardPopup />
       {UI_DEBUG_MODE && <DebugBrowserBar />}
       <ScreenFadeOverlay />
