@@ -52,6 +52,23 @@ overlay is only acceptable after a visual/design decision for that asset; do
 not stretch or machine-translate a raster atlas in production. Text that is
 already rendered by code is localized now.
 
+## Text-free panel backgrounds
+
+The following non-destructive `_blank` variants are prepared for the first
+code-overlay pass. They retain their existing frame, close button, decorative
+art and transparent corners, but remove the baked text. Do not switch a live
+panel to one of these assets until its title, description and labels are added
+as localized React-ECS text using the local Fredoka fonts:
+
+- `adopt_choose_panel_blank.png`, `adopt_name_panel_blank.png`,
+  `ark_lifted_blank.png`, `ark_thanks_blank.png`, `board_ark_blank.png`,
+  `choose_partner_panel_blank.png`, `inventory_panel_blank.png`,
+  `jukebox_blank.png`, `mypets_panel_blank.png`, `goals_blank.png`.
+
+`goals_blank.png` intentionally also removes the five step labels, counters
+and reward amounts. Its icons and reward chips remain as layout anchors for
+localized code text.
+
 ## Language-picker artwork
 
 The in-game picker reuses Cozy Farm's `languages.png` flag atlas and its primary
