@@ -84,6 +84,13 @@ export const Messages = {
   ackArkLaunch: Schemas.Map({ eventId: Schemas.Int }),
   // Ark: ask for the top-donors ranking (sent when the ranking panel opens).
   requestArkLeaderboard: Schemas.Map({}),
+  // DEBUG only (config.DEBUG_DELIVER_WEARABLE): grant + deliver the first-donation
+  // wearable to me now, to test the Rewards dispenser without playing to it.
+  devDeliverWearable: Schemas.Map({}),
+  // Client -> Server: the client finished claiming this wearable from its Rewards
+  // dispenser (ok=true means the campaign confirmed it), so stop asking. `detail`
+  // carries the API status/body on failure, for diagnosing in the server logs.
+  wearableClaimed: Schemas.Map({ wearableId: Schemas.String, ok: Schemas.Boolean, detail: Schemas.String }),
 
   // ---- Server -> Client ----
   // Coins leaderboard (LeaderboardEntry[] JSON), sent to the requesting client.
@@ -113,7 +120,11 @@ export const Messages = {
   // The Ark just launched (ArkLaunchView JSON, personalized per player).
   arkLaunch: Schemas.Map({ json: Schemas.String }),
   // Top Ark donors (ArkLeaderboard JSON), sent to the requester.
-  arkLeaderboard: Schemas.Map({ json: Schemas.String })
+  arkLeaderboard: Schemas.Map({ json: Schemas.String }),
+  // Server -> Client: please claim this wearable from its Rewards dispenser now.
+  // Delivery runs client-side: the POST uses the player's wallet as beneficiary
+  // and goes unsigned (the dispenser's super key is the authorization).
+  claimWearable: Schemas.Map({ wearableId: Schemas.String })
 }
 
 export const room = registerMessages(Messages)

@@ -409,6 +409,15 @@ const DEBUG_SCREENS: DebugScreen[] = [
     }
   },
   {
+    id: 'wearableReward',
+    label: 'Wearable Won Overlay (3s)',
+    activate: () => {
+      applyFixturePlayer(fakePlayer(), fakePet())
+      // shownAt 0 -> it starts its 3s timer as soon as no big UI is open.
+      clientState.wearableReward = { wearableId: Cfg.ARK_FIRST_DONATION_WEARABLE.id, shownAt: 0 }
+    }
+  },
+  {
     id: 'toasts',
     label: 'Toasts',
     activate: () => {
@@ -436,6 +445,7 @@ function resetAllDebugFlags(): void {
   clientState.viewingPetAddress = null
   clientState.petPanelOpen = false
   clientState.lastSpin = null
+  clientState.wearableReward = null
   clientState.toasts = []
   clientState.currentToast = null
   debugForcePanel('none' as Panel)

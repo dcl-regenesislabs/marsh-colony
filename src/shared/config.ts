@@ -39,6 +39,16 @@ export const GAME_TOASTS_ENABLED = true
 
 export const DEBUG_FORCE_FIRST_SESSION = false
 
+/**
+ * DEBUG: show an on-screen "Deliver wearable" button that grants + delivers the
+ * first-donation wearable (Caretaker Head) to the connected wallet on click, so
+ * the Rewards dispenser can be tested without playing to the first Ark donation.
+ * Hits the REAL Rewards campaign: it mints a real wearable and consumes supply,
+ * and the campaign's one-per-wallet cap means a second click is a no-op. Gates
+ * both the client button and the server handler. Must be `false` to ship.
+ */
+export const DEBUG_DELIVER_WEARABLE = false
+
 // ---------------------------------------------------------------------------
 // Pet speech — what the pet says over its head to nudge the player into a care
 // action. The bubble is NOT on a timer: `need` names the stat that drives the
@@ -842,13 +852,29 @@ export interface ArkWearable {
   name: string
   urn: string // '' until the Rewards campaign exists -> delivery stays pending
   image: string // UI preview (placeholder art until the real thumbnails land)
+  // Rewards campaign UUID — delivery POSTs to {ARK_REWARDS_API}/{campaignId}/rewards.
+  // Leave undefined until the campaign exists -> delivery stays pending.
+  campaignId?: string
+  // Dispenser key for the campaign. Not sensitive for non-captcha campaigns (the
+  // one-per-wallet + supply caps bound any abuse), so kept inline like our other
+  // scenes. Leave undefined until the dispenser exists -> delivery stays pending.
+  campaignKey?: string
 }
+/** Rewards campaigns API base — delivery hits {this}/{campaignId}/rewards (issue #248). */
+export const ARK_REWARDS_API = 'https://rewards.decentraland.org/api/campaigns'
+/** Catalyst realm sent as `catalyst` in the claim body — a required field the
+ *  Rewards API resolves the beneficiary's profile against. */
+export const ARK_REWARDS_CATALYST = 'https://realm-provider-ea.decentraland.org'
 /** Earned on a player's first donation. */
 export const ARK_FIRST_DONATION_WEARABLE: ArkWearable = {
   id: 'caretaker_head',
   name: 'Caretaker Head',
-  urn: '',
-  image: 'assets/images/revamp/caretaker.png'
+  // Marsh Colony collection, item 1 (Caretaker Head helmet).
+  urn: 'urn:decentraland:matic:collections-v2:0x6a9e21e65ab097e1ed7835b02354cb3ead00f0c0:1',
+  image: 'assets/images/revamp/caretaker.png',
+  // Rewards campaign for this wearable (Caretaker Head dispenser).
+  campaignId: '1d191ec1-bd76-4ac7-821e-338e53ee8d4e',
+  campaignKey: 'MwVU4nIQTTeVUO6VECW0YB0ZHsG9dkrHgh4zjlPujU4=.YSWYNN83YA0C9qTm0G11AcJEXbqWKauXHm7ahzUd1jg='
 }
 /** Launch rewards, rotating one per event (event 1 -> [0], event 5 -> [0] again). */
 export const ARK_LAUNCH_WEARABLES: ArkWearable[] = [
