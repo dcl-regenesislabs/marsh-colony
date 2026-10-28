@@ -58,6 +58,15 @@ The in-game picker reuses Cozy Farm's `languages.png` flag atlas and its primary
 and secondary button artwork (source revision `440805a68d4d93a665c42cf17830735804b54a71`).
 Marsh Colony keeps its own `pet_actions_panel.png` as the picker background.
 
+## Code typography
+
+`assets/fonts/` contains the static Fredoka Regular, SemiBold and Bold TTFs,
+plus the SIL Open Font License (`OFL-Fredoka.txt`). Use these local files through
+React-ECS `fontSrc` when replacing embedded PNG copy: local TTFs work in Unity,
+where a remote font-family name does not. The rounded Fredoka family matches the
+existing panel headings and button labels closely while supporting Spanish and
+Portuguese accents.
+
 ## Copy and layout rules
 
 1. English is the fallback key. Spanish (`es`, `es-*`) and Portuguese (`pt`,
