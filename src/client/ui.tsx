@@ -1907,6 +1907,12 @@ const REVAMP_PANEL_H = 730
 const REVAMP_PANEL_BG = 'assets/images/revamp/panel_standard_bg.png'
 const FREDOKA_SEMIBOLD = 'assets/fonts/Fredoka-SemiBold.ttf'
 const FREDOKA_BOLD = 'assets/fonts/Fredoka-Bold.ttf'
+// Godot mobile currently mishandles local `fontSrc` and paints the label's
+// rectangular bounds. Keep the native font there until that renderer supports
+// local fonts; Bevy/desktop continues to use Fredoka.
+function panelFont(fontSrc: string): { fontSrc?: string } {
+  return mobile() ? {} : { fontSrc }
+}
 /** On-screen width shared by the nav panels (Inventory, My Pets, Goals) and the
  *  pet Passport, so they all open at the same size on desktop and mobile. */
 function navPanelWidth(): number {
@@ -1932,7 +1938,7 @@ function RevampPanel(props: { width: number; contentTop: number; onClose: () => 
         {props.title && (
           <Label
             value={props.title}
-            fontSrc={FREDOKA_BOLD}
+            {...panelFont(FREDOKA_BOLD)}
             fontSize={Math.round(46 * k)}
             color={PET_UI.ink}
             textAlign="middle-center"
@@ -1943,7 +1949,7 @@ function RevampPanel(props: { width: number; contentTop: number; onClose: () => 
         {props.subtitle && (
           <Label
             value={props.subtitle}
-            fontSrc={FREDOKA_SEMIBOLD}
+            {...panelFont(FREDOKA_SEMIBOLD)}
             fontSize={Math.round(22 * k)}
             color={ARK_SUBTITLE_COLOR}
             textAlign="middle-center"
@@ -2661,7 +2667,7 @@ function JourneyReward(props: { step: JourneyStep; scale: number }) {
       uiBackground={{ color: { r: 1, g: 0.95, b: 0.84, a: 1 } }}
     >
       <UiEntity uiTransform={{ width: iconSize, height: iconSize, margin: { right: Math.round(4 * scale) } }} uiBackground={{ texture: { src: step.rewardKind === 'coin' ? REWARD_COIN_ICON : REWARD_XP_ICON }, textureMode: 'stretch' }} />
-      <Label value={label} fontSrc={FREDOKA_BOLD} fontSize={Math.round(22 * scale)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: w - iconSize - Math.round(10 * scale), height: h }} />
+      <Label value={label} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(22 * scale)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: w - iconSize - Math.round(10 * scale), height: h }} />
     </UiEntity>
   )
 }
@@ -2679,7 +2685,7 @@ function GoalsPanel() {
         return (
           <UiEntity key={st.id} uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: w, height: Math.round(REVAMP_PANEL_H * k), pointerFilter: 'none' }}>
             <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.icon.x0 * k), top: Math.round(st.icon.y0 * k) }, width: iconW, height: iconH }} uiBackground={{ texture: { src: GOALS_ART }, textureMode: 'stretch', uvs: goalsUvs(st.icon) }} />
-            <Label value={t(`panel.goals.step.${st.id}`)} fontSrc={FREDOKA_BOLD} fontSize={Math.round(28 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.labelX * k), top: Math.round(st.labelY * k) }, width: iconW, height: Math.round(38 * k) }} />
+            <Label value={t(`panel.goals.step.${st.id}`)} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(28 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.labelX * k), top: Math.round(st.labelY * k) }, width: iconW, height: Math.round(38 * k) }} />
             <JourneyReward step={st} scale={k} />
             {done && <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz }} uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }} />}
           </UiEntity>
@@ -4481,9 +4487,10 @@ function ArkProgress(props: { width: number }) {
   const mine = clientState.player?.counters['arkCount'] ?? 0
   const frac = s.goal > 0 ? Math.max(0, Math.min(1, s.donated / s.goal)) : 0
   const barH = S(14)
+  const progressText = `${t('panel.ark.progress', { current: s.donated, goal: s.goal })}${mine > 0 ? t('panel.ark.progressMine', { count: mine }) : ''}`
   return (
     <UiEntity uiTransform={{ width: props.width, flexDirection: 'column', alignItems: 'center' }}>
-      <Label value={`Ark progress: ${s.donated} / ${s.goal} pets aboard${mine > 0 ? `  ·  you sent ${mine}` : ''}`} fontSize={S(16)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      <Label value={progressText} fontSize={S(16)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
       <UiEntity uiTransform={{ width: props.width, height: barH, borderRadius: barH / 2, margin: { top: S(4) } }} uiBackground={{ color: { r: 0.87, g: 0.8, b: 0.71, a: 1 } }}>
         <UiEntity uiTransform={{ width: Math.max(barH, Math.round(props.width * frac)), height: barH, borderRadius: barH / 2 }} uiBackground={{ color: PET_UI.coinOuter }} />
       </UiEntity>
@@ -4589,7 +4596,7 @@ function ArkDonatePanel() {
       )}
       <ArkPager page={page} pageCount={pageCount} onPage={(n) => (uiState.arkPage = n)} />
       <Label
-        value={noticeOn ? arkNotice.text : 'Tap a pet to send it aboard.'}
+        value={noticeOn ? arkNotice.text : t('panel.ark.prompt')}
         fontSize={S(15)}
         color={noticeOn ? LOC.orange : PET_UI.muted}
         textAlign="middle-center"
