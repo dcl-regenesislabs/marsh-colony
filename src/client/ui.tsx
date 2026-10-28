@@ -1373,6 +1373,9 @@ function SpeciesCard(props: { key?: string; species: string }) {
   )
 }
 
+const ADOPT_CHOOSE_PANEL = 'assets/images/revamp/adopt_choose_panel.png'
+const ADOPT_NAME_PANEL = 'assets/images/revamp/adopt_name_panel.png'
+
 function AdoptPanel() {
   const p = clientState.player
   const slotsFree = p ? p.pets.length < p.petSlots : true
@@ -1384,7 +1387,7 @@ function AdoptPanel() {
     const nextW = S(165)
     const nextH = Math.round(nextW / PILL_HALF_ASPECT)
     return (
-      <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.adoptChoose.title')} subtitle={t('panel.adoptChoose.subtitle')} onClose={() => ui.close()}>
+      <RevampPanel src={ADOPT_CHOOSE_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(40) } }}>
           {Cfg.SPECIES.map((s) => (
             <SpeciesCard key={s} species={s} />
@@ -1410,7 +1413,7 @@ function AdoptPanel() {
   const halfH = Math.round(halfW / PILL_HALF_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
-    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.adoptName.title')} subtitle={t('panel.adoptName.subtitle')} onClose={() => ui.close()}>
+    <RevampPanel src={ADOPT_NAME_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       {/* Species snapshot in the Passport's ringed disc */}
       <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { top: S(10) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(sp) }}>
         <UiEntity
@@ -1530,8 +1533,10 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
 // server's surprise inside the egg; the name is prefixed "Gen-N" server-side.
 // A rarity potion (bought in the Shop) can be spent on this roll to tilt the
 // odds toward rare/legendary — it is consumed server-side by this breed only.
-// Same standard revamp frame as the adoption name step. The input, potion row
-// and Breed button are laid out below its live localized header.
+// Same revamp frame as the adoption "Name Your Pet" step (title, subtitle and
+// close X baked into breeding_background.png); the input, potion row and Breed
+// button are laid out on top.
+const BREED_NAME_PANEL = 'assets/images/revamp/breeding_background.png'
 
 // Inline notice for the breed flow (name modal and partner picker) — toasts are
 // hidden while a big panel is open (bigUiOpen), so feedback inside the flow shows
@@ -1575,7 +1580,7 @@ function BreedNamePanel() {
 
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
-    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.breedName.title')} subtitle={t('panel.breedName.subtitle')} onClose={() => ui.close()}>
+    <RevampPanel src={BREED_NAME_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       {/* Offspring name (same field as the adoption name step) */}
       <UiEntity
         uiTransform={{ width: S(340), height: S(50), margin: { top: S(14) }, borderRadius: S(14), borderWidth: S(2), borderColor: ADOPT_INPUT_BORDER }}
@@ -1898,59 +1903,37 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
 }
 
 // ---------------------------------------------------------------------------
-// Revamp panel shell. The native standard background contains only shared
-// chrome (frame, close X and decoration); titles and subtitles are live,
-// localized text. Children start at `contentTop` in texture pixels.
+// Revamp panel shell — the "Your Journey" frame (goals.png) with the title,
+// subtitle, icon and close X BAKED into the image, same family as the Album.
+// Children are laid out in a full-width column starting at `contentTop`
+// (texture px, scaled with the panel). An invisible hit area sits on the baked
+// X. The art lives in assets/images/revamp/ (generated from goals.png).
 // ---------------------------------------------------------------------------
-const REVAMP_PANEL_W = 998
-const REVAMP_PANEL_H = 730
-const REVAMP_PANEL_BG = 'assets/images/revamp/panel_standard_bg.png'
-const FREDOKA_SEMIBOLD = 'assets/fonts/Fredoka-SemiBold.ttf'
-const FREDOKA_BOLD = 'assets/fonts/Fredoka-Bold.ttf'
+const REVAMP_PANEL_W = 998 // every revamp panel shares the Goals frame width
 /** On-screen width shared by the nav panels (Inventory, My Pets, Goals) and the
  *  pet Passport, so they all open at the same size on desktop and mobile. */
 function navPanelWidth(): number {
   return S(660)
 }
-const REVAMP_CONTENT_TOP = 190 // first px below the live title + subtitle
+const REVAMP_CONTENT_TOP = 190 // first px below the baked title + subtitle
 const REVAMP_CLOSE = { x: 865, y: 20, size: 104 } // baked close button box
+const INVENTORY_PANEL = 'assets/images/revamp/inventory_panel.png'
+const INVENTORY_PANEL_H = 730
+const MYPETS_PANEL = 'assets/images/revamp/mypets_panel.png'
+const MYPETS_PANEL_H = 730
 
-function RevampPanel(props: { width: number; contentTop: number; onClose: () => void; title?: string; subtitle?: string; children?: any }) {
+function RevampPanel(props: { src: string; texW: number; texH: number; width: number; contentTop: number; onClose: () => void; children?: any }) {
   const w = props.width
-  const k = w / REVAMP_PANEL_W
-  const h = Math.round(REVAMP_PANEL_H * k)
+  const k = w / props.texW
+  const h = Math.round(props.texH * k)
   const top = Math.round(props.contentTop * k)
-  const headerLeft = Math.round(138 * k)
-  const headerWidth = Math.round(690 * k)
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: PET_UI.scrim }}
       onMouseDown={() => {}}
     >
-      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: REVAMP_PANEL_BG }, textureMode: 'stretch' }}>
-        {props.title && (
-          <Label
-            value={props.title}
-            fontSrc={FREDOKA_BOLD}
-            fontSize={Math.round(46 * k)}
-            color={PET_UI.ink}
-            textAlign="middle-center"
-            textWrap="nowrap"
-            uiTransform={{ positionType: 'absolute', position: { top: Math.round(52 * k), left: headerLeft }, width: headerWidth, height: Math.round(62 * k), pointerFilter: 'none' }}
-          />
-        )}
-        {props.subtitle && (
-          <Label
-            value={props.subtitle}
-            fontSrc={FREDOKA_SEMIBOLD}
-            fontSize={Math.round(22 * k)}
-            color={ARK_SUBTITLE_COLOR}
-            textAlign="middle-center"
-            textWrap="nowrap"
-            uiTransform={{ positionType: 'absolute', position: { top: Math.round(119 * k), left: headerLeft }, width: headerWidth, height: Math.round(34 * k), pointerFilter: 'none' }}
-          />
-        )}
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: props.src }, textureMode: 'stretch' }}>
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: 0 }, width: w, height: h - top, flexDirection: 'column', alignItems: 'center' }}>{props.children}</UiEntity>
         {/* Invisible hit area over the baked close X (transparent bg so the tap registers). */}
         <UiEntity
@@ -2004,7 +1987,7 @@ function InventoryPanel() {
     actions.buyItem(tier) // server is authoritative
   }
   return (
-    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.inventory.title')} subtitle={t('panel.inventory.subtitle')} onClose={() => ui.close()}>
+    <RevampPanel src={INVENTORY_PANEL} texW={REVAMP_PANEL_W} texH={INVENTORY_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
         <InvColumn width={colW} height={colH}>
           <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { useItemLocal(1); actions.useItem(1) }} />
@@ -2206,7 +2189,7 @@ function RosterPanel() {
   for (let i = start; i < Math.min(total, start + ROSTER_PAGE_SIZE); i++) indices.push(i)
 
   return (
-    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.myPets.title')} subtitle={t('panel.myPets.subtitle')} onClose={() => ui.close()}>
+    <RevampPanel src={MYPETS_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
         {indices.map((i) => (
           <RosterSlotCard key={i} index={i} />
@@ -2612,79 +2595,48 @@ function MeteorRewardPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Goals / achievements. The shared standard panel is the background and the
-// original goal art is cropped only for language-neutral numbered icons.
+// Goals / achievements — the "Your Journey" art (goals.png) is the whole panel.
+// The 1024² file has transparent padding, so we crop to the art's opaque box
+// (measured from the PNG's alpha) and render it at the SAME width as the Inventory
+// panel so all three nav panels read as the same size. The close X is baked into
+// the top-right; an invisible button is overlaid on it.
 // ---------------------------------------------------------------------------
-// `goals.png` is used only as an internal icon atlas. Its embedded English is
-// never displayed: each crop contains a numbered goal disc and its illustration.
-const GOALS_ART = 'assets/images/revamp/goals.png'
+const GOALS_IMG = 'assets/images/revamp/goals.png'
+const GOALS_PANEL_H = 730 // same frame size as the Inventory panel (998x730)
+
+// Journey steps. The art has no baked ticks: each completed step gets a tick
+// badge (goals_tick.png) on the bottom-right of its disc. Centres are in
+// goals.png px; `done` reads the player's progress so the panel shows how far
+// along they are.
 const GOALS_TICK_IMG = 'assets/images/revamp/goals_tick.png'
-const GOALS_TICK_SIZE = 54
-type JourneyStepId = 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'
-type JourneyStep = {
-  id: JourneyStepId
-  icon: Box
-  labelX: number
-  labelY: number
-  rewardX: number
-  rewardY: number
-  rewardWidth: number
-  reward: string
-  rewardKind: 'coin' | 'xp'
-  tickX: number
-  tickY: number
-}
+const GOALS_TICK_SIZE = 54 // goals.png px
+type JourneyStep = { id: 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'; tickX: number; tickY: number }
 const JOURNEY_STEPS: JourneyStep[] = [
-  { id: 'adopt', icon: { x0: 70, y0: 305, x1: 210, y1: 445 }, labelX: 71, labelY: 451, rewardX: 93, rewardY: 492, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 192, tickY: 429 },
-  { id: 'feed', icon: { x0: 250, y0: 370, x1: 390, y1: 510 }, labelX: 251, labelY: 516, rewardX: 277, rewardY: 557, rewardWidth: 104, reward: '15', rewardKind: 'coin', tickX: 372, tickY: 494 },
-  { id: 'bath', icon: { x0: 430, y0: 305, x1: 570, y1: 445 }, labelX: 431, labelY: 451, rewardX: 453, rewardY: 492, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 552, tickY: 429 },
-  { id: 'breed', icon: { x0: 610, y0: 370, x1: 750, y1: 510 }, labelX: 611, labelY: 516, rewardX: 601, rewardY: 557, rewardWidth: 164, reward: 'spin', rewardKind: 'coin', tickX: 732, tickY: 494 },
-  { id: 'ark', icon: { x0: 790, y0: 305, x1: 930, y1: 445 }, labelX: 791, labelY: 451, rewardX: 769, rewardY: 492, rewardWidth: 182, reward: 'wearable', rewardKind: 'xp', tickX: 912, tickY: 429 }
+  { id: 'adopt', tickX: 192, tickY: 429 },
+  { id: 'feed', tickX: 372, tickY: 494 },
+  { id: 'bath', tickX: 552, tickY: 429 },
+  { id: 'breed', tickX: 732, tickY: 494 },
+  { id: 'ark', tickX: 912, tickY: 429 }
 ]
-function goalsUvs(box: Box): number[] {
-  return albumUvs(box, REVAMP_PANEL_W, REVAMP_PANEL_H)
-}
-function journeyStepDone(id: JourneyStepId): boolean {
+function journeyStepDone(id: JourneyStep['id']): boolean {
   const p = clientState.player
   return !!p && Cfg.journeyStepDone(id, p) // same rule the server pays the Journey rewards on
 }
 
-function JourneyReward(props: { step: JourneyStep; scale: number }) {
-  const { step, scale } = props
-  const w = Math.round(step.rewardWidth * scale)
-  const h = Math.round(38 * scale)
-  const iconSize = Math.round(28 * scale)
-  const label = step.reward === 'spin' ? t('panel.goals.rewardSpin', { coins: 50 }) : step.reward === 'wearable' ? t('panel.goals.rewardWearable') : step.reward
-  return (
-    <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { left: Math.round(step.rewardX * scale), top: Math.round(step.rewardY * scale) }, width: w, height: h, borderRadius: h / 2, borderWidth: Math.max(1, Math.round(2 * scale)), borderColor: { r: 0.82, g: 0.67, b: 0.46, a: 1 }, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}
-      uiBackground={{ color: { r: 1, g: 0.95, b: 0.84, a: 1 } }}
-    >
-      <UiEntity uiTransform={{ width: iconSize, height: iconSize, margin: { right: Math.round(4 * scale) } }} uiBackground={{ texture: { src: step.rewardKind === 'coin' ? REWARD_COIN_ICON : REWARD_XP_ICON }, textureMode: 'stretch' }} />
-      <Label value={label} fontSrc={FREDOKA_BOLD} fontSize={Math.round(22 * scale)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: w - iconSize - Math.round(10 * scale), height: h }} />
-    </UiEntity>
-  )
-}
-
 function GoalsPanel() {
+  // Same shell + size as Inventory / My Pets (RevampPanel at navPanelWidth()).
   const w = navPanelWidth()
   const k = w / REVAMP_PANEL_W
   const sz = Math.round(GOALS_TICK_SIZE * k)
   return (
-    <RevampPanel width={w} contentTop={0} title={t('panel.goals.title')} subtitle={t('panel.goals.subtitle')} onClose={() => ui.close()}>
-      {JOURNEY_STEPS.map((st) => {
-        const iconW = Math.round((st.icon.x1 - st.icon.x0) * k)
-        const iconH = Math.round((st.icon.y1 - st.icon.y0) * k)
-        const done = journeyStepDone(st.id)
-        return (
-          <UiEntity key={st.id} uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: w, height: Math.round(REVAMP_PANEL_H * k), pointerFilter: 'none' }}>
-            <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.icon.x0 * k), top: Math.round(st.icon.y0 * k) }, width: iconW, height: iconH }} uiBackground={{ texture: { src: GOALS_ART }, textureMode: 'stretch', uvs: goalsUvs(st.icon) }} />
-            <Label value={t(`panel.goals.step.${st.id}`)} fontSrc={FREDOKA_BOLD} fontSize={Math.round(28 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.labelX * k), top: Math.round(st.labelY * k) }, width: iconW, height: Math.round(38 * k) }} />
-            <JourneyReward step={st} scale={k} />
-            {done && <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz }} uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }} />}
-          </UiEntity>
-        )
-      })}
+    <RevampPanel src={GOALS_IMG} texW={REVAMP_PANEL_W} texH={GOALS_PANEL_H} width={w} contentTop={0} onClose={() => ui.close()}>
+      {JOURNEY_STEPS.filter((st) => journeyStepDone(st.id)).map((st) => (
+        <UiEntity
+          key={`tick-${st.id}`}
+          uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz, pointerFilter: 'none' }}
+          uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }}
+        />
+      ))}
     </RevampPanel>
   )
 }
@@ -2761,8 +2713,10 @@ function DailyRewardPanel() {
 // touches the authoritative server (see music.ts). The volume ladder is 5 steps
 // instead of cozy-farm's 10 so each button stays a comfortable touch target on
 // mobile.
-// Same standard revamp frame as Inventory / My Pets / Goals. Its rows use the
-// cream/brown card palette below the live localized header.
+// Same revamp frame as Inventory / My Pets / Goals: title, subtitle and close X
+// are baked into jukebox.png, and the rows use the cream/brown card palette.
+const JUKEBOX_PANEL = 'assets/images/revamp/jukebox.png'
+const JUKEBOX_PANEL_H = 730
 const JUKEBOX_UI = {
   tile: { r: 1, g: 0.99, b: 0.96, a: 1 } as Color,
   selected: { r: 0.99, g: 0.89, b: 0.77, a: 1 } as Color, // peach fill of the selected pet card
@@ -2826,7 +2780,7 @@ function JukeboxPanel() {
   const activeStep = VOLUME_STEPS.reduce((best, pct) => (Math.abs(pct - volPct) < Math.abs(best - volPct) ? pct : best))
   const stepW = Math.round(contentW / VOLUME_STEPS.length) - S(6)
   return (
-    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.jukebox.title')} subtitle={t('panel.jukebox.subtitle')} onClose={() => ui.close()}>
+    <RevampPanel src={JUKEBOX_PANEL} texW={REVAMP_PANEL_W} texH={JUKEBOX_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: contentW, height: SONGS.length * (songRowH() + songRowGap()), flexDirection: 'column', margin: { top: S(8) } }}>
         {SONGS.map((song) => (
           <SongRow key={song.id} id={song.id} label={song.label} playing={song.id === musicState.currentSongId} />
@@ -4376,6 +4330,7 @@ function BreedButtons() {
 // right bowl. Non-Adults are shown but rejected with a toast. Close/BACK cancels.
 // Same shell, card size and paging as My Pets (Inventory-sized revamp panel,
 // one row of 4 roster-style cards).
+const CHOOSE_PARTNER_PANEL = 'assets/images/revamp/choose_partner_panel.png'
 
 function PartnerCard(props: { key?: string; pet: PetData }) {
   const pet = props.pet
@@ -4413,7 +4368,7 @@ function BreedPickerPanel() {
   uiState.breedPickerPage = page
   const shown = others.slice(page * ROSTER_PAGE_SIZE, (page + 1) * ROSTER_PAGE_SIZE)
   return (
-    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.choosePartner.title')} subtitle={t('panel.choosePartner.subtitle')} onClose={() => cancelBreed()}>
+    <RevampPanel src={CHOOSE_PARTNER_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => cancelBreed()}>
       {shown.length === 0 ? (
         <Label value="You need a second pet to breed with." fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
       ) : (
@@ -4533,7 +4488,8 @@ function ArkPetCard(props: { key?: string; pet: PetData }) {
   )
 }
 
-// Same standard revamp frame as My Pets / Choose a Partner.
+// Same revamp frame as My Pets / Choose a Partner, with its own baked title.
+const ARK_PANEL = 'assets/images/revamp/board_ark.png'
 
 /** Page arrows for the Captain's picker: the Album's round arrow buttons (and
  *  their greyed-out versions at either end) around the "1 / 3" counter. */
@@ -4569,7 +4525,7 @@ function ArkDonatePanel() {
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
   const noticeOn = Date.now() < arkNotice.until
   return (
-    <RevampPanel width={width} contentTop={REVAMP_CONTENT_TOP} title={t('panel.ark.title')} subtitle={t('panel.ark.subtitle')} onClose={() => ui.close()}>
+    <RevampPanel src={ARK_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
       <ArkProgress width={width - S(200)} />
       {shown.length === 0 ? (
         <Label
@@ -4694,8 +4650,11 @@ function WearablePreview(props: { key?: string; wearableId: string }) {
   )
 }
 
-// The pet-specific subtitle is live content under the shared localized header.
-const ARK_THANKS_CONTENT_TOP = 138
+// Same revamp frame as the other Ark panels, with "Thank you!" + the Ark icon
+// baked in. The subtitle names the pet, so it's a Label set where the other
+// panels bake theirs (texture y ~144), in the same muted brown.
+const ARK_THANKS_PANEL = 'assets/images/revamp/ark_thanks.png'
+const ARK_THANKS_CONTENT_TOP = 138 // the subtitle line, right under the baked title
 const ARK_SUBTITLE_COLOR = { r: 0.61, g: 0.47, b: 0.4, a: 1 } as Color
 
 function ArkThanksPanel() {
@@ -4706,13 +4665,13 @@ function ArkThanksPanel() {
   const btnW = S(190)
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
   return (
-    <RevampPanel width={width} contentTop={ARK_THANKS_CONTENT_TOP} title={t('panel.arkThanks.title')} onClose={() => closeArkThanks()}>
-      <Label value={t('panel.arkThanks.boarded', { name: r.petName })} fontSize={S(20)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" uiTransform={{ width: textW, height: S(28) }} />
-      <Label value={t('panel.arkThanks.rewards', { xp: r.xp, coins: r.coins })} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) } }} />
+    <RevampPanel src={ARK_THANKS_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={ARK_THANKS_CONTENT_TOP} onClose={() => closeArkThanks()}>
+      <Label value={`${r.petName} boarded the Ark.`} fontSize={S(20)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" uiTransform={{ width: textW, height: S(28) }} />
+      <Label value={`+${r.xp} Caretaker XP  ·  +${r.coins} coins`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) } }} />
       <ArkProgress width={width - S(200)} />
       {r.firstWearableId !== '' && (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(8) } }}>
-          <Label value={t('panel.arkThanks.firstDonation')} fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+          <Label value="First donation! You'll receive this wearable:" fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
           <WearablePreview wearableId={r.firstWearableId} />
         </UiEntity>
       )}
@@ -4781,8 +4740,11 @@ function ArkHandoverTuner() {
   )
 }
 
-// The launch card uses the common background and a live localized header.
-const ARK_LIFTED_CONTENT_TOP = 215
+// The launch card: one revamp frame for everybody, with the title + subtitle
+// baked into the art ("Carrying 100 companions..." — redraw it if ARK_GOAL ever
+// changes). Donors see the wearable they earned; everyone else, how to earn one.
+const ARK_LIFTED_PANEL = 'assets/images/revamp/ark_lifted.png'
+const ARK_LIFTED_CONTENT_TOP = 215 // first px below the baked title + subtitle
 
 function ArkLaunchCard() {
   const views = clientState.ark.launchCard
@@ -4794,11 +4756,11 @@ function ArkLaunchCard() {
   const btnW = S(190)
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
   return (
-    <RevampPanel width={width} contentTop={ARK_LIFTED_CONTENT_TOP} title={t('panel.arkLifted.title')} subtitle={t('panel.arkLifted.subtitle')} onClose={() => closeArkLaunchCard()}>
+    <RevampPanel src={ARK_LIFTED_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={ARK_LIFTED_CONTENT_TOP} onClose={() => closeArkLaunchCard()}>
       {donated.length > 0 ? (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
           <Label
-            value={t('panel.arkLifted.thanks', { pets, wearable: t(donated.length > 1 ? 'panel.arkLifted.manyWearables' : 'panel.arkLifted.oneWearable') })}
+            value={`Thanks for sending ${pets} of them — you'll receive ${donated.length > 1 ? 'these wearables' : 'this wearable'}:`}
             fontSize={S(17)}
             color={PET_UI.ink}
             textAlign="middle-center"
@@ -4813,7 +4775,7 @@ function ArkLaunchCard() {
         </UiEntity>
       ) : (
         <Label
-          value={t('panel.arkLifted.noDonation')}
+          value="Donate an Adult pet to the Captain to earn a reward on the next launch!"
           fontSize={S(19)}
           color={PET_UI.ink}
           textAlign="middle-center"
