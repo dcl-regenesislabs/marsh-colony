@@ -3585,15 +3585,19 @@ function FeedEatingPanel() {
   // starts empty so a fully fed pet still gets the same satisfying 0 → 100 beat.
   const hungerNow = st.hungerTarget * progress
   const barPct = Math.max(0, Math.min(100, hungerNow))
-  const cardW = S(360)
+  // Keep the result art at the exact visual scale of the old 538px asset.
+  // The new panel is 448px wide, so rendering it at 360 made the whole card
+  // (and every child on it) visibly larger than the previous UI.
+  const cardW = S(300)
   const cardH = Math.round(cardW / FEED_RESULTS_ASPECT)
-  // Exact inner bounds of the illustrated progress track in fruit_caught.png.
-  const barLeft = Math.round(cardW * 73 / FEED_RESULTS_W)
-  // Mobile keeps the fill just under the illustrated track's midpoint, while
-  // desktop retains its existing pixel-perfect alignment.
-  const barTop = Math.round(cardH * 238 / FEED_RESULTS_H) + (isMobile ? S(1) : 0)
-  const barW = Math.round(cardW * 398 / FEED_RESULTS_W) - (isMobile ? S(6) : 0)
-  const barH = Math.round(cardH * 19 / FEED_RESULTS_H)
+  const barW = Math.round(cardW * 0.72)
+  const barH = Math.max(S(14), Math.round(cardH * 0.065))
+  const barLeft = Math.round((cardW - barW) / 2)
+  const barTop = Math.round(cardH * 0.59) + (isMobile ? S(1) : 0)
+  // Match the old result button's *height*. The replacement artwork is taller
+  // by design, so deriving it from the panel width made it look oversized.
+  const buttonW = S(193)
+  const buttonH = Math.round(buttonW / FEED_ACTION_BUTTON_ASPECT)
   const resultsReady = st.phase === 'results'
   return (
     <UiEntity
@@ -3606,21 +3610,22 @@ function FeedEatingPanel() {
         opacity: cardFade,
         pointerFilter: 'none'
       }}
-      uiBackground={{ texture: { src: FEED_RESULTS_TEXTURE }, textureMode: 'stretch' }}
+      uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_RESULTS_UVS }}
     >
-      <Label value={`<b>x ${shownCaught}</b>`} fontSize={S(42)} color={{ ...PET_UI.ink, a: PET_UI.ink.a * countOpacity }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.26), left: 0 }, width: '100%', height: Math.round(cardH * 0.19) }} />
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
-        <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: barH / 2 }} uiBackground={{ color: C.green }} />
+      <Label value={`<b>${t('minigame.feed.title')}</b>`} fontSize={S(23)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.11), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.18) }} />
+      <Label value={`<b>x ${shownCaught}</b>`} fontSize={S(35)} color={{ ...PET_UI.ink, a: PET_UI.ink.a * countOpacity }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.28), left: 0 }, width: '100%', height: Math.round(cardH * 0.17) }} />
+      <Label value={t('minigame.feed.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.45), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.12) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH, borderRadius: Math.round(barH / 2) }} uiBackground={{ color: PET_UI.ink }}>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(2), left: S(2) }, width: barW - S(4), height: barH - S(4), borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: { r: 0.97, g: 0.91, b: 0.8, a: 1 } }}>
+          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: C.green }} />
+        </UiEntity>
       </UiEntity>
       {resultsReady ? (
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.69), left: Math.round(cardW * 0.18) }, width: Math.round(cardW * 0.64), height: Math.round(cardH * 0.2), pointerFilter: 'block' }}
-          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => {
-            playUiClick()
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.70), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+          <FeedHudButton id="feed_exit" label={t('minigame.feed.exit')} width={buttonW} height={buttonH} fontSize={S(20)} onClick={() => {
             exitFeedResults()
-          }}
-        />
+          }} />
+        </UiEntity>
       ) : null}
     </UiEntity>
   )
@@ -3646,36 +3651,80 @@ function sheetUvRect(x0: number, y0: number, x1: number, y1: number, w: number, 
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
 
-// The feed HUD art is a 1024px sheet. Crop each card at its native aspect so
-// the illustrated borders and icons never get stretched by the responsive UI.
-const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud_green.png'
+// The replacement sheet deliberately contains no copy: each panel, pill and
+// button is cropped independently and its wording is rendered in the selected
+// language. The coordinates are the opaque bounds from the 1024px export, so
+// no neighbouring sprite bleeds into a responsive crop.
+const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud_green_new.png'
 const FEED_HUD_W = 1024
 const FEED_HUD_H = 1024
 function feedHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
   return sheetUvRect(x0, y0, x1, y1, FEED_HUD_W, FEED_HUD_H)
 }
 
-// End above the results card, whose top-left corner starts at y=400.
-const FEED_START_BOX = { x0: 28, y0: 8, x1: 672, y1: 399 }
-const FEED_TIMER_BOX = { x0: 38, y0: 440, x1: 366, y1: 595 }
-const FEED_COUNT_BOX = { x0: 40, y0: 622, x1: 444, y1: 773 }
+const FEED_START_BOX = { x0: 29, y0: 31, x1: 535, y1: 321 }
+const FEED_RESULTS_BOX = { x0: 549, y0: 60, x1: 997, y1: 350 }
+const FEED_ACTION_ENABLED_BOX = { x0: 46, y0: 353, x1: 382, y1: 455 }
+const FEED_ACTION_DISABLED_BOX = { x0: 46, y0: 464, x1: 382, y1: 566 }
+const FEED_TIMER_BOX = { x0: 406, y0: 358, x1: 732, y1: 460 }
+const FEED_COUNT_BOX = { x0: 406, y0: 461, x1: 735, y1: 567 }
 const FEED_START_UVS = feedHudUvRect(FEED_START_BOX.x0, FEED_START_BOX.y0, FEED_START_BOX.x1, FEED_START_BOX.y1)
+const FEED_RESULTS_UVS = feedHudUvRect(FEED_RESULTS_BOX.x0, FEED_RESULTS_BOX.y0, FEED_RESULTS_BOX.x1, FEED_RESULTS_BOX.y1)
+const FEED_ACTION_ENABLED_UVS = feedHudUvRect(FEED_ACTION_ENABLED_BOX.x0, FEED_ACTION_ENABLED_BOX.y0, FEED_ACTION_ENABLED_BOX.x1, FEED_ACTION_ENABLED_BOX.y1)
+const FEED_ACTION_DISABLED_UVS = feedHudUvRect(FEED_ACTION_DISABLED_BOX.x0, FEED_ACTION_DISABLED_BOX.y0, FEED_ACTION_DISABLED_BOX.x1, FEED_ACTION_DISABLED_BOX.y1)
 const FEED_TIMER_UVS = feedHudUvRect(FEED_TIMER_BOX.x0, FEED_TIMER_BOX.y0, FEED_TIMER_BOX.x1, FEED_TIMER_BOX.y1)
 const FEED_COUNT_UVS = feedHudUvRect(FEED_COUNT_BOX.x0, FEED_COUNT_BOX.y0, FEED_COUNT_BOX.x1, FEED_COUNT_BOX.y1)
 const FEED_START_ASPECT = (FEED_START_BOX.x1 - FEED_START_BOX.x0) / (FEED_START_BOX.y1 - FEED_START_BOX.y0)
+const FEED_RESULTS_ASPECT = (FEED_RESULTS_BOX.x1 - FEED_RESULTS_BOX.x0) / (FEED_RESULTS_BOX.y1 - FEED_RESULTS_BOX.y0)
+const FEED_ACTION_BUTTON_ASPECT = (FEED_ACTION_ENABLED_BOX.x1 - FEED_ACTION_ENABLED_BOX.x0) / (FEED_ACTION_ENABLED_BOX.y1 - FEED_ACTION_ENABLED_BOX.y0)
 const FEED_TIMER_ASPECT = (FEED_TIMER_BOX.x1 - FEED_TIMER_BOX.x0) / (FEED_TIMER_BOX.y1 - FEED_TIMER_BOX.y0)
 const FEED_COUNT_ASPECT = (FEED_COUNT_BOX.x1 - FEED_COUNT_BOX.x0) / (FEED_COUNT_BOX.y1 - FEED_COUNT_BOX.y0)
-const FEED_RESULTS_TEXTURE = 'assets/images/revamp/fruit_caught.png'
-const FEED_RESULTS_W = 538
-const FEED_RESULTS_H = 404
-const FEED_RESULTS_ASPECT = FEED_RESULTS_W / FEED_RESULTS_H
+
+/** The atlas supplies only the button art; its caption remains real text so
+ * locale switches are immediate and no language needs a duplicate PNG. */
+function FeedHudButton(props: { id: string; label: string; width: number; height: number; onClick: () => void; disabled?: boolean; fontSize?: number }) {
+  const disabled = props.disabled ?? false
+  const scale = getPress(props.id)
+  const width = Math.round(props.width * scale)
+  const height = Math.round(props.height * scale)
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
+      <UiEntity
+        uiTransform={{ width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+        uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: disabled ? FEED_ACTION_DISABLED_UVS : FEED_ACTION_ENABLED_UVS }}
+        onMouseDown={() => {
+          if (disabled) return
+          triggerPress(props.id)
+          playUiClick()
+          props.onClick()
+        }}
+      >
+        <Label value={props.label} fontSize={props.fontSize ?? S(22)} color={C.text} textAlign="middle-center" uiTransform={{ width, height }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
 
 function FeedStartCard() {
-  const width = S(540)
+  // The former start crop was 644px wide at S(540).  This blank version is
+  // 506px wide: S(424) preserves the former source-pixel scale instead of
+  // enlarging the panel by 27%.
+  const width = S(424)
   const height = Math.round(width / FEED_START_ASPECT)
+  // Keep the CTA comfortably inside the smaller panel rather than carrying
+  // over the width of the previous, much wider, baked panel.
+  const buttonW = S(210)
+  const buttonH = Math.round(buttonW / FEED_ACTION_BUTTON_ASPECT)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
-      <TactileButton id="feed_start" label="" texture={FEED_HUD_SHEET} uvs={FEED_START_UVS} width={width} height={height} onClick={() => startCatchingCountdown()} />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }} uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_START_UVS }}>
+      {/* Start after the leaf/fruit topper.  At 15% the heading sat on top of
+          that illustration as soon as it wrapped in Spanish or Portuguese. */}
+      <Label value={`<b>${t('minigame.feed.instruction')}</b>`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.34), left: Math.round(width * 0.09) }, width: Math.round(width * 0.82), height: Math.round(height * 0.20) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.67), left: Math.round((width - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+        <FeedHudButton id="feed_start" label={t('minigame.feed.start')} width={buttonW} height={buttonH} fontSize={S(20)} onClick={() => {
+          startCatchingCountdown()
+        }} />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -3715,7 +3764,7 @@ function FeedRoundHud(props: { timeLeft: number; caught: number; flashing: boole
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(12), left: '50%' }, margin: { left: -width / 2 }, width, height: S(86), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
       <FeedRoundPill kind="timer" value={timerValue} width={timerWidth} countdown={props.countdown !== undefined} />
       {showFruit ? <UiEntity uiTransform={{ width: gap }} /> : null}
-      {showFruit ? <FeedRoundPill kind="fruit" value={`Fruits: ${props.caught}`} width={fruitWidth} flashing={props.flashing} /> : null}
+      {showFruit ? <FeedRoundPill kind="fruit" value={t('minigame.feed.fruits', { count: props.caught })} width={fruitWidth} flashing={props.flashing} /> : null}
     </UiEntity>
   )
 }
