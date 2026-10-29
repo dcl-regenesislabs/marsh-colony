@@ -14,6 +14,9 @@ import { translateText } from '../i18n'
 const SHEET = 'assets/images/revamp/dialogue.png'
 const SHEET_W = 1024
 const SHEET_H = 1024
+const BUTTON_SHEET = 'assets/images/revamp/pet_action_buttons.png'
+const BUTTON_SHEET_W = 2048
+const BUTTON_SHEET_H = 512
 // Dedicated portrait (already a tight circular cutout on its own canvas) —
 // used instead of the spritesheet's own avatar crop.
 const CARETAKER_IMG = 'assets/images/revamp/caretaker.png'
@@ -28,27 +31,29 @@ function portraitFor(npcName: string): string {
 /** uiBackground.uvs order: bottom-left, top-left, top-right, bottom-right
  *  (PBUiBackground doc: "starting from bottom-left vertex clock-wise").
  *  Pixel box uses normal top-left-origin image coordinates. */
-function uvRect(x0: number, y0: number, x1: number, y1: number): number[] {
-  const uL = x0 / SHEET_W
-  const uR = x1 / SHEET_W
-  const vTop = 1 - y0 / SHEET_H
-  const vBottom = 1 - y1 / SHEET_H
+function uvRect(x0: number, y0: number, x1: number, y1: number, width = SHEET_W, height = SHEET_H): number[] {
+  const uL = x0 / width
+  const uR = x1 / width
+  const vTop = 1 - y0 / height
+  const vBottom = 1 - y1 / height
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
 
 // Exact pixel bounds measured from the spritesheet (flood-filled by alpha,
 // not eyeballed) — image is 1024x1024.
 const BUBBLE_BOX = { x0: 34, y0: 39, x1: 858, y1: 245 }
-const NEXT_BOX = { x0: 188, y0: 310, x1: 344, y1: 399 }
-const ADOPT_BOX = { x0: 367, y0: 310, x1: 597, y1: 401 }
+// Pink action-button variants measured from pet_action_buttons.png. They are
+// deliberately the same visual family: Adopt is only wider to fit its label.
+const NEXT_BOX = { x0: 936, y0: 0, x1: 1240, y1: 120 }
+const ADOPT_BOX = { x0: 368, y0: 392, x1: 728, y1: 482 }
 
 const BUBBLE_UVS = uvRect(BUBBLE_BOX.x0, BUBBLE_BOX.y0, BUBBLE_BOX.x1, BUBBLE_BOX.y1)
-const NEXT_UVS = uvRect(NEXT_BOX.x0, NEXT_BOX.y0, NEXT_BOX.x1, NEXT_BOX.y1)
-const ADOPT_UVS = uvRect(ADOPT_BOX.x0, ADOPT_BOX.y0, ADOPT_BOX.x1, ADOPT_BOX.y1)
+const NEXT_UVS = uvRect(NEXT_BOX.x0, NEXT_BOX.y0, NEXT_BOX.x1, NEXT_BOX.y1, BUTTON_SHEET_W, BUTTON_SHEET_H)
+const ADOPT_UVS = uvRect(ADOPT_BOX.x0, ADOPT_BOX.y0, ADOPT_BOX.x1, ADOPT_BOX.y1, BUTTON_SHEET_W, BUTTON_SHEET_H)
 
 const BUBBLE_ASPECT = (BUBBLE_BOX.x1 - BUBBLE_BOX.x0) / (BUBBLE_BOX.y1 - BUBBLE_BOX.y0) // 824/206
-const NEXT_ASPECT = (NEXT_BOX.x1 - NEXT_BOX.x0) / (NEXT_BOX.y1 - NEXT_BOX.y0) // 156/89
-const ADOPT_ASPECT = (ADOPT_BOX.x1 - ADOPT_BOX.x0) / (ADOPT_BOX.y1 - ADOPT_BOX.y0) // 230/91
+const NEXT_ASPECT = (NEXT_BOX.x1 - NEXT_BOX.x0) / (NEXT_BOX.y1 - NEXT_BOX.y0)
+const ADOPT_ASPECT = (ADOPT_BOX.x1 - ADOPT_BOX.x0) / (ADOPT_BOX.y1 - ADOPT_BOX.y0)
 
 const LGT = {
   title: { r: 0.29, g: 0.56, b: 0.95, a: 1 }, // name text color, no outline
@@ -161,7 +166,7 @@ export function DialogBox() {
   const rowGap = S(8)
   const bodyTextH = avatarH - titleH - bottomRowH - rowGap * 2
 
-  const btnH = S(60)
+  const btnH = S(48)
   const nextW = Math.round(btnH * NEXT_ASPECT)
   const adoptW = Math.round(btnH * ADOPT_ASPECT)
 
@@ -204,11 +209,14 @@ export function DialogBox() {
               </UiEntity>
               <TactileButton
                 id="dialog_next"
-                label={isAdoptCta ? d.finalLabel : 'Next'}
-                texture={SHEET}
+                label={`<b>${translateText(isAdoptCta ? d.finalLabel : 'Next')}</b>`}
+                textColor={{ r: 1, g: 1, b: 1, a: 1 }}
+                fontSize={S(18)}
+                texture={BUTTON_SHEET}
                 uvs={isAdoptCta ? ADOPT_UVS : NEXT_UVS}
                 width={isAdoptCta ? adoptW : nextW}
                 height={btnH}
+                labelOnTexture
                 onClick={() => advanceDialog()}
               />
             </UiEntity>

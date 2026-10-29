@@ -692,7 +692,9 @@ const PILL_HALF_ASPECT = (PILL_BOX.half_green.x1 - PILL_BOX.half_green.x0) / (PI
 // Soft tan edge for the name field on the revamp panels' cream background.
 const ADOPT_INPUT_BORDER: Color = { r: 0.87, g: 0.8, b: 0.71, a: 1 }
 const PET_NAME_CHARACTER_LIMIT = 12
-const PET_NAME_LIMIT_MESSAGE = `Max characters: ${PET_NAME_CHARACTER_LIMIT}`
+function petNameLimitMessage(): string {
+  return t('input.name.limit', { max: PET_NAME_CHARACTER_LIMIT })
+}
 
 function PillButton(props: {
   id: string
@@ -896,7 +898,7 @@ function PetPanel() {
             // once the panel closes (#186). Route them through the in-panel
             // BreedNoticePill (#384) so the player reads them AT tap time.
             if (!unlocked) {
-              showBreedNotice('Grow your pet to Adult to unlock breeding!')
+              showBreedNotice(t('breed.notice.growAdult'))
               return
             }
             // First session: the Caretaker lends his own pet, so no partner check.
@@ -905,11 +907,11 @@ function PetPanel() {
               return
             }
             if (otherPets.length === 0) {
-              showBreedNotice('You need a second pet to breed with.')
+              showBreedNotice(t('breed.notice.needSecond'))
               return
             }
             if (!partner) {
-              showBreedNotice('You need a second Adult pet to breed with.')
+              showBreedNotice(t('breed.notice.needSecondAdult'))
               return
             }
             // New flow: carry this pet to the breeding nest, place it, pick the
@@ -1463,7 +1465,7 @@ function AdoptPanel() {
         uiBackground={{ color: LOC.white }}
       >
         <Input
-          placeholder="Type a name..."
+          placeholder={t('input.name.placeholder')}
           value={uiState.adoptName}
           fontSize={S(19)}
           color={PET_UI.ink}
@@ -1485,8 +1487,8 @@ function AdoptPanel() {
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(6) }, alignItems: 'center', justifyContent: 'center' }}>
         {!slotsFree && !nameAtLimit && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {nameAtLimit && <Label value={PET_NAME_LIMIT_MESSAGE} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {slotsFree && !named && !nameAtLimit && <Label value="Give your pet a name to continue." fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {nameAtLimit && <Label value={petNameLimitMessage()} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {slotsFree && !named && !nameAtLimit && <Label value={t('input.name.required')} fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(4) } }}>
         <PillButton id="adopt_back" label="Back" shape="half" color="pink" width={halfW} height={halfH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; resetMobileMagnifier() }} />
@@ -1558,8 +1560,8 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', pointerFilter: 'none', zIndex: 100 }}
     >
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: nameAtLimit ? LOC.red : LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
-        <Label value={value.trim() ? value : 'Type a name...'} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
-        {nameAtLimit && <Label value={`${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${PET_NAME_LIMIT_MESSAGE}`} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
+        <Label value={value.trim() ? value : t('input.name.placeholder')} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
+        {nameAtLimit && <Label value={`${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${petNameLimitMessage()}`} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
       </UiEntity>
     </UiEntity>
   )
@@ -1621,7 +1623,7 @@ function BreedNamePanel() {
         uiBackground={{ color: LOC.white }}
       >
         <Input
-          placeholder="Type a name..."
+          placeholder={t('input.name.placeholder')}
           value={uiState.breedName}
           fontSize={S(19)}
           color={PET_UI.ink}
@@ -1648,7 +1650,7 @@ function BreedNamePanel() {
         <UiEntity uiTransform={{ width: potionIcon, height: potionIcon }} uiBackground={{ texture: { src: 'assets/images/revamp/potion.png' }, textureMode: 'stretch' }} />
         <UiEntity uiTransform={{ width: S(170), height: S(52), flexDirection: 'column', margin: { left: S(6), right: S(8) } }}>
           <Label value={`${Cfg.RARITY_POTION_LABEL}  x${potions}`} fontSize={S(17)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ width: '100%', height: S(28) }} />
-          <Label value={`${Cfg.RARITY_POTION_PRICE} coins each`} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
+          <Label value={t('breed.potion.price', { price: Cfg.RARITY_POTION_PRICE })} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
         </UiEntity>
         <BuyButton
           id="breed_buy_potion"
@@ -1662,15 +1664,15 @@ function BreedNamePanel() {
             if (buyPotionLocal()) {
               uiState.breedUsePotion = true
               actions.buyPotion()
-              showBreedNotice('Bought a Rarity Potion!')
+              showBreedNotice(t('breed.notice.boughtPotion'))
             } else {
-              showBreedNotice(`Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`)
+              showBreedNotice(t('breed.notice.notEnoughPotion', { coins: Cfg.RARITY_POTION_PRICE }))
             }
           }}
         />
         <PillButton
           id="breed_add_potion"
-          label={usingPotion ? 'Remove' : 'Add'}
+          label={t(usingPotion ? 'breed.potion.remove' : 'breed.potion.add')}
           shape="half"
           color={usingPotion ? 'pink' : 'green'}
           width={addW}
@@ -1688,7 +1690,7 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={nameAtLimit ? PET_NAME_LIMIT_MESSAGE : noticeOn ? breedNotice.text : !named ? 'Give your offspring a name to continue.' : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
+          value={nameAtLimit ? petNameLimitMessage() : noticeOn ? breedNotice.text : !named ? t('breed.name.required') : `${usingPotion ? `${t('breed.potion.added')}  ·  ` : ''}${lent ? t('breed.cost.free') : t('breed.cost.standard', { coins: Cfg.BREED_COST })}`}
           fontSize={S(15)}
           color={nameAtLimit ? LOC.red : noticeOn || !named ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
@@ -1699,7 +1701,7 @@ function BreedNamePanel() {
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(8) } }}>
         <PillButton
           id="breed_confirm"
-          label="Breed!"
+          label={t('breed.confirm')}
           shape="half"
           color="green"
           width={breedW}
@@ -1715,7 +1717,7 @@ function BreedNamePanel() {
             // this modal was still open, just close — no stale actions.breed('').
             // Check the fee here too: once the egg cinematic starts it can't be taken back.
             if (coins < fee) {
-              showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
+              showBreedNotice(t('breed.notice.notEnoughBreed', { coins: Cfg.BREED_COST }))
               return
             }
             if (clientState.breed.active) startBreedCross(name, usingPotion)
@@ -3960,34 +3962,72 @@ function BathPop(props: { key?: string; p: PopFx }) {
 // the intro/Start card, the timer + counter pills, and the results card. Crop
 // each at its native aspect (same feedHud pattern) so the illustrated borders
 // and icons never get stretched by the responsive UI.
-const BATH_HUD_SHEET = 'assets/images/revamp/bath_hud.png'
+const BATH_HUD_SHEET = 'assets/images/revamp/bath_hud_new.png'
 const BATH_HUD_W = 1024
 const BATH_HUD_H = 1024
 function bathHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
   return sheetUvRect(x0, y0, x1, y1, BATH_HUD_W, BATH_HUD_H)
 }
-// Pixel boxes of each piece within bath_hud.png (measured off the source art).
-const BATH_START_BOX = { x0: 19, y0: 6, x1: 731, y1: 394 }
-const BATH_TIMER_BOX = { x0: 12, y0: 471, x1: 384, y1: 626 }
-const BATH_COUNT_BOX = { x0: 13, y0: 661, x1: 381, y1: 812 }
-const BATH_RESULTS_BOX = { x0: 402, y0: 397, x1: 908, y1: 833 }
+// Opaque bounds measured from the 1024px source export. Cropping only the
+// sprite bounds avoids sampling neighbouring artwork on responsive layouts.
+const BATH_START_BOX = { x0: 11, y0: 19, x1: 752, y1: 444 }
+// The same empty panel is used for the result state; its copy and progress
+// meter are composed in UI instead of baked into the image.
+const BATH_RESULTS_BOX = BATH_START_BOX
+const BATH_TIMER_BOX = { x0: 10, y0: 712, x1: 337, y1: 869 }
+const BATH_COUNT_BOX = { x0: 333, y0: 850, x1: 668, y1: 1008 }
+const BATH_ACTION_ENABLED_BOX = { x0: 593, y0: 555, x1: 940, y1: 674 }
+const BATH_ACTION_DISABLED_BOX = { x0: 593, y0: 685, x1: 941, y1: 799 }
 const BATH_START_UVS = bathHudUvRect(BATH_START_BOX.x0, BATH_START_BOX.y0, BATH_START_BOX.x1, BATH_START_BOX.y1)
 const BATH_TIMER_UVS = bathHudUvRect(BATH_TIMER_BOX.x0, BATH_TIMER_BOX.y0, BATH_TIMER_BOX.x1, BATH_TIMER_BOX.y1)
 const BATH_COUNT_UVS = bathHudUvRect(BATH_COUNT_BOX.x0, BATH_COUNT_BOX.y0, BATH_COUNT_BOX.x1, BATH_COUNT_BOX.y1)
 const BATH_RESULTS_UVS = bathHudUvRect(BATH_RESULTS_BOX.x0, BATH_RESULTS_BOX.y0, BATH_RESULTS_BOX.x1, BATH_RESULTS_BOX.y1)
+const BATH_ACTION_ENABLED_UVS = bathHudUvRect(BATH_ACTION_ENABLED_BOX.x0, BATH_ACTION_ENABLED_BOX.y0, BATH_ACTION_ENABLED_BOX.x1, BATH_ACTION_ENABLED_BOX.y1)
+const BATH_ACTION_DISABLED_UVS = bathHudUvRect(BATH_ACTION_DISABLED_BOX.x0, BATH_ACTION_DISABLED_BOX.y0, BATH_ACTION_DISABLED_BOX.x1, BATH_ACTION_DISABLED_BOX.y1)
 const BATH_START_ASPECT = (BATH_START_BOX.x1 - BATH_START_BOX.x0) / (BATH_START_BOX.y1 - BATH_START_BOX.y0)
 const BATH_TIMER_ASPECT = (BATH_TIMER_BOX.x1 - BATH_TIMER_BOX.x0) / (BATH_TIMER_BOX.y1 - BATH_TIMER_BOX.y0)
 const BATH_COUNT_ASPECT = (BATH_COUNT_BOX.x1 - BATH_COUNT_BOX.x0) / (BATH_COUNT_BOX.y1 - BATH_COUNT_BOX.y0)
 const BATH_RESULTS_ASPECT = (BATH_RESULTS_BOX.x1 - BATH_RESULTS_BOX.x0) / (BATH_RESULTS_BOX.y1 - BATH_RESULTS_BOX.y0)
+const BATH_ACTION_BUTTON_ASPECT = (BATH_ACTION_ENABLED_BOX.x1 - BATH_ACTION_ENABLED_BOX.x0) / (BATH_ACTION_ENABLED_BOX.y1 - BATH_ACTION_ENABLED_BOX.y0)
 
 // Intro card: the whole illustrated card ("Tap the bubbles…" + a drawn Start
 // button) is one big tappable button, exactly like the feed minigame's start card.
+function BathHudButton(props: { id: string; label: string; width: number; height: number; onClick: () => void; disabled?: boolean; fontSize?: number }) {
+  const disabled = props.disabled ?? false
+  const scale = getPress(props.id)
+  const width = Math.round(props.width * scale)
+  const height = Math.round(props.height * scale)
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
+      <UiEntity
+        uiTransform={{ width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+        uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: disabled ? BATH_ACTION_DISABLED_UVS : BATH_ACTION_ENABLED_UVS }}
+        onMouseDown={() => {
+          if (disabled) return
+          triggerPress(props.id)
+          playUiClick()
+          props.onClick()
+        }}
+      >
+        <Label value={`<b>${props.label}</b>`} fontSize={props.fontSize ?? S(18)} color={{ r: 1, g: 1, b: 1, a: 1 }} textAlign="middle-center" uiTransform={{ width, height }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// The backing art contains no copy. Labels and CTA are real UI so every game
+// language uses this one atlas.
 function BathStartCard() {
   const width = S(540)
   const height = Math.round(width / BATH_START_ASPECT)
+  const buttonW = S(210)
+  const buttonH = Math.round(buttonW / BATH_ACTION_BUTTON_ASPECT)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
-      <TactileButton id="bath_start" label="" texture={BATH_HUD_SHEET} uvs={BATH_START_UVS} width={width} height={height} onClick={() => startBathCountdown()} />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_START_UVS }}>
+      <Label value={`<b>${t('minigame.bath.instruction')}</b>`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.36), left: Math.round(width * 0.10) }, width: Math.round(width * 0.80), height: Math.round(height * 0.22) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.67), left: Math.round((width - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+        <BathHudButton id="bath_start" label={t('minigame.bath.start')} width={buttonW} height={buttonH} fontSize={S(18)} onClick={() => startBathCountdown()} />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -4000,9 +4040,9 @@ function BathRoundPill(props: { kind: 'timer' | 'count'; value: string; width: n
   const height = Math.round(width / aspect)
   const uvs = props.kind === 'timer' ? BATH_TIMER_UVS : BATH_COUNT_UVS
   // Brief gold pop on the counter each time a bubble bursts (popFlashUntil).
-  const fontSize = props.countdown ? S(28) : props.flashing ? S(27) : S(22)
-  const labelLeft = Math.round(width * 0.4)
-  const labelWidth = Math.round(width * 0.55)
+  const fontSize = props.countdown ? S(28) : props.flashing ? S(24) : S(20)
+  const labelLeft = Math.round(width * 0.48)
+  const labelWidth = Math.round(width * 0.48)
   return (
     <UiEntity uiTransform={{ width, height, pointerFilter: 'none' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs }}>
       <Label
@@ -4044,56 +4084,40 @@ function BathResultsPanel() {
   const clean = st.popped >= BUBBLE_GOAL
   const cardW = S(400)
   const cardH = Math.round(cardW / BATH_RESULTS_ASPECT)
-  // Inner "Pet clean" track bounds, as fractions of the illustrated card.
-  const barLeft = Math.round(cardW * 0.103)
-  const barTop = Math.round(cardH * 0.516)
-  const barW = Math.round(cardW * 0.796)
-  const barH = Math.round(cardH * 0.106)
+  // This atlas intentionally leaves the progress meter blank, so its frame
+  // and fill are rendered here and can scale with the localized panel copy.
+  const barW = Math.round(cardW * 0.70)
+  const barH = Math.max(S(14), Math.round(cardH * 0.075))
+  const barLeft = Math.round((cardW - barW) / 2)
+  const barTop = Math.round(cardH * 0.64)
+  const buttonW = S(187)
+  const buttonH = Math.round(buttonW / BATH_ACTION_BUTTON_ASPECT)
   const elapsed = Math.max(0, (Date.now() - st.resultsAt) / 1000 - BATH_RESULTS_FILL_DELAY_S)
   const raw = Math.max(0, Math.min(1, elapsed / BATH_RESULTS_FILL_DUR_S))
   const eased = raw * raw * (3 - 2 * raw) // smoothstep
   const target = clean ? 1 : Math.min(1, st.popped / BUBBLE_GOAL)
   const barPct = Math.max(0, Math.min(100, target * eased * 100))
-  // The illustrated card's text ("Bubbles popped! / Pet clean") is baked and fixed,
-  // so the outcome rides on a caption below the card + the bar's colour (blue =
-  // full clean, amber = partial). Hygiene now scales with bubbles, so a partial
-  // round reports the hygiene it earned instead of a misleading "try again".
-  const gained = Math.round(Math.min(st.popped, BUBBLE_GOAL) * Cfg.BATH_HYGIENE_PER_BUBBLE)
-  const caption = clean
-    ? `Squeaky clean!   ${st.popped} bubbles popped`
-    : st.popped > 0
-      ? `${st.popped}/${BUBBLE_GOAL} popped — +${gained} hygiene`
-      : `Popped 0/${BUBBLE_GOAL} — try again!`
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: C.scrim }}
     >
-      <UiEntity
-        uiTransform={{ width: cardW, height: cardH, pointerFilter: 'block' }}
-        uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}
-      >
-        {/* hygiene fill overlaid on the illustrated progress track */}
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
-          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: barH / 2 }} uiBackground={{ color: clean ? C.hygiene : C.gold }} />
+      <UiEntity uiTransform={{ width: cardW, height: cardH + S(10) + buttonH, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}>
+        <UiEntity uiTransform={{ width: cardW, height: cardH }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}>
+          <Label value={`<b>x ${st.popped}</b>`} fontSize={S(32)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.34), left: 0 }, width: '100%', height: Math.round(cardH * 0.17) }} />
+          <Label value={t('minigame.bath.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.52), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.10) }} />
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
+            <UiEntity uiTransform={{ width: '100%', height: '100%', borderRadius: Math.round(barH / 2) }} uiBackground={{ color: PET_UI.ink }}>
+              <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(2), left: S(2) }, width: barW - S(4), height: barH - S(4), borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: { r: 0.97, g: 0.91, b: 0.8, a: 1 } }}>
+                <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: clean ? C.hygiene : C.gold }} />
+              </UiEntity>
+            </UiEntity>
+          </UiEntity>
         </UiEntity>
-        {/* invisible clickable hotspot over the illustrated Exit button */}
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.727), left: Math.round(cardW * 0.215) }, width: Math.round(cardW * 0.573), height: Math.round(cardH * 0.172), pointerFilter: 'block' }}
-          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => {
-            playUiClick()
-            exitBathResults()
-          }}
-        />
+        <UiEntity uiTransform={{ width: buttonW, height: buttonH, margin: { top: S(10) } }}>
+          <BathHudButton id="bath_exit" label={t('minigame.bath.exit')} width={buttonW} height={buttonH} fontSize={S(20)} onClick={() => exitBathResults()} />
+        </UiEntity>
       </UiEntity>
-      <Label
-        value={caption}
-        fontSize={S(22)}
-        color={clean ? C.hygiene : C.gold}
-        textAlign="middle-center"
-        uiTransform={{ width: cardW, height: S(34), margin: { top: S(14) } }}
-      />
     </UiEntity>
   )
 }
@@ -4446,15 +4470,36 @@ function BathButton() {
 // 'animating' (frozen egg cinematic) render no world buttons; 'toNest' shows a
 // "Place Pet" once you reach the nest; 'ready' shows "Breed" (opens the
 // name/potion modal). BACK cancels the whole flow at any step.
-// breed.png is a 1920x1320 sheet stacking the two illustrated pill buttons:
-// PLACE PET on top, BREED on the bottom (same style as the bath button). Crop
-// each half and render it at its native aspect, like BathButton.
-const BREED_BTN_SHEET = 'assets/images/revamp/breed.png'
-const BREED_BTN_W = 812
-const BREED_BTN_H = 666
-const BREED_PLACE_UVS = sheetUvRect(0, 0, BREED_BTN_W, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H) // top half
-const BREED_GO_UVS = sheetUvRect(0, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H, BREED_BTN_W, BREED_BTN_H) // bottom half
-const BREED_BTN_ASPECT = BREED_BTN_W / (BREED_BTN_H / 2)
+// Place Pet / Breed artwork, with English, Spanish and Portuguese variants in
+// one 1024px sheet. Each translated button has its own bounds: the Portuguese
+// labels are slightly wider than the English ones, so treating this as a grid
+// would either crop the art or leave an uneven transparent edge.
+const BREED_BTN_SHEET = 'assets/images/buttons_place_breed_multilanguage.png'
+const BREED_BTN_SHEET_SIZE = 1024
+type BreedButtonId = 'place' | 'breed'
+const BREED_BUTTON_CROPS: Record<AppLanguage, Record<BreedButtonId, ButtonSpriteCrop>> = {
+  en: {
+    place: { x0: 13, y0: 341, x1: 354, y1: 537 },
+    breed: { x0: 13, y0: 572, x1: 351, y1: 744 }
+  },
+  es: {
+    place: { x0: 357, y0: 343, x1: 682, y1: 537 },
+    breed: { x0: 356, y0: 572, x1: 678, y1: 744 }
+  },
+  pt: {
+    place: { x0: 688, y0: 342, x1: 1014, y1: 537 },
+    breed: { x0: 681, y0: 574, x1: 1013, y1: 744 }
+  }
+}
+
+function breedButtonArt(id: BreedButtonId): LocalizedButtonArt {
+  const crop = BREED_BUTTON_CROPS[getLanguage()][id]
+  return {
+    src: BREED_BTN_SHEET,
+    uvs: sheetUvRect(crop.x0, crop.y0, crop.x1, crop.y1, BREED_BTN_SHEET_SIZE, BREED_BTN_SHEET_SIZE),
+    aspect: (crop.x1 - crop.x0) / (crop.y1 - crop.y0)
+  }
+}
 
 function BreedButtons() {
   const b = clientState.breed
@@ -4463,21 +4508,22 @@ function BreedButtons() {
   if (!b.active || b.phase === 'pickB' || b.phase === 'animating' || uiState.panel === 'breedName') return <UiEntity />
   const showPlace = b.phase === 'toNest' && b.atNest
   const showBreed = b.phase === 'ready'
+  const art = breedButtonArt(showPlace ? 'place' : 'breed')
   const bh = S(92) // match the bath/hatch button height
-  const bw = Math.round(bh * BREED_BTN_ASPECT)
+  const bw = Math.round(bh * art.aspect)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <BackButton onClick={() => cancelBreed()} />
       {(showPlace || showBreed) && (
         <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
           {showPlace ? (
-            <TactileButton id="breed_place" label="" texture={BREED_BTN_SHEET} uvs={BREED_PLACE_UVS} width={bw} height={bh} pulse onClick={() => placeParentA()} />
+            <TactileButton id="breed_place" label="" texture={art.src} uvs={art.uvs} width={bw} height={bh} pulse onClick={() => placeParentA()} />
           ) : (
             <TactileButton
               id="breed_go"
               label=""
-              texture={BREED_BTN_SHEET}
-              uvs={BREED_GO_UVS}
+              texture={art.src}
+              uvs={art.uvs}
               width={bw}
               height={bh}
               pulse
@@ -4512,7 +4558,7 @@ function PartnerCard(props: { key?: string; pet: PetData }) {
       selected={false}
       width={cardW}
       height={cardH}
-      onClick={() => (adult ? chooseBreedPartner(pet.id) : showBreedNotice('That pet must be an Adult to breed.'))}
+      onClick={() => (adult ? chooseBreedPartner(pet.id) : showBreedNotice(t('breed.notice.mustAdult')))}
     >
       <UiEntity
         uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
@@ -4537,7 +4583,7 @@ function BreedPickerPanel() {
   return (
     <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.choosePartner.title')} subtitle={t('panel.choosePartner.subtitle')} onClose={() => cancelBreed()}>
       {shown.length === 0 ? (
-        <Label value="You need a second pet to breed with." fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
+        <Label value={t('breed.notice.needSecond')} fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
       ) : (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
           {shown.map((pet) => (

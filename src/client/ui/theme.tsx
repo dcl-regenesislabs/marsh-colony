@@ -217,6 +217,8 @@ export function TactileButton(props: {
   /** Optional UV crop (8 numbers, bottom-left clockwise) for pulling this
    *  button out of a spritesheet instead of a standalone texture file. */
   uvs?: number[]
+  /** Render a localized label over a text-free texture. */
+  labelOnTexture?: boolean
 }) {
   const scale = getPress(props.id) * (props.pulse && !props.disabled ? attentionPulse() : 1)
   const w = Math.round(props.width * scale)
@@ -240,7 +242,7 @@ export function TactileButton(props: {
           props.onClick()
         }}
       >
-        {!textured && (
+        {(!textured || props.labelOnTexture) && (
           <Label
             value={props.label}
             fontSize={props.fontSize ?? S(18)}
