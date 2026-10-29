@@ -189,7 +189,20 @@ const MUSHROOM_HIT_SIZE = 1.6
 const MUSHROOM_PICK_REACH = 1.8
 let mushroomHit: Entity | null = null
 
+let mushPointHidden = false
+
+/** MushPoint is only a placement marker (its model shows where the mushroom goes in
+ *  the editor), so drop the model at runtime, same as the leaderboard Headpoints. */
+function hideMushPoint(): void {
+  if (mushPointHidden) return
+  const point = engine.getEntityOrNullByName(EntityNames.MushPoint)
+  if (point === null) return
+  if (GltfContainer.has(point)) GltfContainer.deleteFrom(point)
+  mushPointHidden = true
+}
+
 function findMushroom(): Entity | null {
+  hideMushPoint()
   if (mushroom !== null) return mushroom
   const e = engine.getEntityOrNullByName(EntityNames.Gypsy_mushroom)
   if (e === null || !Transform.has(e) || !GltfContainer.has(e)) return null
