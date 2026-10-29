@@ -42,10 +42,11 @@ function uvRect(x0: number, y0: number, x1: number, y1: number, width = SHEET_W,
 // Exact pixel bounds measured from the spritesheet (flood-filled by alpha,
 // not eyeballed) — image is 1024x1024.
 const BUBBLE_BOX = { x0: 34, y0: 39, x1: 858, y1: 245 }
-// Pink action-button variants measured from pet_action_buttons.png. They are
-// deliberately the same visual family: Adopt is only wider to fit its label.
-const NEXT_BOX = { x0: 936, y0: 0, x1: 1240, y1: 120 }
-const ADOPT_BOX = { x0: 368, y0: 392, x1: 728, y1: 482 }
+// Green action-button variants measured from pet_action_buttons.png. Both are
+// affirmative actions, so advancing the dialog and adopting keep the same
+// visual convention used elsewhere in the game.
+const NEXT_BOX = { x0: 0, y0: 0, x1: 304, y1: 120 }
+const ADOPT_BOX = { x0: 0, y0: 392, x1: 360, y1: 482 }
 
 const BUBBLE_UVS = uvRect(BUBBLE_BOX.x0, BUBBLE_BOX.y0, BUBBLE_BOX.x1, BUBBLE_BOX.y1)
 const NEXT_UVS = uvRect(NEXT_BOX.x0, NEXT_BOX.y0, NEXT_BOX.x1, NEXT_BOX.y1, BUTTON_SHEET_W, BUTTON_SHEET_H)

@@ -459,6 +459,14 @@ export function presenceFor(address: string): PresenceEntry | undefined {
  * Caretaker's objective bar is the only guide (same gate as showHint). */
 export function pushToast(message: string, kind: string = 'info', force = false): void {
   if (!force && (!GAME_TOASTS_ENABLED || clientState.firstSession)) return // suspended (see config)
+  // Repeated clicks against a tutorial gate used to enqueue the exact same
+  // instruction over and over. Keep one copy only, whether it is showing now
+  // or waiting in the queue; other notices still preserve their order.
+  const now = Date.now()
+  if (
+    (clientState.currentToast?.message === message && clientState.currentToast.until > now) ||
+    clientState.toasts.some((toast) => toast.message === message)
+  ) return
   clientState.toasts.push({ message, kind })
   if (clientState.toasts.length > 6) clientState.toasts.shift()
 }

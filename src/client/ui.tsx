@@ -1212,8 +1212,8 @@ function BottomNav() {
     const discardW = Math.round(kdH * discardArt.aspect)
     return (
       <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(50), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-        <TactileButton id="nav_keep" label="" texture={keepArt.src} uvs={keepArt.uvs} width={keepW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
         <TactileButton id="nav_discard" label="" texture={discardArt.src} uvs={discardArt.uvs} width={discardW} height={kdH} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
+        <TactileButton id="nav_keep" label="" texture={keepArt.src} uvs={keepArt.uvs} width={keepW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
       </UiEntity>
     )
   }
@@ -2158,8 +2158,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
           />
           <Label value={`${hatch.name} hatched!`} fontSize={rosterPx(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(20) }} />
           <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: rosterPx(6) } }}>
-            <TactileButton id="hatch_keep" label="" texture={keepArt.src} uvs={keepArt.uvs} width={rosterPx(70)} height={Math.round(rosterPx(70) / keepArt.aspect)} margin={{ right: rosterPx(4) }} pulse onClick={() => keepHatchling()} />
             <TactileButton id="hatch_discard" label="" texture={discardArt.src} uvs={discardArt.uvs} width={rosterPx(70)} height={Math.round(rosterPx(70) / discardArt.aspect)} margin={{ left: rosterPx(4) }} onClick={() => discardHatchling()} />
+            <TactileButton id="hatch_keep" label="" texture={keepArt.src} uvs={keepArt.uvs} width={rosterPx(70)} height={Math.round(rosterPx(70) / keepArt.aspect)} margin={{ right: rosterPx(4) }} pulse onClick={() => keepHatchling()} />
           </UiEntity>
         </PetGridCard>
       )
@@ -3596,9 +3596,9 @@ function FeedEatingPanel() {
   const barH = Math.max(S(14), Math.round(cardH * 0.065))
   const barLeft = Math.round((cardW - barW) / 2)
   const barTop = Math.round(cardH * 0.59) + (isMobile ? S(1) : 0)
-  // Match the old result button's *height*. The replacement artwork is taller
-  // by design, so deriving it from the panel width made it look oversized.
-  const buttonW = S(193)
+  // Result actions stay within the card. A compact, outlined caption reads
+  // clearly without competing with the count or the pet's celebration.
+  const buttonW = S(118)
   const buttonH = Math.round(buttonW / FEED_ACTION_BUTTON_ASPECT)
   const resultsReady = st.phase === 'results'
   return (
@@ -3612,19 +3612,19 @@ function FeedEatingPanel() {
         opacity: cardFade,
         pointerFilter: 'none'
       }}
-      uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_RESULTS_UVS }}
     >
-      <Label value={`<b>${t('minigame.feed.title')}</b>`} fontSize={S(23)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.11), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.18) }} />
-      <Label value={`<b>x ${shownCaught}</b>`} fontSize={S(35)} color={{ ...PET_UI.ink, a: PET_UI.ink.a * countOpacity }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.28), left: 0 }, width: '100%', height: Math.round(cardH * 0.17) }} />
-      <Label value={t('minigame.feed.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.45), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.12) }} />
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH, borderRadius: Math.round(barH / 2) }} uiBackground={{ color: PET_UI.ink }}>
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(2), left: S(2) }, width: barW - S(4), height: barH - S(4), borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: { r: 0.97, g: 0.91, b: 0.8, a: 1 } }}>
-          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: C.green }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: cardW, height: cardH, pointerFilter: 'none' }} uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_RESULTS_UVS }}>
+        <Label value={`<b>${shownCaught}</b>`} fontSize={S(42)} color={{ ...PET_UI.ink, a: PET_UI.ink.a * countOpacity }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.19), left: 0 }, width: '100%', height: Math.round(cardH * 0.22) }} />
+        <Label value={t('minigame.feed.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.42), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.12) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH, borderRadius: Math.round(barH / 2) }} uiBackground={{ color: PET_UI.ink }}>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(2), left: S(2) }, width: barW - S(4), height: barH - S(4), borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: { r: 0.97, g: 0.91, b: 0.8, a: 1 } }}>
+            <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: C.green }} />
+          </UiEntity>
         </UiEntity>
       </UiEntity>
       {resultsReady ? (
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.70), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH }}>
-          <FeedHudButton id="feed_exit" label={t('minigame.feed.exit')} width={buttonW} height={buttonH} fontSize={S(20)} onClick={() => {
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: cardH - buttonH - S(11), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH, pointerFilter: 'block' }}>
+          <FeedHudButton id="feed_exit" label={t('minigame.feed.exit')} width={buttonW} height={buttonH} fontSize={S(18)} onClick={() => {
             exitFeedResults()
           }} />
         </UiEntity>
@@ -3701,7 +3701,7 @@ function FeedHudButton(props: { id: string; label: string; width: number; height
           props.onClick()
         }}
       >
-        <Label value={props.label} fontSize={props.fontSize ?? S(22)} color={C.text} textAlign="middle-center" uiTransform={{ width, height }} />
+        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(22)} color={C.text} outlineColor={PET_UI.ink} width={width} height={height} />
       </UiEntity>
     </UiEntity>
   )
@@ -3766,7 +3766,7 @@ function FeedRoundHud(props: { timeLeft: number; caught: number; flashing: boole
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(12), left: '50%' }, margin: { left: -width / 2 }, width, height: S(86), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
       <FeedRoundPill kind="timer" value={timerValue} width={timerWidth} countdown={props.countdown !== undefined} />
       {showFruit ? <UiEntity uiTransform={{ width: gap }} /> : null}
-      {showFruit ? <FeedRoundPill kind="fruit" value={t('minigame.feed.fruits', { count: props.caught })} width={fruitWidth} flashing={props.flashing} /> : null}
+      {showFruit ? <FeedRoundPill kind="fruit" value={`${props.caught}`} width={fruitWidth} flashing={props.flashing} /> : null}
     </UiEntity>
   )
 }
