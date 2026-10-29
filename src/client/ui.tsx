@@ -2494,8 +2494,33 @@ function SpinPanel() {
 // Keeping that split means the server-authoritative daily ladder below stays
 // completely independent from the visual revamp.
 // ---------------------------------------------------------------------------
-const DAILY_REWARDS_SHEET = 'assets/images/revamp/dailyrewards_hud.png'
+const DAILY_REWARDS_SHEETS: Record<AppLanguage, string> = {
+  en: 'assets/images/revamp/dailyrewards_hud_en.png',
+  es: 'assets/images/revamp/dailyrewards_hud_es.png',
+  pt: 'assets/images/revamp/dailyrewards_hud_pt.png'
+}
 const DAILY_REWARDS_SHEET_SIZE = 1024
+const DAILY_CLAIM_BUTTON_SHEET = 'assets/images/revamp/dailyrewards_buttons_en_es_pt.png'
+const DAILY_CLAIM_BUTTON_SHEET_SIZE = 1024
+type DailyClaimState = 'enabled' | 'disabled'
+type DailyClaimCrop = { x0: number; y0: number; x1: number; y1: number }
+const DAILY_CLAIM_BUTTON_CROPS: Record<AppLanguage, Record<DailyClaimState, DailyClaimCrop>> = {
+  en: {
+    enabled: { x0: 32, y0: 36, x1: 521, y1: 153 },
+    disabled: { x0: 528, y0: 36, x1: 982, y1: 153 }
+  },
+  es: {
+    enabled: { x0: 27, y0: 149, x1: 520, y1: 267 },
+    disabled: { x0: 529, y0: 149, x1: 984, y1: 268 }
+  },
+  pt: {
+    enabled: { x0: 29, y0: 263, x1: 522, y1: 381 },
+    disabled: { x0: 528, y0: 263, x1: 984, y1: 381 }
+  }
+}
+function dailyRewardsSheet(): string {
+  return DAILY_REWARDS_SHEETS[getLanguage()]
+}
 
 function dailyRewardsUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
   const uL = x0 / DAILY_REWARDS_SHEET_SIZE
@@ -2504,16 +2529,18 @@ function dailyRewardsUvRect(x0: number, y0: number, x1: number, y1: number): num
   const vBottom = 1 - y1 / DAILY_REWARDS_SHEET_SIZE
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
+function dailyClaimButtonArt(state: DailyClaimState): { uvs: number[]; aspect: number } {
+  const crop = DAILY_CLAIM_BUTTON_CROPS[getLanguage()][state]
+  return {
+    uvs: sheetUvRect(crop.x0, crop.y0, crop.x1, crop.y1, DAILY_CLAIM_BUTTON_SHEET_SIZE, DAILY_CLAIM_BUTTON_SHEET_SIZE),
+    aspect: (crop.x1 - crop.x0) / (crop.y1 - crop.y0)
+  }
+}
 
-// Pixel bounds were taken from dailyrewards_hud.png. The crops include their
-// baked highlights/shadows but exclude the transparent sheet around them.
+// Pixel bounds are shared by the localized dailyrewards_hud_<lang>.png sheets.
+// They include baked highlights/shadows but exclude most transparent space.
 const DAILY_PANEL_BOX = { x0: 12, y0: 474, x1: 1008, y1: 994 }
 const DAILY_CLOSE_BOX = { x0: 100, y0: 40, x1: 161, y1: 101 }
-// The larger Claim variants include their side sparkles in the atlas. Keep
-// the complete 407 px-wide crops so they render sharp rather than sampling a
-// clipped inner section of the sheet.
-const DAILY_CLAIM_BOX = { x0: 179, y0: 27, x1: 586, y1: 121 }
-const DAILY_CLAIM_DISABLED_BOX = { x0: 604, y0: 27, x1: 1011, y1: 121 }
 const DAILY_CARD_TODAY_BOX = { x0: 70, y0: 157, x1: 261, y1: 426 }
 const DAILY_CARD_FUTURE_BOX = { x0: 307, y0: 156, x1: 495, y1: 426 }
 const DAILY_CARD_JACKPOT_BOX = { x0: 510, y0: 157, x1: 713, y1: 426 }
@@ -2521,8 +2548,6 @@ const DAILY_CARD_CLAIMED_BOX = { x0: 730, y0: 157, x1: 916, y1: 426 }
 
 const DAILY_PANEL_UVS = dailyRewardsUvRect(DAILY_PANEL_BOX.x0, DAILY_PANEL_BOX.y0, DAILY_PANEL_BOX.x1, DAILY_PANEL_BOX.y1)
 const DAILY_CLOSE_UVS = dailyRewardsUvRect(DAILY_CLOSE_BOX.x0, DAILY_CLOSE_BOX.y0, DAILY_CLOSE_BOX.x1, DAILY_CLOSE_BOX.y1)
-const DAILY_CLAIM_UVS = dailyRewardsUvRect(DAILY_CLAIM_BOX.x0, DAILY_CLAIM_BOX.y0, DAILY_CLAIM_BOX.x1, DAILY_CLAIM_BOX.y1)
-const DAILY_CLAIM_DISABLED_UVS = dailyRewardsUvRect(DAILY_CLAIM_DISABLED_BOX.x0, DAILY_CLAIM_DISABLED_BOX.y0, DAILY_CLAIM_DISABLED_BOX.x1, DAILY_CLAIM_DISABLED_BOX.y1)
 const DAILY_CARD_TODAY_UVS = dailyRewardsUvRect(DAILY_CARD_TODAY_BOX.x0, DAILY_CARD_TODAY_BOX.y0, DAILY_CARD_TODAY_BOX.x1, DAILY_CARD_TODAY_BOX.y1)
 const DAILY_CARD_FUTURE_UVS = dailyRewardsUvRect(DAILY_CARD_FUTURE_BOX.x0, DAILY_CARD_FUTURE_BOX.y0, DAILY_CARD_FUTURE_BOX.x1, DAILY_CARD_FUTURE_BOX.y1)
 const DAILY_CARD_JACKPOT_UVS = dailyRewardsUvRect(DAILY_CARD_JACKPOT_BOX.x0, DAILY_CARD_JACKPOT_BOX.y0, DAILY_CARD_JACKPOT_BOX.x1, DAILY_CARD_JACKPOT_BOX.y1)
@@ -2561,10 +2586,10 @@ function DailyDayCard(props: { key?: string; day: number; state: DailyCardState;
     <UiEntity uiTransform={{ width: props.width, height: props.height }}>
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height }}
-        uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: dailyCardUvs(props.day, props.state) }}
+        uiBackground={{ texture: { src: dailyRewardsSheet() }, textureMode: 'stretch', uvs: dailyCardUvs(props.day, props.state) }}
       />
       <Label
-        value={isToday ? 'TODAY' : `DAY ${props.day}`}
+        value={isToday ? t('daily.today') : t('daily.day', { day: props.day })}
         fontSize={titleSize}
         color={titleColor}
         textAlign="middle-center"
@@ -2606,7 +2631,8 @@ function MeteorRewardPanel() {
   // The supplied button includes transparent spark margins. Size its crop from
   // the visible green pill, so it carries the same visual weight as the cards.
   const claimWidth = Math.round(panelWidth * 0.34)
-  const claimHeight = Math.round(claimWidth / ((DAILY_CLAIM_BOX.x1 - DAILY_CLAIM_BOX.x0) / (DAILY_CLAIM_BOX.y1 - DAILY_CLAIM_BOX.y0)))
+  const claimArt = dailyClaimButtonArt(claimable ? 'enabled' : 'disabled')
+  const claimHeight = Math.round(claimWidth / claimArt.aspect)
   const claimTop = cardsTop + cardHeight + Math.round(panelHeight * 0.07)
   const closeSize = Math.round(panelHeight * 0.118)
 
@@ -2619,11 +2645,11 @@ function MeteorRewardPanel() {
       <UiEntity uiTransform={{ width: panelWidth, height: panelHeight }}>
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: panelWidth, height: panelHeight }}
-          uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_PANEL_UVS }}
+          uiBackground={{ texture: { src: dailyRewardsSheet() }, textureMode: 'stretch', uvs: DAILY_PANEL_UVS }}
         />
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round(panelHeight * 0.035), right: Math.round(panelWidth * 0.035) }, width: closeSize, height: closeSize, pointerFilter: 'block' }}
-          uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_CLOSE_UVS }}
+          uiBackground={{ texture: { src: dailyRewardsSheet() }, textureMode: 'stretch', uvs: DAILY_CLOSE_UVS }}
           onMouseDown={() => {
             playUiClick()
             ui.close()
@@ -2640,8 +2666,8 @@ function MeteorRewardPanel() {
           <TactileButton
             id="daily_claim"
             label=""
-            texture={DAILY_REWARDS_SHEET}
-            uvs={claimable ? DAILY_CLAIM_UVS : DAILY_CLAIM_DISABLED_UVS}
+            texture={DAILY_CLAIM_BUTTON_SHEET}
+            uvs={claimArt.uvs}
             width={claimWidth}
             height={claimHeight}
             disabled={!claimable}
@@ -5085,8 +5111,6 @@ const LANGUAGE_FLAG_RECTS: Record<AppLanguage, { x: number; y: number; w: number
   pt: { x: 555, y: 450, w: 457, h: 344 }
 }
 const LANGUAGE_PICKER_BACKGROUND = 'assets/images/revamp/pet_actions_panel.png'
-const LANGUAGE_BUTTON_PRIMARY = 'assets/images/revamp/Type=Primary, State=Focused.png'
-const LANGUAGE_BUTTON_SECONDARY = 'assets/images/revamp/Type=Secondary, State=Default.png'
 // Keep the language panel at the same visual scale as the rest of the desktop
 // HUD (Pet Actions, My Pets and the other revamp cards).  The flag layout is
 // authored on Cozy Farm's 1024px canvas, then fitted inside Marsh's 700px card.
@@ -5142,17 +5166,7 @@ function CozyLanguageFlag(props: { language: AppLanguage }) {
 }
 
 function CozyLanguageButton(props: { label: string; primary?: boolean; width: number; height: number; fontSize: number; onClick: () => void }) {
-  return (
-    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
-      <UiEntity
-        uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center', borderRadius: S(8) }}
-        uiBackground={{ texture: { src: props.primary ? LANGUAGE_BUTTON_PRIMARY : LANGUAGE_BUTTON_SECONDARY, wrapMode: 'clamp' }, textureMode: 'stretch' }}
-      >
-        <EcsLabel value={`<b>${props.label}</b>`} fontSize={props.fontSize} color={props.primary ? { r: 1, g: 1, b: 1, a: 1 } : { r: 0.34, g: 0.2, b: 0.1, a: 1 }} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { top: -1, left: 0 }, width: props.width, height: props.height }} />
-      </UiEntity>
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height, pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={props.onClick} />
-    </UiEntity>
-  )
+  return <PillButton id={props.primary ? 'language_select' : 'language_cancel'} label={props.label} shape="half" color={props.primary ? 'green' : 'pink'} width={props.width} height={props.height} fontSize={props.fontSize} onClick={props.onClick} />
 }
 
 function PlatformLanguageInfo() {
