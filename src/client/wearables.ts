@@ -53,15 +53,20 @@ export async function claimWearable(wearableId: string): Promise<void> {
     const payload = JSON.stringify({ campaign_key: w.campaignKey, beneficiary, catalyst: C.ARK_REWARDS_CATALYST })
     const res = await postClaim(url, payload)
     const body = res.body
-    // 2xx with a non-empty `data` array means the campaign assigned the wearable.
-    // A 4xx that says the player already has it is also "done" — report ok so the
-    // server stops asking. Anything else stays pending for a future session.
+    // ONLY a structured success counts: a 2xx whose `data` array carries the
+    // minted reward. Anything else stays pending and is retried next session.
+    // We must never infer success from error prose — the Rewards API's supply/
+    // limit errors read like "all rewards have been assigned", so a text match
+    // would flip a supply-exhausted claim to ok=true, the server would mark the
+    // grant delivered, and the player would silently lose a wearable they earned.
     let ok = false
     if (res.ok) {
-      const parsed = JSON.parse(body) as { data?: unknown[] }
-      ok = Array.isArray(parsed.data) && parsed.data.length > 0
-    } else if (/already|assigned|duplicate/i.test(body)) {
-      ok = true
+      try {
+        const parsed = JSON.parse(body) as { data?: unknown[] }
+        ok = Array.isArray(parsed.data) && parsed.data.length > 0
+      } catch {
+        ok = false // unexpected 2xx body -> treat as not confirmed, retry later
+      }
     }
     if (ok) {
       console.log(`[Client] wearable ${wearableId} claimed`)

@@ -216,7 +216,7 @@ export function server(): void {
   // pending to retry on the next session.
   room.onMessage('wearableClaimed', async (data, ctx) => {
     if (!ctx) return
-    console.log(`[Server] wearableClaimed ${data.wearableId} ok=${data.ok} from ${ctx.from}${data.ok ? '' : ` -> ${data.detail}`}`)
+    console.log(`[Server] wearableClaimed ${data.wearableId} ok=${data.ok} from ${ctx.from}${data.ok ? '' : ` -> ${data.detail.slice(0, 300)}`}`)
     if (!data.ok) return
     const p = await S.loadPlayer(ctx.from)
     if (Ark.markWearableDelivered(p, data.wearableId)) await S.savePlayer(ctx.from)
