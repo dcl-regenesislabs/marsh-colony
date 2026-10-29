@@ -102,10 +102,14 @@ const STATIC_UI_ASSETS: readonly string[] = [
   'assets/images/album/album_common.png',
   'assets/images/album/album_rare.png',
   'assets/images/album/album_legendary.png',
-  'assets/images/album/album_locked.png',
-  // World-space, not screen UI, but the same AssetLoad pipeline below preloads
-  // any texture path — petEmotes.ts's floating icon otherwise pops in blank
-  // the first time each one is shown.
+  'assets/images/album/album_locked.png'
+]
+
+// World-space, not screen UI, but the same AssetLoad pipeline below preloads
+// any texture path — petEmotes.ts's floating icon otherwise pops in blank
+// the first time each one is shown. Kept out of the UI warmer: a UiBackground
+// reference would not share the material's cache entry.
+const WORLD_TEXTURE_ASSETS: readonly string[] = [
   'assets/images/emotes/emote_Food.png',
   'assets/images/emotes/emote_Clean.png',
   'assets/images/emotes/emote_Play.png',
@@ -121,6 +125,7 @@ const STATIC_UI_ASSETS: readonly string[] = [
 
 let preloaded = false
 let criticalAssetsReady = false
+let uiAssetGroups: { critical: string[]; deferred: string[] } | null = null
 const criticalReadyCallbacks: Array<() => void> = []
 
 // AssetLoad reports numeric LoadingState values. Keep literals here, like the
@@ -129,6 +134,18 @@ const criticalReadyCallbacks: Array<() => void> = []
 const LS_NOT_FOUND = 2
 const LS_FINISHED_WITH_ERROR = 3
 const LS_FINISHED = 4
+
+/** Screen-UI textures split into the first-frame group and everything else.
+ * Species thumbnails count as critical: the adoption cards can open first. */
+export function getUiAssetGroups(): { critical: string[]; deferred: string[] } {
+  if (uiAssetGroups) return uiAssetGroups
+  const thumbnails = Cfg.SPECIES.map(Cfg.speciesImage).filter((src): src is string => !!src)
+  const critical = [...new Set([...CRITICAL_UI_ASSETS, ...thumbnails])]
+  const criticalSet = new Set(critical)
+  const deferred = [...new Set(STATIC_UI_ASSETS)].filter((asset) => !criticalSet.has(asset))
+  uiAssetGroups = { critical, deferred }
+  return uiAssetGroups
+}
 
 /**
  * Start the same persistent AssetLoad catalogue used by Raft, but split its
@@ -140,11 +157,8 @@ export function preloadUiAssets(): void {
   if (preloaded) return
   preloaded = true
 
-  const thumbnails = Cfg.SPECIES.map(Cfg.speciesImage).filter((src): src is string => !!src)
-  const allAssets = [...new Set([...STATIC_UI_ASSETS, ...thumbnails])]
-  const criticalAssets = [...new Set([...CRITICAL_UI_ASSETS, ...thumbnails])]
-  const criticalSet = new Set(criticalAssets)
-  const deferredAssets = allAssets.filter((asset) => !criticalSet.has(asset))
+  const { critical: criticalAssets, deferred } = getUiAssetGroups()
+  const deferredAssets = [...deferred, ...WORLD_TEXTURE_ASSETS]
   const pendingCritical = new Set(criticalAssets)
   const failedCritical = new Set<string>()
   const criticalEntity = engine.addEntity()

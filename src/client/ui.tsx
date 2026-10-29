@@ -68,6 +68,7 @@ import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 import { pepitoStealHidesHud } from './pepitoSteal'
 import { areCriticalUiAssetsReady } from './uiAssets'
+import { UiTextureWarmer } from './ui/textureWarmer'
 import {
   ARK_HANDOVER_TUNER_ENABLED,
   ARK_LAUNCH_DEBUG_ENABLED,
@@ -5187,6 +5188,7 @@ const Root = () => {
     )
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
+      <UiTextureWarmer />
       <CinematicBars />
       {content}
       <RewardPopup />
