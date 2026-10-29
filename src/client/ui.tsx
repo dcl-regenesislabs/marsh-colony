@@ -4674,6 +4674,43 @@ function WearablePreview(props: { key?: string; wearableId: string }) {
   )
 }
 
+// One-shot celebration shown after a wearable lands in the player's backpack
+// (clientState.wearableReward, set by wearables.ts on a confirmed claim). It's a
+// single custom image: it waits until the player has closed any open UI (so it
+// lands cleanly at tutorial end, not on top of the Ark thanks panel), then shows
+// for WEARABLE_WON_MS with a short fade in/out and dismisses itself.
+const WEARABLE_WON_IMG = 'assets/images/revamp/wearable_won.png'
+const WEARABLE_WON_W = 998 // native px, for aspect
+const WEARABLE_WON_H = 730
+const WEARABLE_WON_MS = 3000
+const WEARABLE_WON_FADE_MS = 400
+
+function WearableRewardOverlay() {
+  const r = clientState.wearableReward
+  if (!r) return <UiEntity />
+  const now = Date.now()
+
+  // Hold until every big panel/dialog is closed; only then start the timer.
+  if (r.shownAt === 0) {
+    if (bigUiOpen()) return <UiEntity />
+    r.shownAt = now
+  }
+  const elapsed = now - r.shownAt
+  if (elapsed >= WEARABLE_WON_MS) {
+    clientState.wearableReward = null
+    return <UiEntity />
+  }
+
+  const alpha = Math.max(0, Math.min(1, Math.min(elapsed, WEARABLE_WON_MS - elapsed) / WEARABLE_WON_FADE_MS))
+  const imgW = S(460)
+  const imgH = Math.round((imgW * WEARABLE_WON_H) / WEARABLE_WON_W)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ width: imgW, height: imgH }} uiBackground={{ texture: { src: WEARABLE_WON_IMG }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }} />
+    </UiEntity>
+  )
+}
+
 // Same revamp frame as the other Ark panels, with "Thank you!" + the Ark icon
 // baked in. The subtitle names the pet, so it's a Label set where the other
 // panels bake theirs (texture y ~144), in the same muted brown.
@@ -5153,8 +5190,32 @@ const Root = () => {
       <CinematicBars />
       {content}
       <RewardPopup />
+      <WearableRewardOverlay />
       {UI_DEBUG_MODE && <DebugBrowserBar />}
+      {Cfg.DEBUG_DELIVER_WEARABLE && <DebugWearableButton />}
       <ScreenFadeOverlay />
+    </UiEntity>
+  )
+}
+
+// DEBUG only (Cfg.DEBUG_DELIVER_WEARABLE): a corner button that asks the server
+// to grant + deliver the first-donation wearable to the connected wallet, so the
+// Rewards dispenser can be tested without playing to the first Ark donation. The
+// server confirms via a notify toast; watch the server logs for the mint result.
+function DebugWearableButton() {
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { bottom: S(12), left: S(12) }, width: S(220), height: S(48), pointerFilter: 'block' }}
+    >
+      <TactileButton
+        id="dbg_deliver_wearable"
+        label="DEBUG: Deliver wearable"
+        width={S(220)}
+        height={S(48)}
+        bg={C.greenDark}
+        fontSize={S(14)}
+        onClick={() => actions.devDeliverWearable()}
+      />
     </UiEntity>
   )
 }

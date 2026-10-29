@@ -960,7 +960,8 @@
     "peer-ec1.decentraland.org",
     "peer-eu1.decentraland.org",
     "profile-images.decentraland.org",
-    "profile-images-bucket-43d0c58.s3.us-east-1.amazonaws.com"
+    "profile-images-bucket-43d0c58.s3.us-east-1.amazonaws.com",
+    "rewards.decentraland.org"
   ],
   "featureToggles": {
     "voiceChat": "enabled",
