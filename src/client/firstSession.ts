@@ -233,6 +233,21 @@ function eatMushroom(): void {
     return
   }
   mushroomEaten = true
+  // Remove the separate click target immediately. The pop animation keeps the
+  // model visible briefly, but it must no longer be possible to target an
+  // invisible hitbox after the mushroom has been picked.
+  if (mushroomHit !== null) {
+    pointerEventsSystem.removeOnPointerDown(mushroomHit)
+    engine.removeEntity(mushroomHit)
+    mushroomHit = null
+  }
+  // The placed GLB may also contain pointer colliders, so turn those off at
+  // the same time rather than waiting for the pop animation to finish.
+  if (mushroom !== null) {
+    const g = GltfContainer.getMutable(mushroom)
+    g.visibleMeshesCollisionMask = ColliderLayer.CL_NONE
+    g.invisibleMeshesCollisionMask = ColliderLayer.CL_NONE
+  }
   mushroomPop = 0
   actions.firstSessionGrow(pet.id) // the server grows it; the snapshot brings the new size
 }
