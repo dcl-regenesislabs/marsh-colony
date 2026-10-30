@@ -4880,7 +4880,7 @@ function WearablePreview(props: { key?: string; wearableId: string }) {
   return (
     <UiEntity uiTransform={{ width: tile + S(40), flexDirection: 'column', alignItems: 'center', margin: { left: S(8), right: S(8) } }}>
       <UiEntity uiTransform={{ width: tile, height: tile, borderRadius: S(18), alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: LOC.tile }}>
-        <UiEntity uiTransform={{ width: tile - S(16), height: tile - S(16) }} uiBackground={{ texture: { src: w.image }, textureMode: 'stretch' }} />
+        <UiEntity uiTransform={{ width: tile - S(16), height: tile - S(16) }} uiBackground={{ texture: { src: w.image }, textureMode: 'stretch', uvs: w.imageUvs }} />
       </UiEntity>
       <Label value={w.name} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: S(40), margin: { top: S(4) } }} />
     </UiEntity>
@@ -4920,7 +4920,7 @@ function WearableRewardOverlay() {
       <UiEntity uiTransform={{ width: '100%', height: S(220), flexDirection: 'column', alignItems: 'center' }}>
         {wearable && (
           <UiEntity uiTransform={{ width: iconSize, height: iconSize, borderRadius: S(53), borderWidth: S(5), borderColor: { r: 0.82, g: 0.65, b: 0.5, a: 1 }, alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: LOC.tile }}>
-            <UiEntity uiTransform={{ width: iconSize - S(18), height: iconSize - S(18) }} uiBackground={{ texture: { src: wearable.image }, textureMode: 'stretch' }} />
+            <UiEntity uiTransform={{ width: iconSize - S(18), height: iconSize - S(18) }} uiBackground={{ texture: { src: wearable.image }, textureMode: 'stretch', uvs: wearable.imageUvs }} />
           </UiEntity>
         )}
         <Label value={t('wearableReward.wallet')} {...panelFont(FREDOKA_SEMIBOLD)} fontSize={S(18)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: width - S(110), height: S(48), margin: { top: S(12) } }} />

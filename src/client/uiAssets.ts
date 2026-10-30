@@ -80,6 +80,7 @@ const STATIC_UI_ASSETS: readonly string[] = [
   'assets/images/new_bubble_flipped.png',
   'assets/images/starburst.png',
   'assets/images/starburst_glow.png',
+  'assets/images/wearables/ark_wearables_sheet.png',
   // Album (collection book) — icon in the top HUD row + one sheet per rarity.
   'assets/images/album/album_icon.png',
   'assets/images/album/album_panel.png',
