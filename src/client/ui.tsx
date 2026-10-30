@@ -507,7 +507,7 @@ function TopBars() {
           <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
           <UiEntity uiTransform={{ width: gap, height: h }} />
           {/* Album takes the leaderboard's old slot — the leaderboard now lives on the physical in-world board. */}
-          <TactileButton id="hud_album" label="" texture={ALBUM_ICON} width={iconSize} height={iconSize} onClick={() => ui.openAlbum()} />
+          <TactileButton id="hud_album" label="" texture={HUD_SHEET} uvs={HUD_ALBUM_UVS} width={iconSize} height={iconSize} onClick={() => ui.openAlbum()} />
         </UiEntity>
       ) : null}
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round((h - languageFlagH) / 2), right: -(languageGap + languageFlagW) }, width: languageFlagW, height: languageFlagH }}>
@@ -2250,7 +2250,6 @@ function RosterPanel() {
 // panel-texture pixels and scaled by the panel's on-screen width, so the
 // runtime pieces stay locked to the baked art.
 // ---------------------------------------------------------------------------
-const ALBUM_ICON = 'assets/images/album/album_icon.png'
 const ALBUM_PANEL = 'assets/images/album/album_panel.png'
 // The original controls stay in the upper portion of this expanded atlas.
 // The two lower rows add the reviewed Spanish and Portuguese rarity tabs.
@@ -4303,6 +4302,8 @@ const NAV_GOALS_BOX = { x0: 492, y0: 614, x1: 696, y1: 817 }
 // their old floating mid-right placeholder spot.
 const HUD_MUSIC_BOX = { x0: 578, y0: 338, x1: 697, y1: 457 }
 const HUD_TROPHY_BOX = { x0: 578, y0: 473, x1: 697, y1: 592 }
+// The album entry point is packed into hud.png beside the bottom-nav sprites.
+const HUD_ALBUM_BOX = { x0: 786, y0: 657, x1: 912, y1: 783 }
 
 const BAR_NAME_UVS = petHudUvRect(BAR_NAME_BOX.x0, BAR_NAME_BOX.y0, BAR_NAME_BOX.x1, BAR_NAME_BOX.y1)
 const BAR_COIN_UVS = petHudUvRect(BAR_COIN_BOX.x0, BAR_COIN_BOX.y0, BAR_COIN_BOX.x1, BAR_COIN_BOX.y1)
@@ -4312,6 +4313,7 @@ const NAV_INV_UVS = petHudUvRect(NAV_INV_BOX.x0, NAV_INV_BOX.y0, NAV_INV_BOX.x1,
 const NAV_GOALS_UVS = petHudUvRect(NAV_GOALS_BOX.x0, NAV_GOALS_BOX.y0, NAV_GOALS_BOX.x1, NAV_GOALS_BOX.y1)
 const HUD_MUSIC_UVS = petHudUvRect(HUD_MUSIC_BOX.x0, HUD_MUSIC_BOX.y0, HUD_MUSIC_BOX.x1, HUD_MUSIC_BOX.y1)
 const HUD_TROPHY_UVS = petHudUvRect(HUD_TROPHY_BOX.x0, HUD_TROPHY_BOX.y0, HUD_TROPHY_BOX.x1, HUD_TROPHY_BOX.y1)
+const HUD_ALBUM_UVS = petHudUvRect(HUD_ALBUM_BOX.x0, HUD_ALBUM_BOX.y0, HUD_ALBUM_BOX.x1, HUD_ALBUM_BOX.y1)
 
 const BAR_NAME_ASPECT = (BAR_NAME_BOX.x1 - BAR_NAME_BOX.x0) / (BAR_NAME_BOX.y1 - BAR_NAME_BOX.y0)
 const BAR_COIN_ASPECT = (BAR_COIN_BOX.x1 - BAR_COIN_BOX.x0) / (BAR_COIN_BOX.y1 - BAR_COIN_BOX.y0)
