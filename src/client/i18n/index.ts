@@ -66,6 +66,11 @@ export function selectDesktopLanguage(language: AppLanguage): void {
   if (languageMode !== 'mobile') setCurrentLanguage(language)
 }
 
+/** UI debug browser only: force a language so localized art can be reviewed. */
+export function debugSetLanguage(language: AppLanguage): void {
+  setCurrentLanguage(language)
+}
+
 /** Read mobile Settings now and choose the appropriate language source. */
 export function setupLocalization(): void {
   platformLanguage = languageFromTag(getPlayerLanguage())

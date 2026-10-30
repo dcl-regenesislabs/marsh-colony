@@ -229,7 +229,10 @@ export function TactileButton(props: {
       uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center', margin: props.margin }}
     >
       <UiEntity
-        uiTransform={{ width: w, height: h, alignItems: 'center', justifyContent: 'center', borderRadius: textured ? 0 : props.radius ?? S(16) }}
+        // flexShrink 0: the parent is a row sized to the un-pulsed button, and
+        // the default shrink would clamp the width while the height still grows,
+        // stretching the art vertically instead of scaling it evenly.
+        uiTransform={{ width: w, height: h, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: textured ? 0 : props.radius ?? S(16) }}
         uiBackground={
           textured
             ? { texture: { src: props.texture! }, textureMode: 'stretch', uvs: props.uvs }
@@ -273,7 +276,7 @@ export function CareButton(props: {
     <UiEntity uiTransform={{ width: props.size, height: props.size + S(22), flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', margin: { left: S(7), right: S(7) } }}>
       <UiEntity uiTransform={{ width: props.size, height: props.size, alignItems: 'center', justifyContent: 'center' }}>
         <UiEntity
-          uiTransform={{ width: d, height: d, alignItems: 'center', justifyContent: 'center', borderRadius: Math.round(props.size) }}
+          uiTransform={{ width: d, height: d, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: Math.round(props.size) }}
           uiBackground={{ color: props.disabled ? dimColor(props.bg) : props.bg }}
           onMouseDown={() => {
             if (props.disabled) return
