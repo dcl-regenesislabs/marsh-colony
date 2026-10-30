@@ -21,7 +21,11 @@ let platformLanguage: AppLanguage = 'en'
 const MOBILE_AGENT_RE = /mobile|android|iphone|ipad|ios/
 const languageListeners = new Set<() => void>()
 
+// UI debug browser only: while set, it wins over snapshot/platform updates.
+let debugLanguageOverride: AppLanguage | null = null
+
 function setCurrentLanguage(language: AppLanguage): void {
+  if (debugLanguageOverride) language = debugLanguageOverride
   if (currentLanguage === language) return
   currentLanguage = language
   for (const listener of languageListeners) listener()
@@ -64,6 +68,13 @@ export function applyStoredLanguage(language: AppLanguage | undefined): void {
 export function selectDesktopLanguage(language: AppLanguage): void {
   storedLanguage = language
   if (languageMode !== 'mobile') setCurrentLanguage(language)
+}
+
+/** UI debug browser only: force a language so localized art can be reviewed.
+ *  Sticky — snapshots and platform events can't revert it until the reload. */
+export function debugSetLanguage(language: AppLanguage): void {
+  debugLanguageOverride = language
+  setCurrentLanguage(language)
 }
 
 /** Read mobile Settings now and choose the appropriate language source. */

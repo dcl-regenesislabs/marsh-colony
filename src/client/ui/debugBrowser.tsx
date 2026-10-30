@@ -8,14 +8,15 @@
 // rendering path) plus this file's on-screen Prev/Next/variant/jump bar.
 // Flip back to false to return to normal gameplay; nothing else changes.
 
-import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { Label, ScreenInsetArea, UiEntity } from '@dcl/sdk/react-ecs'
 import * as Cfg from '../../shared/config'
 import type { PetData, PlayerData, PresenceEntry, Rarity, SwapOfferPayload } from '../../shared/types'
 import { clientState, openDialog, pushToast } from '../state'
 import { debugForcePanel, debugSetUiState, type Panel } from '../ui'
 import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
-import { C, S, TactileButton } from './theme'
+import { C, S, TactileButton, mobile } from './theme'
+import { debugSetLanguage, getLanguage, type AppLanguage } from '../i18n'
 
 // Keep the browser available for future layout work, but never inject fixtures
 // or show its overlay during a normal playtest.
@@ -403,6 +404,15 @@ const DEBUG_SCREENS: DebugScreen[] = [
     }
   },
   {
+    id: 'breedNest',
+    label: 'Breeding Nest Buttons',
+    variants: ['At nest — Place Pet', 'Ready — Breed'],
+    activate: (v) => {
+      applyFixturePlayer(fakePlayer(), fakePet({ size: Cfg.SIZE_MAX }))
+      clientState.breed = { active: true, phase: v === 1 ? 'ready' : 'toNest', partnerId: '', atNest: true, name: '', usePotion: false }
+    }
+  },
+  {
     id: 'normalHud',
     label: 'Normal HUD (top bar / side buttons / bottom nav)',
     variants: ['With an active pet', 'Hatchling pending (Keep/Discard)', 'No pets yet'],
@@ -470,10 +480,16 @@ function resetAllDebugFlags(): void {
   debugForcePanel('none' as Panel)
 }
 
-// Open on Feed to review the Start/Exit controls first; the bar can jump to
-// every other registered UI without replaying the tutorial.
-let currentScreenIndex = DEBUG_SCREENS.findIndex((screen) => screen.id === 'feedGame')
-let currentVariantIndex = 1 // Feed's "Intro" variant, where the Start CTA is visible.
+// Open on the Hatch button to review the localized world-action buttons
+// (Hatch / Bath / Place Pet / Breed); the bar can jump to every other UI.
+let currentScreenIndex = DEBUG_SCREENS.findIndex((screen) => screen.id === 'carryEgg')
+let currentVariantIndex = 1 // "Home — Hatch button"
+
+const DEBUG_LANGUAGES: AppLanguage[] = ['en', 'es', 'pt']
+function cycleLanguage(): void {
+  const i = DEBUG_LANGUAGES.indexOf(getLanguage())
+  debugSetLanguage(DEBUG_LANGUAGES[(i + 1) % DEBUG_LANGUAGES.length])
+}
 let showJumpList = false
 let initialized = false
 
@@ -506,9 +522,14 @@ export function DebugBrowserBar() {
   const entry = DEBUG_SCREENS[currentScreenIndex]
   const hasVariants = (entry.variants?.length ?? 0) > 1
   const barW = S(760)
+  // Just under the top HUD row (TopBars: top S(46)/S(10) + height S(58)) so it
+  // doesn't cover coins/pets, and inside the safe area like the real HUD.
+  const top = (mobile() ? S(46) : S(10)) + S(58) + S(10)
   return (
+    <ScreenInsetArea>
+    <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { bottom: S(12), left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column-reverse', alignItems: 'center', pointerFilter: 'block' }}
+      uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
     >
       <UiEntity
         uiTransform={{ width: '100%', height: S(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: S(16), padding: { left: S(12), right: S(12) } }}
@@ -529,6 +550,9 @@ export function DebugBrowserBar() {
           <TactileButton id="dbg_variant_next" label="Variant >" width={S(130)} height={S(34)} bg={C.cardAlt} margin={{ left: S(8) }} onClick={() => gotoVariant(1)} />
         </UiEntity>
       )}
+      <UiEntity uiTransform={{ width: '100%', height: S(38), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(4) } }}>
+        <TactileButton id="dbg_lang" label={`Lang: ${getLanguage().toUpperCase()}`} width={S(130)} height={S(34)} bg={C.cardAlt} onClick={() => cycleLanguage()} />
+      </UiEntity>
       {showJumpList && (
         <UiEntity
           uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', margin: { top: S(6) }, borderRadius: S(12), padding: S(8), overflow: 'hidden' }}
@@ -550,5 +574,7 @@ export function DebugBrowserBar() {
         </UiEntity>
       )}
     </UiEntity>
+    </UiEntity>
+    </ScreenInsetArea>
   )
 }
