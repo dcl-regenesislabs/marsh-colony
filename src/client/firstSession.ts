@@ -28,7 +28,7 @@ import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
 import { FIRST_SESSION_STEPS } from '../shared/types'
-import { getEggPending, setFirstSessionBreedPartner, growthCinematicActive, startCarryEgg, startGetEgg, startHatch } from './pet'
+import { canStartPetInteraction, getEggPending, setFirstSessionBreedPartner, growthCinematicActive, startCarryEgg, startGetEgg, startHatch } from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog, CAPTAIN_NPC_NAME } from './state'
@@ -39,6 +39,7 @@ import { petTouchControlsAreVisible } from './touchControls'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 import { showMushroomGlow } from './mushroomGlow'
+import { translateText } from './i18n'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
@@ -205,7 +206,7 @@ function findMushroom(): Entity | null {
   })
   MeshCollider.setBox(hit, ColliderLayer.CL_NONE)
   pointerEventsSystem.onPointerDown(
-    { entity: hit, opts: { button: InputAction.IA_POINTER, hoverText: 'Pick the mushroom', maxDistance: 16 } },
+    { entity: hit, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Pick the mushroom'), maxDistance: 16 } },
     () => eatMushroom()
   )
   mushroomHit = hit
@@ -221,6 +222,15 @@ function eatMushroom(): void {
   }
   mushroomEaten = true
   mushroomPop = 0
+  // The pop animation is still visible for a fraction of a second, but this
+  // must stop being a valid pointer target the instant it is picked.
+  if (mushroomHit !== null) MeshCollider.setBox(mushroomHit, ColliderLayer.CL_NONE)
+  const e = findMushroom()
+  if (e !== null) {
+    const gltf = GltfContainer.getMutable(e)
+    gltf.visibleMeshesCollisionMask = ColliderLayer.CL_NONE
+    gltf.invisibleMeshesCollisionMask = ColliderLayer.CL_NONE
+  }
   actions.firstSessionGrow(pet.id) // the server grows it; the snapshot brings the new size
 }
 
@@ -505,7 +515,13 @@ function advance(dt: number): void {
       if (breatheLeft <= 0) goTo('bath')
       return
     case 'bath':
-      if ((p?.counters['bathCount'] ?? 0) > bathsAtStart) goTo('play', 2)
+      // The reward is recorded before the pet's splash/hop-out finishes. Do
+      // not point at Pet Actions until it is actually available again.
+      if (
+        (p?.counters['bathCount'] ?? 0) > bathsAtStart &&
+        !clientState.bathGame.active &&
+        canStartPetInteraction()
+      ) goTo('play', 2)
       return
     case 'play': {
       const pet = clientState.activePet

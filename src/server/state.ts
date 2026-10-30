@@ -4,7 +4,7 @@
 // validated and persisted in one place.
 
 import { Storage } from '@dcl/sdk/server'
-import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
+import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
 
@@ -36,6 +36,13 @@ const carriedState = new Map<string, boolean>()
 // Like a carried pet, an egg exists only in the client carry flow, so retain
 // its session-only visual state separately for presence broadcasts.
 const carriedEggState = new Map<string, boolean>()
+
+/** Validate a desktop language selection before it can enter persisted data. */
+export function setLanguagePreference(p: PlayerData, language: string): boolean {
+  if (language !== 'en' && language !== 'es' && language !== 'pt') return false
+  p.language = language as LanguagePreference
+  return true
+}
 
 /** Record a player's pet follow state so presence can broadcast it. */
 export function setFollowState(address: string, following: boolean): void {
@@ -497,6 +504,11 @@ function sanitize(address: string, d: PlayerData): PlayerData {
     ark: { launchSeen: d.ark?.launchSeen ?? 0, grants: d.ark?.grants ?? [] },
     pets: (d.pets ?? []).map((pet) => migratePet({ ...newPet(pet.species, pet.name), ...pet })),
     hatchling: d.hatchling ? migratePet({ ...newPet(d.hatchling.species, d.hatchling.name), ...d.hatchling }) : null
+  }
+  // This value comes from persisted JSON, so validate it again during a save
+  // migration instead of trusting a value written by an older build.
+  if (out.language !== 'en' && out.language !== 'es' && out.language !== 'pt') {
+    delete out.language
   }
   // First load since album rewards shipped: mark everything the player ALREADY
   // has as claimed, without paying, so only new progress is rewarded.

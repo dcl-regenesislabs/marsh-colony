@@ -17,6 +17,8 @@ import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
 import { C, S, TactileButton } from './theme'
 
+// Keep the browser available for future layout work, but never inject fixtures
+// or show its overlay during a normal playtest.
 export const UI_DEBUG_MODE = false
 
 // ---------------------------------------------------------------------------
@@ -150,6 +152,22 @@ const DEBUG_SCREENS: DebugScreen[] = [
         { ...base, phase: 'results' as const, caught: 8, resultsAt: Date.now() }
       ]
       clientState.feedGame = byVariant[v] ?? byVariant[0]
+    }
+  },
+  {
+    id: 'bathGame',
+    label: 'Bath Minigame',
+    variants: ['Intro (Start button)', 'Countdown 3-2-1', 'Popping HUD', 'Results'],
+    activate: (v) => {
+      applyFixturePlayer(fakePlayer(), fakePet())
+      const base = { active: true, popped: 0, timeLeft: 16, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+      const byVariant = [
+        { ...base, phase: 'intro' as const },
+        { ...base, phase: 'countdown' as const, countdownAt: Date.now() },
+        { ...base, phase: 'popping' as const, popped: 4, timeLeft: 9, popFlashUntil: Date.now() + 300 },
+        { ...base, phase: 'results' as const, popped: Cfg.BATH_BUBBLE_GOAL, resultsAt: Date.now() - 2000 }
+      ]
+      clientState.bathGame = byVariant[v] ?? byVariant[0]
     }
   },
   {
@@ -436,6 +454,7 @@ function resetAllDebugFlags(): void {
   clientState.petting = { active: false, progress: 0, celebrationUntil: 0 }
   clientState.hatch = { active: false, progress: 0 }
   clientState.feedGame = { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 }
+  clientState.bathGame = { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
   clientState.dialog.open = false
   clientState.fetch = { active: false, busy: false, charging: false, charge: 0 }
   clientState.carryEgg = { active: false, species: '', name: '', atHome: false }
@@ -451,8 +470,10 @@ function resetAllDebugFlags(): void {
   debugForcePanel('none' as Panel)
 }
 
-let currentScreenIndex = 0
-let currentVariantIndex = 0
+// Open on Feed to review the Start/Exit controls first; the bar can jump to
+// every other registered UI without replaying the tutorial.
+let currentScreenIndex = DEBUG_SCREENS.findIndex((screen) => screen.id === 'feedGame')
+let currentVariantIndex = 1 // Feed's "Intro" variant, where the Start CTA is visible.
 let showJumpList = false
 let initialized = false
 
@@ -487,7 +508,7 @@ export function DebugBrowserBar() {
   const barW = S(760)
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: 0, left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
+      uiTransform={{ positionType: 'absolute', position: { bottom: S(12), left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column-reverse', alignItems: 'center', pointerFilter: 'block' }}
     >
       <UiEntity
         uiTransform={{ width: '100%', height: S(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: S(16), padding: { left: S(12), right: S(12) } }}

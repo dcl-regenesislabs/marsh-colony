@@ -5,7 +5,7 @@
 //  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
-import ReactEcs, { InteractableArea, ReactEcsRenderer, Label, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
+import ReactEcs, { InteractableArea, ReactEcsRenderer, Label as EcsLabel, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
 import { cancelArkRedeem, confirmArkRedeem, openArkConfirm, startArkRedeem } from './arkRedeem'
@@ -68,6 +68,7 @@ import { endCaretakerIntroLock } from './caretaker'
 import { DebugBrowserBar, UI_DEBUG_MODE } from './ui/debugBrowser'
 import { pepitoStealHidesHud } from './pepitoSteal'
 import { areCriticalUiAssetsReady } from './uiAssets'
+import { getLanguage, languageName, selectDesktopLanguage, t, translateText, usesPlatformLanguage, type AppLanguage } from './i18n'
 import {
   ARK_HANDOVER_TUNER_ENABLED,
   ARK_LAUNCH_DEBUG_ENABLED,
@@ -81,6 +82,13 @@ import {
   toggleArkHandoverPause,
   type ArkTuneKey
 } from './arkCinematics'
+
+// Existing HUD copy predates localization and is spread across this large
+// renderer. Keeping this narrow adapter means it is translated at render time
+// (including a live Explorer language change) without touching gameplay state.
+function Label(props: any) {
+  return <EcsLabel {...props} value={translateText(String(props.value ?? ''))} />
+}
 
 export type Panel =
   | 'none'
@@ -126,7 +134,10 @@ const uiState = {
   // Choose a Partner (breeding) page — same 4-per-row paging as My Pets.
   breedPickerPage: 0,
   // Ark (Captain) panel: pet-picker page.
-  arkPage: 0
+  arkPage: 0,
+  // Mobile explains the Explorer setting; desktop/Bevy uses this same modal as
+  // a persisted in-scene language picker.
+  languageInfoOpen: false
 }
 
 const MOBILE_NAME_OVERLAY_MS = 260
@@ -350,6 +361,7 @@ export function debugSetUiState(patch: Partial<{ shopTab: ShopTabId; adoptStep: 
 function bigUiOpen(): boolean {
   return (
     uiState.panel !== 'none' ||
+    uiState.languageInfoOpen ||
     clientState.dialog.open ||
     clientState.petPanelOpen ||
     clientState.viewingPetAddress !== null ||
@@ -399,7 +411,7 @@ function NameLevelBar(props: { height: number }) {
         uiTransform={{ positionType: 'absolute', position: { left: circleLeft, top: circleTop }, width: circleW, height: circleH }}
       />
       <UiEntity uiTransform={{ positionType: 'absolute', position: { left: circleLeft + circleW + S(10), top: 0 }, width: textW, height: h, flexDirection: 'column', justifyContent: 'center' }}>
-        <Label value={`${playerName()}  ·  Lv ${lvl}`} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: textW, height: S(18) }} />
+        <Label value={t('pet.level', { name: playerName(), level: lvl })} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: textW, height: S(18) }} />
         <UiEntity uiTransform={{ width: Math.round(textW * 0.55), height: S(10), borderRadius: S(5), margin: { top: S(3) } }} uiBackground={{ color: LOC.tile }}>
           <UiEntity uiTransform={{ width: `${Math.round(frac * 100)}%`, height: '100%', borderRadius: S(5) }} uiBackground={{ color: C.gold }} />
         </UiEntity>
@@ -477,6 +489,9 @@ function TopBars() {
     !clientState.breed.active &&
     !clientState.hatch.active
   const iconsW = gap + iconSize + gap + iconSize // music + album (leaderboard is now the physical in-world board)
+  const languageGap = S(10)
+  const languageFlagW = (mobile() ? S(60) : S(48)) + S(12)
+  const languageFlagH = (mobile() ? S(40) : S(32)) + S(12)
   const totalW = w1 + gap + w2 + gap + w3 + (showIcons ? iconsW : 0)
   const rightShift = S(TOP_HUD_CENTER_SHIFT) // nudged off-center — plenty of clearance either side of this row
   return (
@@ -492,9 +507,12 @@ function TopBars() {
           <TactileButton id="hud_music" label="" texture={HUD_SHEET} uvs={HUD_MUSIC_UVS} width={iconSize} height={iconSize} onClick={() => ui.openJukebox()} />
           <UiEntity uiTransform={{ width: gap, height: h }} />
           {/* Album takes the leaderboard's old slot — the leaderboard now lives on the physical in-world board. */}
-          <TactileButton id="hud_album" label="" texture={ALBUM_ICON} width={iconSize} height={iconSize} onClick={() => ui.openAlbum()} />
+          <TactileButton id="hud_album" label="" texture={HUD_SHEET} uvs={HUD_ALBUM_UVS} width={iconSize} height={iconSize} onClick={() => ui.openAlbum()} />
         </UiEntity>
       ) : null}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round((h - languageFlagH) / 2), right: -(languageGap + languageFlagW) }, width: languageFlagW, height: languageFlagH }}>
+        <LanguageIndicator />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -618,9 +636,9 @@ function PetIdentityRow(props: { species: string; rarity: Rarity; size: number; 
       </UiEntity>
       <UiEntity uiTransform={{ width: textW, flexDirection: 'column', justifyContent: 'center' }}>
         {props.name !== undefined && (
-          <Label value={`${props.name}  ·  Lv ${props.level}`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
+          <Label value={t('pet.level', { name: props.name, level: props.level ?? 1 })} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: '100%', height: S(26) }} />
         )}
-        <Label value={Cfg.rarityLabel(props.rarity).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
+        <Label value={t(`rarity.${props.rarity}`).toUpperCase()} fontSize={S(18)} color={rarityColor} textAlign="middle-left" uiTransform={{ width: '100%', height: S(24) }} />
         <StageProgress size={props.size} color={rarityColor} />
       </UiEntity>
     </UiEntity>
@@ -670,11 +688,14 @@ const PILL_INK: Record<PillColor, Color> = {
   gray: { r: 0.41, g: 0.39, b: 0.37, a: 1 }
 }
 const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
+const PILL_CHIP_ASPECT = (PILL_BOX.chip_orange.x1 - PILL_BOX.chip_orange.x0) / (PILL_BOX.chip_orange.y1 - PILL_BOX.chip_orange.y0)
 const PILL_HALF_ASPECT = (PILL_BOX.half_green.x1 - PILL_BOX.half_green.x0) / (PILL_BOX.half_green.y1 - PILL_BOX.half_green.y0)
 // Soft tan edge for the name field on the revamp panels' cream background.
 const ADOPT_INPUT_BORDER: Color = { r: 0.87, g: 0.8, b: 0.71, a: 1 }
 const PET_NAME_CHARACTER_LIMIT = 12
-const PET_NAME_LIMIT_MESSAGE = `Max characters: ${PET_NAME_CHARACTER_LIMIT}`
+function petNameLimitMessage(): string {
+  return t('input.name.limit', { max: PET_NAME_CHARACTER_LIMIT })
+}
 
 function PillButton(props: {
   id: string
@@ -688,6 +709,7 @@ function PillButton(props: {
   pulse?: boolean
   fontSize?: number
   margin?: Partial<{ top: number; right: number; bottom: number; left: number }>
+  outlineColor?: Color
 }) {
   const color: PillColor = props.disabled ? 'gray' : props.color
   const b = PILL_BOX[`${props.shape}_${color}`] ?? PILL_BOX[`${props.shape}_gray`]
@@ -708,7 +730,7 @@ function PillButton(props: {
           props.onClick()
         }}
       >
-        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(17)} color={PET_UI.white} outlineColor={PILL_INK[color]} width={w} height={bodyH} />
+        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(17)} color={PET_UI.white} outlineColor={props.outlineColor ?? PILL_INK[color]} width={w} height={bodyH} />
       </UiEntity>
     </UiEntity>
   )
@@ -860,10 +882,10 @@ function PetPanel() {
           pill (its 4:1 cell matches a third of the row). Breed and the Ark are
           for Adults only. */}
       <UiEntity uiTransform={{ width: contentW, flexDirection: 'row', justifyContent: 'center', margin: { top: S(12) } }}>
-        <PillButton id="pet_gesture" label="Pet  ·  +Happy" shape="half" color="pink" width={thirdW} height={thirdH} fontSize={S(16)} disabled={locked || off('pet')} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
+        <PillButton id="pet_gesture" label={t('pet.action.pet')} shape="half" color="pink" width={thirdW} height={thirdH} fontSize={S(16)} disabled={locked || off('pet')} margin={{ right: S(4) }} onClick={guard(() => startPetting())} />
         <PillButton
           id="breed_teaser"
-          label={unlocked ? 'Breed' : 'Breed  ·  Adult'}
+          label={unlocked ? 'Breed' : t('pet.action.breedLocked')}
           shape="half"
           color={unlocked ? 'purple' : 'gray'}
           width={thirdW}
@@ -878,7 +900,7 @@ function PetPanel() {
             // once the panel closes (#186). Route them through the in-panel
             // BreedNoticePill (#384) so the player reads them AT tap time.
             if (!unlocked) {
-              showBreedNotice('Grow your pet to Adult to unlock breeding!')
+              showBreedNotice(t('breed.notice.growAdult'))
               return
             }
             // First session: the Caretaker lends his own pet, so no partner check.
@@ -887,11 +909,11 @@ function PetPanel() {
               return
             }
             if (otherPets.length === 0) {
-              showBreedNotice('You need a second pet to breed with.')
+              showBreedNotice(t('breed.notice.needSecond'))
               return
             }
             if (!partner) {
-              showBreedNotice('You need a second Adult pet to breed with.')
+              showBreedNotice(t('breed.notice.needSecondAdult'))
               return
             }
             // New flow: carry this pet to the breeding nest, place it, pick the
@@ -901,7 +923,7 @@ function PetPanel() {
         />
         <PillButton
           id="ark_send"
-          label={unlocked ? 'Send to Ark' : 'Ark  ·  Adult'}
+          label={unlocked ? 'Send to Ark' : t('pet.action.arkLocked')}
           shape="half"
           color={unlocked ? 'green' : 'gray'}
           width={thirdW}
@@ -983,7 +1005,7 @@ function RemotePetPanel() {
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round((PASSPORT_TEX.top + 64) * k), left: pad }, width: contentW, flexDirection: 'column', alignItems: 'center' }}
         >
-          <Label value={`${entry.name}  ·  Lv ${entry.level}`} fontSize={S(26)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(40), margin: { bottom: S(8) } }} />
+          <Label value={t('pet.level', { name: entry.name, level: entry.level })} fontSize={S(26)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: contentW, height: S(40), margin: { bottom: S(8) } }} />
           <PetIdentityRow species={entry.species} rarity={entry.rarity} size={entry.size} width={contentW} ring />
           <Label value="Mood" fontSize={S(15)} color={ALBUM_INK} textAlign="middle-center" uiTransform={{ width: contentW, height: S(22) }} />
           <PassportBar value={entry.mood} color={C.happy} width={contentW} height={S(22)} />
@@ -1115,19 +1137,55 @@ function SwapOfferPanel() {
   )
 }
 
-// Keep/Discard button art (source is 443x336) — sized off this ratio wherever
-// they're used instead of the old text-pill's own width/height, so the art
-// never gets stretched.
-const KEEP_BUTTON_ICON = 'assets/images/revamp/keepbutton.png'
-const DISCARD_BUTTON_ICON = 'assets/images/revamp/discardbutton.png'
-const KEEP_DISCARD_ASPECT = 443 / 336
+// Localized button sheet. Every language has its own hand-laid-out artwork, so
+// the crops intentionally use independent bounds instead of assuming a grid.
+// Bounds include a small transparent safety gutter and the Bath splash pieces.
+type LocalizedButtonId = 'keep' | 'discard' | 'bath' | 'hatch' | 'back'
+type ButtonSpriteCrop = { x0: number; y0: number; x1: number; y1: number }
+type LocalizedButtonArt = { src: string; uvs: number[]; aspect: number }
 
-// Hatch/Bath action button art — same idea, sized off each image's own native
-// ratio (hatch is 671x323, bath is 812x323) so neither gets stretched.
-const HATCH_BUTTON_ICON = 'assets/images/hatch_button.png'
-const BATH_BUTTON_ICON = 'assets/images/bath button.png'
-const HATCH_BUTTON_ASPECT = 671 / 323
-const BATH_BUTTON_ASPECT = 812 / 323
+const BUTTON_SPRITE_SIZE = 1024
+const BUTTON_SPRITES: Record<AppLanguage, string> = {
+  en: 'assets/images/buttons_sprite_en.png',
+  es: 'assets/images/buttons_sprite_es.png',
+  pt: 'assets/images/buttons_sprite_pt.png'
+}
+const BUTTON_SPRITE_CROPS: Record<AppLanguage, Record<LocalizedButtonId, ButtonSpriteCrop>> = {
+  en: {
+    keep: { x0: 64, y0: 7, x1: 487, y1: 345 },
+    discard: { x0: 575, y0: 7, x1: 1004, y1: 345 },
+    bath: { x0: 13, y0: 365, x1: 799, y1: 678 },
+    hatch: { x0: 33, y0: 704, x1: 681, y1: 1017 },
+    back: { x0: 682, y0: 670, x1: 1020, y1: 916 }
+  },
+  es: {
+    keep: { x0: 73, y0: 46, x1: 515, y1: 381 },
+    discard: { x0: 536, y0: 48, x1: 965, y1: 378 },
+    bath: { x0: 41, y0: 380, x1: 821, y1: 661 },
+    // Hatch and Back touch by a one-pixel anti-aliased edge in this source.
+    // Leave that shared edge out of both crops rather than leaking one button
+    // into the other.
+    hatch: { x0: 37, y0: 669, x1: 666, y1: 946 },
+    back: { x0: 667, y0: 656, x1: 987, y1: 904 }
+  },
+  pt: {
+    keep: { x0: 68, y0: 70, x1: 500, y1: 392 },
+    discard: { x0: 537, y0: 77, x1: 968, y1: 390 },
+    bath: { x0: 116, y0: 408, x1: 880, y1: 677 },
+    hatch: { x0: 28, y0: 695, x1: 638, y1: 954 },
+    back: { x0: 663, y0: 716, x1: 995, y1: 955 }
+  }
+}
+
+function localizedButtonArt(id: LocalizedButtonId): LocalizedButtonArt {
+  const language = getLanguage()
+  const crop = BUTTON_SPRITE_CROPS[language][id]
+  return {
+    src: BUTTON_SPRITES[language],
+    uvs: sheetUvRect(crop.x0, crop.y0, crop.x1, crop.y1, BUTTON_SPRITE_SIZE, BUTTON_SPRITE_SIZE),
+    aspect: (crop.x1 - crop.x0) / (crop.y1 - crop.y0)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Bottom nav: 3 big buttons (cozy-farm style)
@@ -1149,12 +1207,15 @@ function BottomNav() {
   // the nav bar — Keep places it (nav returns), Discard sends it to the Care
   // Center (nothing kept). Until then the 3 nav buttons stay hidden.
   if (p.hatchling) {
+    const keepArt = localizedButtonArt('keep')
+    const discardArt = localizedButtonArt('discard')
     const kdH = Math.round(bh * 1.15)
-    const kdW = Math.round(kdH * KEEP_DISCARD_ASPECT)
+    const keepW = Math.round(kdH * keepArt.aspect)
+    const discardW = Math.round(kdH * discardArt.aspect)
     return (
       <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(50), left: 0 }, width: '100%', height: bh, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-        <TactileButton id="nav_keep" label="" texture={KEEP_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
-        <TactileButton id="nav_discard" label="" texture={DISCARD_BUTTON_ICON} width={kdW} height={kdH} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
+        <TactileButton id="nav_discard" label="" texture={discardArt.src} uvs={discardArt.uvs} width={discardW} height={kdH} margin={{ left: S(8), right: S(8) }} onClick={() => discardHatchling()} />
+        <TactileButton id="nav_keep" label="" texture={keepArt.src} uvs={keepArt.uvs} width={keepW} height={kdH} margin={{ left: S(8), right: S(8) }} pulse onClick={() => keepHatchling()} />
       </UiEntity>
     )
   }
@@ -1355,9 +1416,6 @@ function SpeciesCard(props: { key?: string; species: string }) {
   )
 }
 
-const ADOPT_CHOOSE_PANEL = 'assets/images/revamp/adopt_choose_panel.png'
-const ADOPT_NAME_PANEL = 'assets/images/revamp/adopt_name_panel.png'
-
 function AdoptPanel() {
   const p = clientState.player
   const slotsFree = p ? p.pets.length < p.petSlots : true
@@ -1369,7 +1427,7 @@ function AdoptPanel() {
     const nextW = S(165)
     const nextH = Math.round(nextW / PILL_HALF_ASPECT)
     return (
-      <RevampPanel src={ADOPT_CHOOSE_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+      <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.adoptChoose.title')} subtitle={t('panel.adoptChoose.subtitle')} onClose={() => ui.close()}>
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(40) } }}>
           {Cfg.SPECIES.map((s) => (
             <SpeciesCard key={s} species={s} />
@@ -1395,7 +1453,7 @@ function AdoptPanel() {
   const halfH = Math.round(halfW / PILL_HALF_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
-    <RevampPanel src={ADOPT_NAME_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.adoptName.title')} subtitle={t('panel.adoptName.subtitle')} onClose={() => ui.close()}>
       {/* Species snapshot in the Passport's ringed disc */}
       <UiEntity uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { top: S(10) } }} uiBackground={img ? { texture: { src: img }, textureMode: 'stretch' } : { color: speciesColor(sp) }}>
         <UiEntity
@@ -1409,7 +1467,7 @@ function AdoptPanel() {
         uiBackground={{ color: LOC.white }}
       >
         <Input
-          placeholder="Type a name..."
+          placeholder={t('input.name.placeholder')}
           value={uiState.adoptName}
           fontSize={S(19)}
           color={PET_UI.ink}
@@ -1431,8 +1489,8 @@ function AdoptPanel() {
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(6) }, alignItems: 'center', justifyContent: 'center' }}>
         {!slotsFree && !nameAtLimit && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {nameAtLimit && <Label value={PET_NAME_LIMIT_MESSAGE} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {slotsFree && !named && !nameAtLimit && <Label value="Give your pet a name to continue." fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {nameAtLimit && <Label value={petNameLimitMessage()} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {slotsFree && !named && !nameAtLimit && <Label value={t('input.name.required')} fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(4) } }}>
         <PillButton id="adopt_back" label="Back" shape="half" color="pink" width={halfW} height={halfH} fontSize={S(19)} margin={{ right: S(12) }} onClick={() => { uiState.adoptName = ''; uiState.adoptStep = 'pick'; resetMobileMagnifier() }} />
@@ -1504,8 +1562,8 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', pointerFilter: 'none', zIndex: 100 }}
     >
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: nameAtLimit ? LOC.red : LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
-        <Label value={value.trim() ? value : 'Type a name...'} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
-        {nameAtLimit && <Label value={`${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${PET_NAME_LIMIT_MESSAGE}`} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
+        <Label value={value.trim() ? value : t('input.name.placeholder')} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
+        {nameAtLimit && <Label value={`${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${petNameLimitMessage()}`} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
       </UiEntity>
     </UiEntity>
   )
@@ -1515,10 +1573,8 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
 // server's surprise inside the egg; the name is prefixed "Gen-N" server-side.
 // A rarity potion (bought in the Shop) can be spent on this roll to tilt the
 // odds toward rare/legendary — it is consumed server-side by this breed only.
-// Same revamp frame as the adoption "Name Your Pet" step (title, subtitle and
-// close X baked into breeding_background.png); the input, potion row and Breed
-// button are laid out on top.
-const BREED_NAME_PANEL = 'assets/images/revamp/breeding_background.png'
+// Same standard revamp frame as the adoption name step. The input, potion row
+// and Breed button are laid out below its live localized header.
 
 // Inline notice for the breed flow (name modal and partner picker) — toasts are
 // hidden while a big panel is open (bigUiOpen), so feedback inside the flow shows
@@ -1555,21 +1611,25 @@ function BreedNamePanel() {
 
   const potionIcon = S(60)
   const buyW = S(120)
-  const addW = S(120)
-  const addH = Math.round(addW / PILL_HALF_ASPECT)
+  const buyH = Math.round(buyW / PILL_HALF_ASPECT)
+  // The orange/pink chip is the real artwork for the potion toggle.  There is
+  // no orange half-pill in the atlas, so using a half here would fall back to
+  // the gray frame.
+  const addW = S(112)
+  const addH = Math.round(addW / PILL_CHIP_ASPECT)
   const breedW = S(190)
   const breedH = Math.round(breedW / PILL_HALF_ASPECT)
 
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%' }}>
-    <RevampPanel src={BREED_NAME_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.breedName.title')} subtitle={t('panel.breedName.subtitle')} onClose={() => ui.close()}>
       {/* Offspring name (same field as the adoption name step) */}
       <UiEntity
         uiTransform={{ width: S(340), height: S(50), margin: { top: S(14) }, borderRadius: S(14), borderWidth: S(2), borderColor: ADOPT_INPUT_BORDER }}
         uiBackground={{ color: LOC.white }}
       >
         <Input
-          placeholder="Type a name..."
+          placeholder={t('input.name.placeholder')}
           value={uiState.breedName}
           fontSize={S(19)}
           color={PET_UI.ink}
@@ -1596,12 +1656,18 @@ function BreedNamePanel() {
         <UiEntity uiTransform={{ width: potionIcon, height: potionIcon }} uiBackground={{ texture: { src: 'assets/images/revamp/potion.png' }, textureMode: 'stretch' }} />
         <UiEntity uiTransform={{ width: S(170), height: S(52), flexDirection: 'column', margin: { left: S(6), right: S(8) } }}>
           <Label value={`${Cfg.RARITY_POTION_LABEL}  x${potions}`} fontSize={S(17)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ width: '100%', height: S(28) }} />
-          <Label value={`${Cfg.RARITY_POTION_PRICE} coins each`} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
+          <Label value={t('breed.potion.price', { price: Cfg.RARITY_POTION_PRICE })} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
         </UiEntity>
-        <BuyButton
+        <PillButton
           id="breed_buy_potion"
+          label={t('Buy')}
+          shape="half"
+          color="green"
           width={buyW}
-          enabled={coins >= Cfg.RARITY_POTION_PRICE}
+          height={buyH}
+          disabled={coins < Cfg.RARITY_POTION_PRICE}
+          fontSize={S(16)}
+          outlineColor={PET_UI.ink}
           onClick={() => {
             // buyPotionLocal is the optimistic mirror (deducts coins + adds the
             // potion, false if broke); the server call confirms. Auto-add it — you
@@ -1610,17 +1676,17 @@ function BreedNamePanel() {
             if (buyPotionLocal()) {
               uiState.breedUsePotion = true
               actions.buyPotion()
-              showBreedNotice('Bought a Rarity Potion!')
+              showBreedNotice(t('breed.notice.boughtPotion'))
             } else {
-              showBreedNotice(`Not enough coins — a Rarity Potion costs ${Cfg.RARITY_POTION_PRICE}`)
+              showBreedNotice(t('breed.notice.notEnoughPotion', { coins: Cfg.RARITY_POTION_PRICE }))
             }
           }}
         />
         <PillButton
           id="breed_add_potion"
-          label={usingPotion ? 'Remove' : 'Add'}
-          shape="half"
-          color={usingPotion ? 'pink' : 'green'}
+          label={t(usingPotion ? 'breed.potion.remove' : 'breed.potion.add')}
+          shape="chip"
+          color={usingPotion ? 'pink' : 'orange'}
           width={addW}
           height={addH}
           fontSize={S(16)}
@@ -1636,7 +1702,7 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={nameAtLimit ? PET_NAME_LIMIT_MESSAGE : noticeOn ? breedNotice.text : !named ? 'Give your offspring a name to continue.' : `${usingPotion ? 'Rarity Potion added  ·  ' : ''}${lent ? 'Free this time: my treat!' : `Breeding costs ${Cfg.BREED_COST} coins`}`}
+          value={nameAtLimit ? petNameLimitMessage() : noticeOn ? breedNotice.text : !named ? t('breed.name.required') : `${usingPotion ? `${t('breed.potion.added')}  ·  ` : ''}${lent ? t('breed.cost.free') : t('breed.cost.standard', { coins: Cfg.BREED_COST })}`}
           fontSize={S(15)}
           color={nameAtLimit ? LOC.red : noticeOn || !named ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
@@ -1647,7 +1713,7 @@ function BreedNamePanel() {
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(8) } }}>
         <PillButton
           id="breed_confirm"
-          label="Breed!"
+          label={t('breed.confirm')}
           shape="half"
           color="green"
           width={breedW}
@@ -1663,7 +1729,7 @@ function BreedNamePanel() {
             // this modal was still open, just close — no stale actions.breed('').
             // Check the fee here too: once the egg cinematic starts it can't be taken back.
             if (coins < fee) {
-              showBreedNotice(`Not enough coins — breeding costs ${Cfg.BREED_COST}`)
+              showBreedNotice(t('breed.notice.notEnoughBreed', { coins: Cfg.BREED_COST }))
               return
             }
             if (clientState.breed.active) startBreedCross(name, usingPotion)
@@ -1781,50 +1847,20 @@ function ShopPanel() {
 // is TAPPED to buy (enabled while affordable). Same art/size for all three so the
 // row stays uniform — the potion reuses the Magic Kibble bowl image as a stand-in.
 // Narrow enough that three fit inside the original inventory modal.
-// Illustrated BUY button — a 3-state horizontal sprite strip (0 = normal,
-// 1 = pressed, 2 = disabled). Sits under each inventory food card so a player can
-// restock the item they'd otherwise only be able to feed. Shares the tap-bounce
-// press system with TactileButton, swapping to the pressed frame while held.
-// Revamp pill buttons (same style as the Feed/Bath HUD "Start" button).
-// BUY: 3-frame strip [enabled, pressed, disabled]. USE: 2-frame strip
-// [enabled, disabled], drawn over the blank inventory card.
-const BUY_BTN_SHEET = 'assets/images/revamp/inv_buy_button.png'
-const BUY_BTN_FRAMES = 3
-const BUY_BTN_ASPECT = 360 / 104 // one state's cell aspect (~3.46, includes the soft drop shadow)
-const USE_BTN_SHEET = 'assets/images/revamp/inv_use_button.png'
-const USE_BTN_ASPECT = 360 / 104
-// Inventory card without the old baked "Use" (hud3.png card, button painted out);
-// the Use pill sits where the old one was, as fractions of the card box.
+// Inventory cards use the same text-free action buttons as the rest of the
+// game. This keeps BUY/USE live-localized and avoids a separate button PNG per
+// language.
 const INV_CARD_BLANK = 'assets/images/revamp/inv_card.png'
-const INV_USE_BOX = { left: 30 / 405, top: 377 / 499, width: 345 / 405 }
-function BuyButton(props: { key?: string; id: string; width: number; enabled: boolean; onClick: () => void }) {
-  const height = Math.round(props.width / BUY_BTN_ASPECT)
-  const scale = props.enabled ? getPress(props.id) : 1
-  const frame = !props.enabled ? 2 : scale < 0.995 ? 1 : 0 // pressed frame during the tap bounce
-  const w = Math.round(props.width * scale)
-  const h = Math.round(height * scale)
-  return (
-    <UiEntity uiTransform={{ width: props.width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: props.enabled ? 'block' : 'none' }}>
-      <UiEntity
-        uiTransform={{ width: w, height: h }}
-        uiBackground={{ texture: { src: BUY_BTN_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(frame, BUY_BTN_FRAMES) }}
-        onMouseDown={
-          props.enabled
-            ? () => {
-                triggerPress(props.id)
-                playUiClick()
-                props.onClick()
-              }
-            : undefined
-        }
-      />
-    </UiEntity>
-  )
-}
+// The blank card has room for an old wide baked button.  Live buttons use the
+// native atlas proportions instead: keep USE compact on the card and BUY just
+// below it, rather than stretching either artwork to fill that old slot.
+const INV_USE_TOP = 377 / 499
 
 function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: number[]; bowlSrc?: string; bowlAspect: number; bowlScale?: number; bowlTop?: number; count: number; enabled: boolean; onClick: () => void }) {
   const cardW = S(180)
   const cardH = Math.round(cardW / INV_CARD_ASPECT)
+  const useH = S(44)
+  const useW = Math.round(useH * PILL_CHIP_ASPECT)
   // bowlScale = art width as a fraction of the card; bowlTop = its vertical spot.
   // Defaults match the food bowls; the potion overrides them (bigger + higher).
   const bowlW = Math.round(cardW * (props.bowlScale ?? 0.46))
@@ -1832,15 +1868,7 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
   const bowlTop = Math.round(cardH * (props.bowlTop ?? 0.3))
   return (
     <UiEntity
-      uiTransform={{ width: cardW, height: cardH, margin: S(6), pointerFilter: props.enabled ? 'block' : 'none' }}
-      onMouseDown={
-        props.enabled
-          ? () => {
-              playUiClick()
-              props.onClick()
-            }
-          : undefined
-      }
+      uiTransform={{ width: cardW, height: cardH, margin: S(6) }}
     >
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: cardW, height: cardH }}
@@ -1849,13 +1877,13 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { left: Math.round(cardW * INV_USE_BOX.left), top: Math.round(cardH * INV_USE_BOX.top) },
-          width: Math.round(cardW * INV_USE_BOX.width),
-          height: Math.round((cardW * INV_USE_BOX.width) / USE_BTN_ASPECT),
-          pointerFilter: 'none'
+          position: { left: Math.round((cardW - useW) / 2), top: Math.round(cardH * INV_USE_TOP) },
+          width: useW,
+          height: useH
         }}
-        uiBackground={{ texture: { src: USE_BTN_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(props.enabled ? 0 : 1, 2) }}
-      />
+      >
+        <PillButton id={props.id} label={t('Use')} shape="chip" color="orange" width={useW} height={useH} disabled={!props.enabled} fontSize={S(14)} outlineColor={PET_UI.ink} onClick={props.onClick} />
+      </UiEntity>
       <Label
         value={`x${props.count}`}
         fontSize={S(14)}
@@ -1885,37 +1913,65 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
 }
 
 // ---------------------------------------------------------------------------
-// Revamp panel shell — the "Your Journey" frame (goals.png) with the title,
-// subtitle, icon and close X BAKED into the image, same family as the Album.
-// Children are laid out in a full-width column starting at `contentTop`
-// (texture px, scaled with the panel). An invisible hit area sits on the baked
-// X. The art lives in assets/images/revamp/ (generated from goals.png).
+// Revamp panel shell. The native standard background contains only shared
+// chrome (frame, close X and decoration); titles and subtitles are live,
+// localized text. Children start at `contentTop` in texture pixels.
 // ---------------------------------------------------------------------------
-const REVAMP_PANEL_W = 998 // every revamp panel shares the Goals frame width
+const REVAMP_PANEL_W = 998
+const REVAMP_PANEL_H = 730
+const REVAMP_PANEL_BG = 'assets/images/revamp/panel_standard_bg.png'
+const FREDOKA_SEMIBOLD = 'assets/fonts/Fredoka-SemiBold.ttf'
+const FREDOKA_BOLD = 'assets/fonts/Fredoka-Bold.ttf'
+// Godot mobile currently mishandles local `fontSrc` and paints the label's
+// rectangular bounds. Keep the native font there until that renderer supports
+// local fonts; Bevy/desktop continues to use Fredoka.
+function panelFont(fontSrc: string): { fontSrc?: string } {
+  return mobile() ? {} : { fontSrc }
+}
 /** On-screen width shared by the nav panels (Inventory, My Pets, Goals) and the
  *  pet Passport, so they all open at the same size on desktop and mobile. */
 function navPanelWidth(): number {
   return S(660)
 }
-const REVAMP_CONTENT_TOP = 190 // first px below the baked title + subtitle
+const REVAMP_CONTENT_TOP = 190 // first px below the live title + subtitle
 const REVAMP_CLOSE = { x: 865, y: 20, size: 104 } // baked close button box
-const INVENTORY_PANEL = 'assets/images/revamp/inventory_panel.png'
-const INVENTORY_PANEL_H = 730
-const MYPETS_PANEL = 'assets/images/revamp/mypets_panel.png'
-const MYPETS_PANEL_H = 730
 
-function RevampPanel(props: { src: string; texW: number; texH: number; width: number; contentTop: number; onClose: () => void; children?: any }) {
+function RevampPanel(props: { width: number; contentTop: number; onClose: () => void; title?: string; subtitle?: string; children?: any }) {
   const w = props.width
-  const k = w / props.texW
-  const h = Math.round(props.texH * k)
+  const k = w / REVAMP_PANEL_W
+  const h = Math.round(REVAMP_PANEL_H * k)
   const top = Math.round(props.contentTop * k)
+  const headerLeft = Math.round(138 * k)
+  const headerWidth = Math.round(690 * k)
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: PET_UI.scrim }}
       onMouseDown={() => {}}
     >
-      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: props.src }, textureMode: 'stretch' }}>
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: REVAMP_PANEL_BG }, textureMode: 'stretch' }}>
+        {props.title && (
+          <Label
+            value={props.title}
+            {...panelFont(FREDOKA_BOLD)}
+            fontSize={Math.round(46 * k)}
+            color={PET_UI.ink}
+            textAlign="middle-center"
+            textWrap="nowrap"
+            uiTransform={{ positionType: 'absolute', position: { top: Math.round(52 * k), left: headerLeft }, width: headerWidth, height: Math.round(62 * k), pointerFilter: 'none' }}
+          />
+        )}
+        {props.subtitle && (
+          <Label
+            value={props.subtitle}
+            {...panelFont(FREDOKA_SEMIBOLD)}
+            fontSize={Math.round(22 * k)}
+            color={ARK_SUBTITLE_COLOR}
+            textAlign="middle-center"
+            textWrap="nowrap"
+            uiTransform={{ positionType: 'absolute', position: { top: Math.round(119 * k), left: headerLeft }, width: headerWidth, height: Math.round(34 * k), pointerFilter: 'none' }}
+          />
+        )}
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: 0 }, width: w, height: h - top, flexDirection: 'column', alignItems: 'center' }}>{props.children}</UiEntity>
         {/* Invisible hit area over the baked close X (transparent bg so the tap registers). */}
         <UiEntity
@@ -1958,8 +2014,8 @@ function InventoryPanel() {
   // Column geometry, computed here so the row is deterministic (see InvColumn).
   const cardW = S(180)
   const cardH = Math.round(cardW / INV_CARD_ASPECT)
-  const buyW = S(150)
-  const buyH = Math.round(buyW / BUY_BTN_ASPECT)
+  const buyW = S(144)
+  const buyH = Math.round(buyW / PILL_HALF_ASPECT)
   const colGap = S(10) // gap between a card and its BUY button
   const colW = cardW + S(12) // card art + its own S(6) side margins
   const colH = cardH + S(12) + colGap + buyH // card + margins + gap + button
@@ -1969,21 +2025,21 @@ function InventoryPanel() {
     actions.buyItem(tier) // server is authoritative
   }
   return (
-    <RevampPanel src={INVENTORY_PANEL} texW={REVAMP_PANEL_W} texH={INVENTORY_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.inventory.title')} subtitle={t('panel.inventory.subtitle')} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
         <InvColumn width={colW} height={colH}>
           <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { useItemLocal(1); actions.useItem(1) }} />
-          <BuyButton id="buy_1" width={buyW} enabled={coins >= price1} onClick={buy(1)} />
+          <PillButton id="buy_1" label={t('Buy')} shape="half" color="green" width={buyW} height={buyH} disabled={coins < price1} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={buy(1)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
           <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { useItemLocal(2); actions.useItem(2) }} />
-          <BuyButton id="buy_2" width={buyW} enabled={coins >= price2} onClick={buy(2)} />
+          <PillButton id="buy_2" label={t('Buy')} shape="half" color="green" width={buyW} height={buyH} disabled={coins < price2} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={buy(2)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
           {/* Potion is bought (never "used" from here — it's spent by breeding), so it
               buys via its BUY button like the food, not by tapping the card. */}
           <InvCard key="inv-potion" id="use_potion" title={`${Cfg.RARITY_POTION_LABEL}  ${Cfg.RARITY_POTION_PRICE}`} bowlSrc="assets/images/revamp/potion.png" bowlAspect={1} bowlScale={0.56} bowlTop={0.18} count={potions} enabled={potions > 0} onClick={() => pushToast('Rarity Potions are used when breeding')} />
-          <BuyButton id="buy_potion" width={buyW} enabled={canAffordPotion} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
+          <PillButton id="buy_potion" label={t('Buy')} shape="half" color="green" width={buyW} height={buyH} disabled={!canAffordPotion} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
         </InvColumn>
       </UiEntity>
       {/* Opening Inventory hides the top bar, so the player can't see their balance
@@ -2061,6 +2117,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
     const isFirstEmpty = props.index === p.pets.length
     const hatch = p.hatchling
     if (isFirstEmpty && hatch) {
+      const keepArt = localizedButtonArt('keep')
+      const discardArt = localizedButtonArt('discard')
       const photo = petProfilePhoto(hatch.species, hatch.rarity, hatch.size)
       return (
         <PetGridCard pad={rosterPx(13)} selected={false} width={cardW} height={cardH}>
@@ -2074,8 +2132,8 @@ function RosterSlotCard(props: { key?: number; index: number }) {
           />
           <Label value={`${hatch.name} hatched!`} fontSize={rosterPx(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(20) }} />
           <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: rosterPx(6) } }}>
-            <TactileButton id="hatch_keep" label="" texture={KEEP_BUTTON_ICON} width={rosterPx(70)} height={Math.round(rosterPx(70) / KEEP_DISCARD_ASPECT)} margin={{ right: rosterPx(4) }} pulse onClick={() => keepHatchling()} />
-            <TactileButton id="hatch_discard" label="" texture={DISCARD_BUTTON_ICON} width={rosterPx(70)} height={Math.round(rosterPx(70) / KEEP_DISCARD_ASPECT)} margin={{ left: rosterPx(4) }} onClick={() => discardHatchling()} />
+            <TactileButton id="hatch_discard" label="" texture={discardArt.src} uvs={discardArt.uvs} width={rosterPx(70)} height={Math.round(rosterPx(70) / discardArt.aspect)} margin={{ left: rosterPx(4) }} onClick={() => discardHatchling()} />
+            <TactileButton id="hatch_keep" label="" texture={keepArt.src} uvs={keepArt.uvs} width={rosterPx(70)} height={Math.round(rosterPx(70) / keepArt.aspect)} margin={{ right: rosterPx(4) }} pulse onClick={() => keepHatchling()} />
           </UiEntity>
         </PetGridCard>
       )
@@ -2113,7 +2171,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
         }
       />
       <Label value={pet.name} fontSize={rosterPx(17)} color={isActive ? C.greenDark : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
-      <Label value={`Lv ${pet.petLevel}`} fontSize={rosterPx(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+      <Label value={t('pet.level.short', { level: pet.petLevel })} fontSize={rosterPx(13)} color={isActive ? C.greenDark : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
     </PetGridCard>
   )
 }
@@ -2171,7 +2229,7 @@ function RosterPanel() {
   for (let i = start; i < Math.min(total, start + ROSTER_PAGE_SIZE); i++) indices.push(i)
 
   return (
-    <RevampPanel src={MYPETS_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.myPets.title')} subtitle={t('panel.myPets.subtitle')} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
         {indices.map((i) => (
           <RosterSlotCard key={i} index={i} />
@@ -2185,16 +2243,17 @@ function RosterPanel() {
 // ---------------------------------------------------------------------------
 // Album — collection book. One page per rarity, 4x4 grid of the 16 creatures
 // (row = head family, column = body family, same order as Cfg.ALBUM_SPECIES).
-// Art (assets/images/album/): the panel with its title + close X baked in (same
-// frame as Goals), a parts sheet (rarity cards, locked card, check badge,
+// Art (assets/images/album/): the empty panel frame + close X (same frame as
+// Goals), a parts sheet (rarity cards, locked card, check badge,
 // arrows, rarity pills), one 4x4 creature sheet per rarity and a shared
 // silhouette sheet for the ones not collected yet. Every position below is in
 // panel-texture pixels and scaled by the panel's on-screen width, so the
 // runtime pieces stay locked to the baked art.
 // ---------------------------------------------------------------------------
-const ALBUM_ICON = 'assets/images/album/album_icon.png'
 const ALBUM_PANEL = 'assets/images/album/album_panel.png'
-const ALBUM_PARTS = 'assets/images/album/album_parts.png'
+// The original controls stay in the upper portion of this expanded atlas.
+// The two lower rows add the reviewed Spanish and Portuguese rarity tabs.
+const ALBUM_PARTS = 'assets/images/album/album_parts_multilanguage.png'
 const ALBUM_SHEETS: Record<Rarity, string> = {
   common: 'assets/images/album/album_common.png',
   rare: 'assets/images/album/album_rare.png',
@@ -2211,7 +2270,7 @@ function albumUvs(b: Box, texW: number, texH: number): number[] {
   const vBottom = 1 - b.y1 / texH
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
-const partUvs = (b: Box) => albumUvs(b, 1024, 512)
+const partUvs = (b: Box) => albumUvs(b, 1024, 768)
 
 // Landscape book: 16 creatures in 2 rows of 8 (row-major over ALBUM_SPECIES).
 const ALBUM_PANEL_W = 1800
@@ -2230,14 +2289,29 @@ const ALBUM_ARROW_BOX = {
   leftOff: { x0: 240, y0: 236, x1: 344, y1: 340 },
   rightOff: { x0: 356, y0: 236, x1: 460, y1: 340 }
 }
-const ALBUM_PILL_BOX: Record<Rarity, Box> = {
-  common: { x0: 8, y0: 360, x1: 308, y1: 440 },
-  rare: { x0: 320, y0: 360, x1: 620, y1: 440 },
-  legendary: { x0: 632, y0: 360, x1: 932, y1: 440 }
+const ALBUM_PILL_BOX: Record<AppLanguage, Record<Rarity, Box>> = {
+  // Existing source row — intentionally untouched.
+  en: {
+    common: { x0: 8, y0: 360, x1: 308, y1: 440 },
+    rare: { x0: 320, y0: 360, x1: 620, y1: 440 },
+    legendary: { x0: 632, y0: 360, x1: 932, y1: 440 }
+  },
+  es: {
+    common: { x0: 8, y0: 536, x1: 308, y1: 616 },
+    rare: { x0: 320, y0: 536, x1: 620, y1: 616 },
+    legendary: { x0: 632, y0: 536, x1: 932, y1: 616 }
+  },
+  pt: {
+    common: { x0: 8, y0: 648, x1: 308, y1: 728 },
+    rare: { x0: 320, y0: 648, x1: 620, y1: 728 },
+    legendary: { x0: 632, y0: 648, x1: 932, y1: 728 }
+  }
 }
 // Layout inside the panel texture.
 const AL = {
   closeX: 1667, closeY: 20, closeSize: 104, // baked close button
+  titleTop: 48, titleH: 76, titleFont: 68,
+  subtitleTop: 126, subtitleH: 48, subtitleFont: 30,
   gridTop: 196, cardW: 190, cardH: 200, gapX: 18, gapY: 16, art: 160,
   checkSize: 58, checkDx: 140, checkDy: -10,
   pagerTop: 630, arrow: 84, pillW: 300, pillH: 80, arrowGap: 26,
@@ -2329,17 +2403,33 @@ function AlbumPanel() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
       <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: ALBUM_PANEL }, textureMode: 'stretch' }}>
+        <Label
+          value={t('panel.album.title')}
+          {...panelFont(FREDOKA_BOLD)}
+          fontSize={Math.round(AL.titleFont * k)}
+          color={PET_UI.ink}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.titleTop * k), left: 0 }, width: w, height: Math.round(AL.titleH * k), pointerFilter: 'none' }}
+        />
+        <Label
+          value={t('panel.album.subtitle')}
+          {...panelFont(FREDOKA_SEMIBOLD)}
+          fontSize={Math.round(AL.subtitleFont * k)}
+          color={ALBUM_INK}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.subtitleTop * k), left: 0 }, width: w, height: Math.round(AL.subtitleH * k), pointerFilter: 'none' }}
+        />
         {Cfg.ALBUM_SPECIES.map((sp, i) => (
           <AlbumCard key={`${rarity}-${sp}`} index={i} rarity={rarity} collected={collected[i]} k={k} />
         ))}
         <AlbumArrow side="left" enabled={page > 0} k={k} onClick={() => (uiState.albumPage = page - 1)} />
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round((AL.pagerTop + (AL.arrow - AL.pillH) / 2) * k), left: Math.round((w - pillW) / 2) }, width: pillW, height: pillH }}
-          uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_PILL_BOX[rarity]) }}
+          uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_PILL_BOX[getLanguage()][rarity]) }}
         />
         <AlbumArrow side="right" enabled={page < Cfg.RARITIES.length - 1} k={k} onClick={() => (uiState.albumPage = page + 1)} />
         <Label
-          value={`${pageCount} / ${Cfg.ALBUM_SPECIES.length} collected`}
+          value={t('panel.album.collected', { count: pageCount, total: Cfg.ALBUM_SPECIES.length })}
           fontSize={Math.round(AL.countFont * k)}
           color={ALBUM_INK}
           textAlign="middle-center"
@@ -2412,8 +2502,33 @@ function SpinPanel() {
 // Keeping that split means the server-authoritative daily ladder below stays
 // completely independent from the visual revamp.
 // ---------------------------------------------------------------------------
-const DAILY_REWARDS_SHEET = 'assets/images/revamp/dailyrewards_hud.png'
+const DAILY_REWARDS_SHEETS: Record<AppLanguage, string> = {
+  en: 'assets/images/revamp/dailyrewards_hud_en.png',
+  es: 'assets/images/revamp/dailyrewards_hud_es.png',
+  pt: 'assets/images/revamp/dailyrewards_hud_pt.png'
+}
 const DAILY_REWARDS_SHEET_SIZE = 1024
+const DAILY_CLAIM_BUTTON_SHEET = 'assets/images/revamp/dailyrewards_buttons_en_es_pt.png'
+const DAILY_CLAIM_BUTTON_SHEET_SIZE = 1024
+type DailyClaimState = 'enabled' | 'disabled'
+type DailyClaimCrop = { x0: number; y0: number; x1: number; y1: number }
+const DAILY_CLAIM_BUTTON_CROPS: Record<AppLanguage, Record<DailyClaimState, DailyClaimCrop>> = {
+  en: {
+    enabled: { x0: 32, y0: 36, x1: 521, y1: 153 },
+    disabled: { x0: 528, y0: 36, x1: 982, y1: 153 }
+  },
+  es: {
+    enabled: { x0: 27, y0: 149, x1: 520, y1: 267 },
+    disabled: { x0: 529, y0: 149, x1: 984, y1: 268 }
+  },
+  pt: {
+    enabled: { x0: 29, y0: 263, x1: 522, y1: 381 },
+    disabled: { x0: 528, y0: 263, x1: 984, y1: 381 }
+  }
+}
+function dailyRewardsSheet(): string {
+  return DAILY_REWARDS_SHEETS[getLanguage()]
+}
 
 function dailyRewardsUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
   const uL = x0 / DAILY_REWARDS_SHEET_SIZE
@@ -2422,16 +2537,18 @@ function dailyRewardsUvRect(x0: number, y0: number, x1: number, y1: number): num
   const vBottom = 1 - y1 / DAILY_REWARDS_SHEET_SIZE
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
+function dailyClaimButtonArt(state: DailyClaimState): { uvs: number[]; aspect: number } {
+  const crop = DAILY_CLAIM_BUTTON_CROPS[getLanguage()][state]
+  return {
+    uvs: sheetUvRect(crop.x0, crop.y0, crop.x1, crop.y1, DAILY_CLAIM_BUTTON_SHEET_SIZE, DAILY_CLAIM_BUTTON_SHEET_SIZE),
+    aspect: (crop.x1 - crop.x0) / (crop.y1 - crop.y0)
+  }
+}
 
-// Pixel bounds were taken from dailyrewards_hud.png. The crops include their
-// baked highlights/shadows but exclude the transparent sheet around them.
+// Pixel bounds are shared by the localized dailyrewards_hud_<lang>.png sheets.
+// They include baked highlights/shadows but exclude most transparent space.
 const DAILY_PANEL_BOX = { x0: 12, y0: 474, x1: 1008, y1: 994 }
 const DAILY_CLOSE_BOX = { x0: 100, y0: 40, x1: 161, y1: 101 }
-// The larger Claim variants include their side sparkles in the atlas. Keep
-// the complete 407 px-wide crops so they render sharp rather than sampling a
-// clipped inner section of the sheet.
-const DAILY_CLAIM_BOX = { x0: 179, y0: 27, x1: 586, y1: 121 }
-const DAILY_CLAIM_DISABLED_BOX = { x0: 604, y0: 27, x1: 1011, y1: 121 }
 const DAILY_CARD_TODAY_BOX = { x0: 70, y0: 157, x1: 261, y1: 426 }
 const DAILY_CARD_FUTURE_BOX = { x0: 307, y0: 156, x1: 495, y1: 426 }
 const DAILY_CARD_JACKPOT_BOX = { x0: 510, y0: 157, x1: 713, y1: 426 }
@@ -2439,8 +2556,6 @@ const DAILY_CARD_CLAIMED_BOX = { x0: 730, y0: 157, x1: 916, y1: 426 }
 
 const DAILY_PANEL_UVS = dailyRewardsUvRect(DAILY_PANEL_BOX.x0, DAILY_PANEL_BOX.y0, DAILY_PANEL_BOX.x1, DAILY_PANEL_BOX.y1)
 const DAILY_CLOSE_UVS = dailyRewardsUvRect(DAILY_CLOSE_BOX.x0, DAILY_CLOSE_BOX.y0, DAILY_CLOSE_BOX.x1, DAILY_CLOSE_BOX.y1)
-const DAILY_CLAIM_UVS = dailyRewardsUvRect(DAILY_CLAIM_BOX.x0, DAILY_CLAIM_BOX.y0, DAILY_CLAIM_BOX.x1, DAILY_CLAIM_BOX.y1)
-const DAILY_CLAIM_DISABLED_UVS = dailyRewardsUvRect(DAILY_CLAIM_DISABLED_BOX.x0, DAILY_CLAIM_DISABLED_BOX.y0, DAILY_CLAIM_DISABLED_BOX.x1, DAILY_CLAIM_DISABLED_BOX.y1)
 const DAILY_CARD_TODAY_UVS = dailyRewardsUvRect(DAILY_CARD_TODAY_BOX.x0, DAILY_CARD_TODAY_BOX.y0, DAILY_CARD_TODAY_BOX.x1, DAILY_CARD_TODAY_BOX.y1)
 const DAILY_CARD_FUTURE_UVS = dailyRewardsUvRect(DAILY_CARD_FUTURE_BOX.x0, DAILY_CARD_FUTURE_BOX.y0, DAILY_CARD_FUTURE_BOX.x1, DAILY_CARD_FUTURE_BOX.y1)
 const DAILY_CARD_JACKPOT_UVS = dailyRewardsUvRect(DAILY_CARD_JACKPOT_BOX.x0, DAILY_CARD_JACKPOT_BOX.y0, DAILY_CARD_JACKPOT_BOX.x1, DAILY_CARD_JACKPOT_BOX.y1)
@@ -2479,10 +2594,10 @@ function DailyDayCard(props: { key?: string; day: number; state: DailyCardState;
     <UiEntity uiTransform={{ width: props.width, height: props.height }}>
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: props.width, height: props.height }}
-        uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: dailyCardUvs(props.day, props.state) }}
+        uiBackground={{ texture: { src: dailyRewardsSheet() }, textureMode: 'stretch', uvs: dailyCardUvs(props.day, props.state) }}
       />
       <Label
-        value={isToday ? 'TODAY' : `DAY ${props.day}`}
+        value={isToday ? t('daily.today') : t('daily.day', { day: props.day })}
         fontSize={titleSize}
         color={titleColor}
         textAlign="middle-center"
@@ -2524,7 +2639,8 @@ function MeteorRewardPanel() {
   // The supplied button includes transparent spark margins. Size its crop from
   // the visible green pill, so it carries the same visual weight as the cards.
   const claimWidth = Math.round(panelWidth * 0.34)
-  const claimHeight = Math.round(claimWidth / ((DAILY_CLAIM_BOX.x1 - DAILY_CLAIM_BOX.x0) / (DAILY_CLAIM_BOX.y1 - DAILY_CLAIM_BOX.y0)))
+  const claimArt = dailyClaimButtonArt(claimable ? 'enabled' : 'disabled')
+  const claimHeight = Math.round(claimWidth / claimArt.aspect)
   const claimTop = cardsTop + cardHeight + Math.round(panelHeight * 0.07)
   const closeSize = Math.round(panelHeight * 0.118)
 
@@ -2537,11 +2653,11 @@ function MeteorRewardPanel() {
       <UiEntity uiTransform={{ width: panelWidth, height: panelHeight }}>
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: panelWidth, height: panelHeight }}
-          uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_PANEL_UVS }}
+          uiBackground={{ texture: { src: dailyRewardsSheet() }, textureMode: 'stretch', uvs: DAILY_PANEL_UVS }}
         />
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round(panelHeight * 0.035), right: Math.round(panelWidth * 0.035) }, width: closeSize, height: closeSize, pointerFilter: 'block' }}
-          uiBackground={{ texture: { src: DAILY_REWARDS_SHEET }, textureMode: 'stretch', uvs: DAILY_CLOSE_UVS }}
+          uiBackground={{ texture: { src: dailyRewardsSheet() }, textureMode: 'stretch', uvs: DAILY_CLOSE_UVS }}
           onMouseDown={() => {
             playUiClick()
             ui.close()
@@ -2558,8 +2674,8 @@ function MeteorRewardPanel() {
           <TactileButton
             id="daily_claim"
             label=""
-            texture={DAILY_REWARDS_SHEET}
-            uvs={claimable ? DAILY_CLAIM_UVS : DAILY_CLAIM_DISABLED_UVS}
+            texture={DAILY_CLAIM_BUTTON_SHEET}
+            uvs={claimArt.uvs}
             width={claimWidth}
             height={claimHeight}
             disabled={!claimable}
@@ -2577,49 +2693,82 @@ function MeteorRewardPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Goals / achievements — the "Your Journey" art (goals.png) is the whole panel.
-// The 1024² file has transparent padding, so we crop to the art's opaque box
-// (measured from the PNG's alpha) and render it at the SAME width as the Inventory
-// panel so all three nav panels read as the same size. The close X is baked into
-// the top-right; an invisible button is overlaid on it.
+// Goals / achievements. `goals.png` is the clean, text-free illustrated panel;
+// all copy is layered here so the full composition remains localized.
 // ---------------------------------------------------------------------------
-const GOALS_IMG = 'assets/images/revamp/goals.png'
-const GOALS_PANEL_H = 730 // same frame size as the Inventory panel (998x730)
-
-// Journey steps. The art has no baked ticks: each completed step gets a tick
-// badge (goals_tick.png) on the bottom-right of its disc. Centres are in
-// goals.png px; `done` reads the player's progress so the panel shows how far
-// along they are.
+const GOALS_ART = 'assets/images/revamp/goals.png'
 const GOALS_TICK_IMG = 'assets/images/revamp/goals_tick.png'
-const GOALS_TICK_SIZE = 54 // goals.png px
-type JourneyStep = { id: 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'; tickX: number; tickY: number }
+const GOALS_TICK_SIZE = 54
+type JourneyStepId = 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'
+type JourneyStep = {
+  id: JourneyStepId
+  labelX: number
+  labelY: number
+  rewardX: number
+  rewardY: number
+  rewardWidth: number
+  reward: string
+  rewardKind: 'coin' | 'xp'
+  tickX: number
+  tickY: number
+}
 const JOURNEY_STEPS: JourneyStep[] = [
-  { id: 'adopt', tickX: 192, tickY: 429 },
-  { id: 'feed', tickX: 372, tickY: 494 },
-  { id: 'bath', tickX: 552, tickY: 429 },
-  { id: 'breed', tickX: 732, tickY: 494 },
-  { id: 'ark', tickX: 912, tickY: 429 }
+  // The artwork's icons/reward frames were moved up 51 px when its text was
+  // removed. These are the new blank slots, in source-image pixels.
+  { id: 'adopt', labelX: 71, labelY: 400, rewardX: 93, rewardY: 441, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 192, tickY: 378 },
+  { id: 'feed', labelX: 251, labelY: 465, rewardX: 277, rewardY: 506, rewardWidth: 104, reward: '15', rewardKind: 'coin', tickX: 372, tickY: 443 },
+  { id: 'bath', labelX: 431, labelY: 400, rewardX: 453, rewardY: 441, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 552, tickY: 378 },
+  { id: 'breed', labelX: 611, labelY: 465, rewardX: 601, rewardY: 506, rewardWidth: 164, reward: 'spin', rewardKind: 'coin', tickX: 732, tickY: 443 },
+  { id: 'ark', labelX: 791, labelY: 400, rewardX: 769, rewardY: 441, rewardWidth: 182, reward: 'wearable', rewardKind: 'xp', tickX: 912, tickY: 378 }
 ]
-function journeyStepDone(id: JourneyStep['id']): boolean {
+function journeyStepDone(id: JourneyStepId): boolean {
   const p = clientState.player
   return !!p && Cfg.journeyStepDone(id, p) // same rule the server pays the Journey rewards on
 }
 
+function JourneyReward(props: { step: JourneyStep; scale: number }) {
+  const { step, scale } = props
+  const w = Math.round(step.rewardWidth * scale)
+  const h = Math.round(38 * scale)
+  const iconSize = Math.round(28 * scale)
+  const label = step.reward === 'spin' ? t('panel.goals.rewardSpin', { coins: 50 }) : step.reward === 'wearable' ? t('panel.goals.rewardWearable') : step.reward
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { left: Math.round(step.rewardX * scale), top: Math.round(step.rewardY * scale) }, width: w, height: h, pointerFilter: 'none' }}
+    >
+      {/* Keep the illustrated pill's outline; repaint only its inner area so
+          values such as "spin" and "Wearable" can change language. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.max(1, Math.round(2 * scale)), left: Math.max(1, Math.round(2 * scale)) }, width: w - Math.max(2, Math.round(4 * scale)), height: h - Math.max(2, Math.round(4 * scale)), borderRadius: Math.round(h / 2), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: { r: 1, g: 0.95, b: 0.84, a: 1 } }}>
+        <UiEntity uiTransform={{ width: iconSize, height: iconSize, margin: { right: Math.round(4 * scale) } }} uiBackground={{ texture: { src: step.rewardKind === 'coin' ? REWARD_COIN_ICON : REWARD_XP_ICON }, textureMode: 'stretch' }} />
+        <Label value={label} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(22 * scale)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: w - iconSize - Math.round(14 * scale), height: h - Math.max(2, Math.round(4 * scale)) }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function GoalsPanel() {
-  // Same shell + size as Inventory / My Pets (RevampPanel at navPanelWidth()).
   const w = navPanelWidth()
+  const h = Math.round(REVAMP_PANEL_H * (w / REVAMP_PANEL_W))
   const k = w / REVAMP_PANEL_W
   const sz = Math.round(GOALS_TICK_SIZE * k)
   return (
-    <RevampPanel src={GOALS_IMG} texW={REVAMP_PANEL_W} texH={GOALS_PANEL_H} width={w} contentTop={0} onClose={() => ui.close()}>
-      {JOURNEY_STEPS.filter((st) => journeyStepDone(st.id)).map((st) => (
-        <UiEntity
-          key={`tick-${st.id}`}
-          uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz, pointerFilter: 'none' }}
-          uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }}
-        />
-      ))}
-    </RevampPanel>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: PET_UI.scrim }} onMouseDown={() => {}}>
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_ART }, textureMode: 'stretch' }}>
+        <Label value={t('panel.goals.title')} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(68 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(48 * k), left: 0 }, width: w, height: Math.round(76 * k), pointerFilter: 'none' }} />
+        <Label value={t('panel.goals.subtitle')} {...panelFont(FREDOKA_SEMIBOLD)} fontSize={Math.round(30 * k)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(126 * k), left: 0 }, width: w, height: Math.round(48 * k), pointerFilter: 'none' }} />
+      {JOURNEY_STEPS.map((st) => {
+        const done = journeyStepDone(st.id)
+        return (
+          <UiEntity key={st.id} uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: w, height: h, pointerFilter: 'none' }}>
+            <Label value={t(`panel.goals.step.${st.id}`)} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(28 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.labelX * k), top: Math.round(st.labelY * k) }, width: Math.round(140 * k), height: Math.round(38 * k) }} />
+            <JourneyReward step={st} scale={k} />
+            {done && <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz }} uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }} />}
+          </UiEntity>
+        )
+      })}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(REVAMP_CLOSE.y * k), left: Math.round(REVAMP_CLOSE.x * k) }, width: Math.round(REVAMP_CLOSE.size * k), height: Math.round(REVAMP_CLOSE.size * k), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }} onMouseDown={() => { playUiClick(); ui.close() }} />
+      </UiEntity>
+    </UiEntity>
   )
 }
 
@@ -2695,10 +2844,8 @@ function DailyRewardPanel() {
 // touches the authoritative server (see music.ts). The volume ladder is 5 steps
 // instead of cozy-farm's 10 so each button stays a comfortable touch target on
 // mobile.
-// Same revamp frame as Inventory / My Pets / Goals: title, subtitle and close X
-// are baked into jukebox.png, and the rows use the cream/brown card palette.
-const JUKEBOX_PANEL = 'assets/images/revamp/jukebox.png'
-const JUKEBOX_PANEL_H = 730
+// Same standard revamp frame as Inventory / My Pets / Goals. Its rows use the
+// cream/brown card palette below the live localized header.
 const JUKEBOX_UI = {
   tile: { r: 1, g: 0.99, b: 0.96, a: 1 } as Color,
   selected: { r: 0.99, g: 0.89, b: 0.77, a: 1 } as Color, // peach fill of the selected pet card
@@ -2762,7 +2909,7 @@ function JukeboxPanel() {
   const activeStep = VOLUME_STEPS.reduce((best, pct) => (Math.abs(pct - volPct) < Math.abs(best - volPct) ? pct : best))
   const stepW = Math.round(contentW / VOLUME_STEPS.length) - S(6)
   return (
-    <RevampPanel src={JUKEBOX_PANEL} texW={REVAMP_PANEL_W} texH={JUKEBOX_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.jukebox.title')} subtitle={t('panel.jukebox.subtitle')} onClose={() => ui.close()}>
       <UiEntity uiTransform={{ width: contentW, height: SONGS.length * (songRowH() + songRowGap()), flexDirection: 'column', margin: { top: S(8) } }}>
         {SONGS.map((song) => (
           <SongRow key={song.id} id={song.id} label={song.label} playing={song.id === musicState.currentSongId} />
@@ -2940,7 +3087,10 @@ function firstSessionTaskText(): string {
 
 function FirstSessionTask() {
   const hud = firstSessionHud
-  const task = firstSessionTaskText()
+  // Tutorial objectives can come from the state machine or the route arrow.
+  // Translate here explicitly so neither path can bypass the regular Label
+  // adapter when the objective changes while the scene is running.
+  const task = translateText(firstSessionTaskText())
   const now = Date.now()
   if (!task || bigUiOpen()) {
     if (!task) taskShown = ''
@@ -2982,7 +3132,7 @@ function FirstSessionTask() {
               uiTransform={{ width: '100%', height: '100%', borderRadius: h / 2 - border, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: S(44), right: S(44) } }}
               uiBackground={{ color: withAlpha(TOAST_CREAM, e) }}
             >
-              <Label value={`CHAPTER ${hud.chapter}/${FIRST_SESSION_CHAPTERS}`} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
+              <Label value={t('tutorial.chapter', { current: hud.chapter, total: FIRST_SESSION_CHAPTERS })} fontSize={S(11)} color={withAlpha(TOAST_BORDER_COLOR, e)} textAlign="middle-center" uiTransform={{ width: '100%', height: S(16) }} />
               <Label value={task} fontSize={S(15)} color={withAlpha(PET_UI.ink, e)} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: h - S(40) }} />
             </UiEntity>
           </UiEntity>
@@ -3048,10 +3198,6 @@ function RewardPopup() {
   )
 }
 
-// Artwork for the shared BACK button below.
-const BACK_ARROW_ICON = 'assets/images/backbutton2.png'
-const BACK_ARROW_ASPECT_RATIO = 341 / 256
-
 // Shared BACK button for full-screen action overlays (Petting / Fetch / Fruit
 // game / Bath / Feed errand). It shares the toast's device-safe anchor on both
 // mobile and Unity, then moves below the toast while that notification is open.
@@ -3060,16 +3206,18 @@ function BackButton(props: { onClick: () => void; disabled?: boolean; keepInFirs
   if (firstSessionHidesBack() && !props.keepInFirstSession) return <UiEntity />
   const toastVisible = toastIsVisible(Date.now())
   const layout = actionHudLayout()
+  const backArt = localizedButtonArt('back')
   const height = S(90)
-  const width = Math.round(height * BACK_ARROW_ASPECT_RATIO)
+  const width = Math.round(height * backArt.aspect)
   return (
     <ScreenInsetArea>
       <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: layout.backPosition, margin: { top: toastVisible ? S(TOAST_HEIGHT + BACK_BUTTON_TOAST_GAP) + layout.toastBackOffsetY : 0 }, width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
           uiBackground={{
-            texture: { src: BACK_ARROW_ICON },
+            texture: { src: backArt.src },
             textureMode: 'stretch',
+            uvs: backArt.uvs,
             // Disabled reads as greyed-out (not just faded) so it doesn't look like a
             // live button that's simply ignoring taps.
             color: props.disabled ? { r: 0.55, g: 0.55, b: 0.55, a: 0.55 } : { r: 1, g: 1, b: 1, a: 1 }
@@ -3492,15 +3640,19 @@ function FeedEatingPanel() {
   // starts empty so a fully fed pet still gets the same satisfying 0 → 100 beat.
   const hungerNow = st.hungerTarget * progress
   const barPct = Math.max(0, Math.min(100, hungerNow))
-  const cardW = S(360)
+  // Keep the result art at the exact visual scale of the old 538px asset.
+  // The new panel is 448px wide, so rendering it at 360 made the whole card
+  // (and every child on it) visibly larger than the previous UI.
+  const cardW = S(300)
   const cardH = Math.round(cardW / FEED_RESULTS_ASPECT)
-  // Exact inner bounds of the illustrated progress track in fruit_caught.png.
-  const barLeft = Math.round(cardW * 73 / FEED_RESULTS_W)
-  // Mobile keeps the fill just under the illustrated track's midpoint, while
-  // desktop retains its existing pixel-perfect alignment.
-  const barTop = Math.round(cardH * 238 / FEED_RESULTS_H) + (isMobile ? S(1) : 0)
-  const barW = Math.round(cardW * 398 / FEED_RESULTS_W) - (isMobile ? S(6) : 0)
-  const barH = Math.round(cardH * 19 / FEED_RESULTS_H)
+  const barW = Math.round(cardW * 0.72)
+  const barH = Math.max(S(14), Math.round(cardH * 0.065))
+  const barLeft = Math.round((cardW - barW) / 2)
+  const barTop = Math.round(cardH * 0.59) + (isMobile ? S(1) : 0)
+  // Result actions stay within the card. A compact, outlined caption reads
+  // clearly without competing with the count or the pet's celebration.
+  const buttonW = S(120)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   const resultsReady = st.phase === 'results'
   return (
     <UiEntity
@@ -3513,21 +3665,22 @@ function FeedEatingPanel() {
         opacity: cardFade,
         pointerFilter: 'none'
       }}
-      uiBackground={{ texture: { src: FEED_RESULTS_TEXTURE }, textureMode: 'stretch' }}
     >
-      <Label value={`<b>x ${shownCaught}</b>`} fontSize={S(42)} color={{ ...PET_UI.ink, a: PET_UI.ink.a * countOpacity }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.26), left: 0 }, width: '100%', height: Math.round(cardH * 0.19) }} />
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
-        <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: barH / 2 }} uiBackground={{ color: C.green }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: cardW, height: cardH, pointerFilter: 'none' }} uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_RESULTS_UVS }}>
+        <Label value={`<b>${shownCaught}</b>`} fontSize={S(42)} color={{ ...PET_UI.ink, a: PET_UI.ink.a * countOpacity }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.19), left: 0 }, width: '100%', height: Math.round(cardH * 0.22) }} />
+        <Label value={t('minigame.feed.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.42), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.12) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH, borderRadius: Math.round(barH / 2) }} uiBackground={{ color: PET_UI.ink }}>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(2), left: S(2) }, width: barW - S(4), height: barH - S(4), borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: { r: 0.97, g: 0.91, b: 0.8, a: 1 } }}>
+            <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: C.green }} />
+          </UiEntity>
+        </UiEntity>
       </UiEntity>
       {resultsReady ? (
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.69), left: Math.round(cardW * 0.18) }, width: Math.round(cardW * 0.64), height: Math.round(cardH * 0.2), pointerFilter: 'block' }}
-          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => {
-            playUiClick()
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: cardH - buttonH - S(11), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH, pointerFilter: 'block' }}>
+          <PillButton id="feed_exit" label={t('minigame.feed.exit')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={() => {
             exitFeedResults()
-          }}
-        />
+          }} />
+        </UiEntity>
       ) : null}
     </UiEntity>
   )
@@ -3553,36 +3706,80 @@ function sheetUvRect(x0: number, y0: number, x1: number, y1: number, w: number, 
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
 
-// The feed HUD art is a 1024px sheet. Crop each card at its native aspect so
-// the illustrated borders and icons never get stretched by the responsive UI.
-const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud_green.png'
+// The replacement sheet deliberately contains no copy: each panel, pill and
+// button is cropped independently and its wording is rendered in the selected
+// language. The coordinates are the opaque bounds from the 1024px export, so
+// no neighbouring sprite bleeds into a responsive crop.
+const FEED_HUD_SHEET = 'assets/images/revamp/feed_hud_green_new.png'
 const FEED_HUD_W = 1024
 const FEED_HUD_H = 1024
 function feedHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
   return sheetUvRect(x0, y0, x1, y1, FEED_HUD_W, FEED_HUD_H)
 }
 
-// End above the results card, whose top-left corner starts at y=400.
-const FEED_START_BOX = { x0: 28, y0: 8, x1: 672, y1: 399 }
-const FEED_TIMER_BOX = { x0: 38, y0: 440, x1: 366, y1: 595 }
-const FEED_COUNT_BOX = { x0: 40, y0: 622, x1: 444, y1: 773 }
+const FEED_START_BOX = { x0: 29, y0: 31, x1: 535, y1: 321 }
+const FEED_RESULTS_BOX = { x0: 549, y0: 60, x1: 997, y1: 350 }
+const FEED_ACTION_ENABLED_BOX = { x0: 46, y0: 353, x1: 382, y1: 455 }
+const FEED_ACTION_DISABLED_BOX = { x0: 46, y0: 464, x1: 382, y1: 566 }
+const FEED_TIMER_BOX = { x0: 406, y0: 358, x1: 732, y1: 460 }
+const FEED_COUNT_BOX = { x0: 406, y0: 461, x1: 735, y1: 567 }
 const FEED_START_UVS = feedHudUvRect(FEED_START_BOX.x0, FEED_START_BOX.y0, FEED_START_BOX.x1, FEED_START_BOX.y1)
+const FEED_RESULTS_UVS = feedHudUvRect(FEED_RESULTS_BOX.x0, FEED_RESULTS_BOX.y0, FEED_RESULTS_BOX.x1, FEED_RESULTS_BOX.y1)
+const FEED_ACTION_ENABLED_UVS = feedHudUvRect(FEED_ACTION_ENABLED_BOX.x0, FEED_ACTION_ENABLED_BOX.y0, FEED_ACTION_ENABLED_BOX.x1, FEED_ACTION_ENABLED_BOX.y1)
+const FEED_ACTION_DISABLED_UVS = feedHudUvRect(FEED_ACTION_DISABLED_BOX.x0, FEED_ACTION_DISABLED_BOX.y0, FEED_ACTION_DISABLED_BOX.x1, FEED_ACTION_DISABLED_BOX.y1)
 const FEED_TIMER_UVS = feedHudUvRect(FEED_TIMER_BOX.x0, FEED_TIMER_BOX.y0, FEED_TIMER_BOX.x1, FEED_TIMER_BOX.y1)
 const FEED_COUNT_UVS = feedHudUvRect(FEED_COUNT_BOX.x0, FEED_COUNT_BOX.y0, FEED_COUNT_BOX.x1, FEED_COUNT_BOX.y1)
 const FEED_START_ASPECT = (FEED_START_BOX.x1 - FEED_START_BOX.x0) / (FEED_START_BOX.y1 - FEED_START_BOX.y0)
+const FEED_RESULTS_ASPECT = (FEED_RESULTS_BOX.x1 - FEED_RESULTS_BOX.x0) / (FEED_RESULTS_BOX.y1 - FEED_RESULTS_BOX.y0)
+const FEED_ACTION_BUTTON_ASPECT = (FEED_ACTION_ENABLED_BOX.x1 - FEED_ACTION_ENABLED_BOX.x0) / (FEED_ACTION_ENABLED_BOX.y1 - FEED_ACTION_ENABLED_BOX.y0)
 const FEED_TIMER_ASPECT = (FEED_TIMER_BOX.x1 - FEED_TIMER_BOX.x0) / (FEED_TIMER_BOX.y1 - FEED_TIMER_BOX.y0)
 const FEED_COUNT_ASPECT = (FEED_COUNT_BOX.x1 - FEED_COUNT_BOX.x0) / (FEED_COUNT_BOX.y1 - FEED_COUNT_BOX.y0)
-const FEED_RESULTS_TEXTURE = 'assets/images/revamp/fruit_caught.png'
-const FEED_RESULTS_W = 538
-const FEED_RESULTS_H = 404
-const FEED_RESULTS_ASPECT = FEED_RESULTS_W / FEED_RESULTS_H
+
+/** The atlas supplies only the button art; its caption remains real text so
+ * locale switches are immediate and no language needs a duplicate PNG. */
+function FeedHudButton(props: { id: string; label: string; width: number; height: number; onClick: () => void; disabled?: boolean; fontSize?: number }) {
+  const disabled = props.disabled ?? false
+  const scale = getPress(props.id)
+  const width = Math.round(props.width * scale)
+  const height = Math.round(props.height * scale)
+  return (
+    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
+      <UiEntity
+        uiTransform={{ width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+        uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: disabled ? FEED_ACTION_DISABLED_UVS : FEED_ACTION_ENABLED_UVS }}
+        onMouseDown={() => {
+          if (disabled) return
+          triggerPress(props.id)
+          playUiClick()
+          props.onClick()
+        }}
+      >
+        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(22)} color={C.text} outlineColor={PET_UI.ink} width={width} height={height} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
 
 function FeedStartCard() {
-  const width = S(540)
+  // The former start crop was 644px wide at S(540).  This blank version is
+  // 506px wide: S(424) preserves the former source-pixel scale instead of
+  // enlarging the panel by 27%.
+  const width = S(424)
   const height = Math.round(width / FEED_START_ASPECT)
+  // Keep the CTA comfortably inside the smaller panel rather than carrying
+  // over the width of the previous, much wider, baked panel.
+  const buttonW = S(156)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
-      <TactileButton id="feed_start" label="" texture={FEED_HUD_SHEET} uvs={FEED_START_UVS} width={width} height={height} onClick={() => startCatchingCountdown()} />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }} uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_START_UVS }}>
+      {/* Start after the leaf/fruit topper.  At 15% the heading sat on top of
+          that illustration as soon as it wrapped in Spanish or Portuguese. */}
+      <Label value={`<b>${t('minigame.feed.instruction')}</b>`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.34), left: Math.round(width * 0.09) }, width: Math.round(width * 0.82), height: Math.round(height * 0.20) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.67), left: Math.round((width - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+        <PillButton id="feed_start" label={t('minigame.feed.start')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(17)} outlineColor={PET_UI.ink} onClick={() => {
+          startCatchingCountdown()
+        }} />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -3622,7 +3819,7 @@ function FeedRoundHud(props: { timeLeft: number; caught: number; flashing: boole
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(12), left: '50%' }, margin: { left: -width / 2 }, width, height: S(86), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
       <FeedRoundPill kind="timer" value={timerValue} width={timerWidth} countdown={props.countdown !== undefined} />
       {showFruit ? <UiEntity uiTransform={{ width: gap }} /> : null}
-      {showFruit ? <FeedRoundPill kind="fruit" value={`Fruits: ${props.caught}`} width={fruitWidth} flashing={props.flashing} /> : null}
+      {showFruit ? <FeedRoundPill kind="fruit" value={`${props.caught}`} width={fruitWidth} flashing={props.flashing} /> : null}
     </UiEntity>
   )
 }
@@ -3818,17 +4015,20 @@ function BathPop(props: { key?: string; p: PopFx }) {
 // the intro/Start card, the timer + counter pills, and the results card. Crop
 // each at its native aspect (same feedHud pattern) so the illustrated borders
 // and icons never get stretched by the responsive UI.
-const BATH_HUD_SHEET = 'assets/images/revamp/bath_hud.png'
+const BATH_HUD_SHEET = 'assets/images/revamp/bath_hud_new.png'
 const BATH_HUD_W = 1024
 const BATH_HUD_H = 1024
 function bathHudUvRect(x0: number, y0: number, x1: number, y1: number): number[] {
   return sheetUvRect(x0, y0, x1, y1, BATH_HUD_W, BATH_HUD_H)
 }
-// Pixel boxes of each piece within bath_hud.png (measured off the source art).
-const BATH_START_BOX = { x0: 19, y0: 6, x1: 731, y1: 394 }
-const BATH_TIMER_BOX = { x0: 12, y0: 471, x1: 384, y1: 626 }
-const BATH_COUNT_BOX = { x0: 13, y0: 661, x1: 381, y1: 812 }
-const BATH_RESULTS_BOX = { x0: 402, y0: 397, x1: 908, y1: 833 }
+// Opaque bounds measured from the 1024px source export. Cropping only the
+// sprite bounds avoids sampling neighbouring artwork on responsive layouts.
+const BATH_START_BOX = { x0: 11, y0: 19, x1: 752, y1: 444 }
+// The same empty panel is used for the result state; its copy and progress
+// meter are composed in UI instead of baked into the image.
+const BATH_RESULTS_BOX = BATH_START_BOX
+const BATH_TIMER_BOX = { x0: 10, y0: 712, x1: 337, y1: 869 }
+const BATH_COUNT_BOX = { x0: 333, y0: 850, x1: 668, y1: 1008 }
 const BATH_START_UVS = bathHudUvRect(BATH_START_BOX.x0, BATH_START_BOX.y0, BATH_START_BOX.x1, BATH_START_BOX.y1)
 const BATH_TIMER_UVS = bathHudUvRect(BATH_TIMER_BOX.x0, BATH_TIMER_BOX.y0, BATH_TIMER_BOX.x1, BATH_TIMER_BOX.y1)
 const BATH_COUNT_UVS = bathHudUvRect(BATH_COUNT_BOX.x0, BATH_COUNT_BOX.y0, BATH_COUNT_BOX.x1, BATH_COUNT_BOX.y1)
@@ -3837,15 +4037,20 @@ const BATH_START_ASPECT = (BATH_START_BOX.x1 - BATH_START_BOX.x0) / (BATH_START_
 const BATH_TIMER_ASPECT = (BATH_TIMER_BOX.x1 - BATH_TIMER_BOX.x0) / (BATH_TIMER_BOX.y1 - BATH_TIMER_BOX.y0)
 const BATH_COUNT_ASPECT = (BATH_COUNT_BOX.x1 - BATH_COUNT_BOX.x0) / (BATH_COUNT_BOX.y1 - BATH_COUNT_BOX.y0)
 const BATH_RESULTS_ASPECT = (BATH_RESULTS_BOX.x1 - BATH_RESULTS_BOX.x0) / (BATH_RESULTS_BOX.y1 - BATH_RESULTS_BOX.y0)
-
-// Intro card: the whole illustrated card ("Tap the bubbles…" + a drawn Start
-// button) is one big tappable button, exactly like the feed minigame's start card.
+// The backing art contains no copy. Labels and CTA are real UI so every game
+// language uses this one atlas.
 function BathStartCard() {
   const width = S(540)
   const height = Math.round(width / BATH_START_ASPECT)
+  // Keep the exact same green Start control as the Feed intro.
+  const buttonW = S(156)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }}>
-      <TactileButton id="bath_start" label="" texture={BATH_HUD_SHEET} uvs={BATH_START_UVS} width={width} height={height} onClick={() => startBathCountdown()} />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_START_UVS }}>
+      <Label value={`<b>${t('minigame.bath.instruction')}</b>`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.36), left: Math.round(width * 0.10) }, width: Math.round(width * 0.80), height: Math.round(height * 0.22) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.67), left: Math.round((width - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+        <PillButton id="bath_start" label={t('minigame.bath.start')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(17)} outlineColor={PET_UI.ink} onClick={() => startBathCountdown()} />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -3858,9 +4063,9 @@ function BathRoundPill(props: { kind: 'timer' | 'count'; value: string; width: n
   const height = Math.round(width / aspect)
   const uvs = props.kind === 'timer' ? BATH_TIMER_UVS : BATH_COUNT_UVS
   // Brief gold pop on the counter each time a bubble bursts (popFlashUntil).
-  const fontSize = props.countdown ? S(28) : props.flashing ? S(27) : S(22)
-  const labelLeft = Math.round(width * 0.4)
-  const labelWidth = Math.round(width * 0.55)
+  const fontSize = props.countdown ? S(28) : props.flashing ? S(24) : S(20)
+  const labelLeft = Math.round(width * 0.48)
+  const labelWidth = Math.round(width * 0.48)
   return (
     <UiEntity uiTransform={{ width, height, pointerFilter: 'none' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs }}>
       <Label
@@ -3902,56 +4107,40 @@ function BathResultsPanel() {
   const clean = st.popped >= BUBBLE_GOAL
   const cardW = S(400)
   const cardH = Math.round(cardW / BATH_RESULTS_ASPECT)
-  // Inner "Pet clean" track bounds, as fractions of the illustrated card.
-  const barLeft = Math.round(cardW * 0.103)
-  const barTop = Math.round(cardH * 0.516)
-  const barW = Math.round(cardW * 0.796)
-  const barH = Math.round(cardH * 0.106)
+  // This atlas intentionally leaves the progress meter blank, so its frame
+  // and fill are rendered here and can scale with the localized panel copy.
+  const barW = Math.round(cardW * 0.70)
+  const barH = Math.max(S(14), Math.round(cardH * 0.075))
+  const barLeft = Math.round((cardW - barW) / 2)
+  const barTop = Math.round(cardH * 0.64)
+  const buttonW = S(144)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   const elapsed = Math.max(0, (Date.now() - st.resultsAt) / 1000 - BATH_RESULTS_FILL_DELAY_S)
   const raw = Math.max(0, Math.min(1, elapsed / BATH_RESULTS_FILL_DUR_S))
   const eased = raw * raw * (3 - 2 * raw) // smoothstep
   const target = clean ? 1 : Math.min(1, st.popped / BUBBLE_GOAL)
   const barPct = Math.max(0, Math.min(100, target * eased * 100))
-  // The illustrated card's text ("Bubbles popped! / Pet clean") is baked and fixed,
-  // so the outcome rides on a caption below the card + the bar's colour (blue =
-  // full clean, amber = partial). Hygiene now scales with bubbles, so a partial
-  // round reports the hygiene it earned instead of a misleading "try again".
-  const gained = Math.round(Math.min(st.popped, BUBBLE_GOAL) * Cfg.BATH_HYGIENE_PER_BUBBLE)
-  const caption = clean
-    ? `Squeaky clean!   ${st.popped} bubbles popped`
-    : st.popped > 0
-      ? `${st.popped}/${BUBBLE_GOAL} popped — +${gained} hygiene`
-      : `Popped 0/${BUBBLE_GOAL} — try again!`
   return (
     <UiEntity
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: C.scrim }}
     >
-      <UiEntity
-        uiTransform={{ width: cardW, height: cardH, pointerFilter: 'block' }}
-        uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}
-      >
-        {/* hygiene fill overlaid on the illustrated progress track */}
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
-          <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: barH / 2 }} uiBackground={{ color: clean ? C.hygiene : C.gold }} />
+      <UiEntity uiTransform={{ width: cardW, height: cardH, pointerFilter: 'block' }}>
+        <UiEntity uiTransform={{ width: cardW, height: cardH }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}>
+          <Label value={`<b>x ${st.popped}</b>`} fontSize={S(32)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.34), left: 0 }, width: '100%', height: Math.round(cardH * 0.17) }} />
+          <Label value={t('minigame.bath.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.52), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.10) }} />
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: barTop, left: barLeft }, width: barW, height: barH }}>
+            <UiEntity uiTransform={{ width: '100%', height: '100%', borderRadius: Math.round(barH / 2) }} uiBackground={{ color: PET_UI.ink }}>
+              <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(2), left: S(2) }, width: barW - S(4), height: barH - S(4), borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: { r: 0.97, g: 0.91, b: 0.8, a: 1 } }}>
+                <UiEntity uiTransform={{ width: `${barPct}%`, height: '100%', borderRadius: Math.round((barH - S(4)) / 2) }} uiBackground={{ color: clean ? C.hygiene : C.gold }} />
+              </UiEntity>
+            </UiEntity>
+          </UiEntity>
         </UiEntity>
-        {/* invisible clickable hotspot over the illustrated Exit button */}
-        <UiEntity
-          uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.727), left: Math.round(cardW * 0.215) }, width: Math.round(cardW * 0.573), height: Math.round(cardH * 0.172), pointerFilter: 'block' }}
-          uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }}
-          onMouseDown={() => {
-            playUiClick()
-            exitBathResults()
-          }}
-        />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: cardH - buttonH - S(10), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+          <PillButton id="bath_exit" label={t('minigame.bath.exit')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={() => exitBathResults()} />
+        </UiEntity>
       </UiEntity>
-      <Label
-        value={caption}
-        fontSize={S(22)}
-        color={clean ? C.hygiene : C.gold}
-        textAlign="middle-center"
-        uiTransform={{ width: cardW, height: S(34), margin: { top: S(14) } }}
-      />
     </UiEntity>
   )
 }
@@ -3978,7 +4167,7 @@ function BathGameOverlay() {
           {getPops().map((p) => (
             <BathPop key={`pop-${p.id}`} p={p} />
           ))}
-          {/* Illustrated HUD (bath_hud.png): timer+counter pills while popping,
+          {/* Illustrated HUD (bath_hud_new.png): timer+counter pills while popping,
               timer-only during the 3-2-1, and the full Start card during intro —
               the same sprite-card presentation as the revamped feed minigame. */}
           {popping || countdown ? <BathRoundHud timeLeft={st.timeLeft} popped={st.popped} countdown={countdown ? countdownNum : undefined} flashing={flashing} /> : null}
@@ -4113,6 +4302,8 @@ const NAV_GOALS_BOX = { x0: 492, y0: 614, x1: 696, y1: 817 }
 // their old floating mid-right placeholder spot.
 const HUD_MUSIC_BOX = { x0: 578, y0: 338, x1: 697, y1: 457 }
 const HUD_TROPHY_BOX = { x0: 578, y0: 473, x1: 697, y1: 592 }
+// The album entry point is packed into hud.png beside the bottom-nav sprites.
+const HUD_ALBUM_BOX = { x0: 786, y0: 657, x1: 912, y1: 783 }
 
 const BAR_NAME_UVS = petHudUvRect(BAR_NAME_BOX.x0, BAR_NAME_BOX.y0, BAR_NAME_BOX.x1, BAR_NAME_BOX.y1)
 const BAR_COIN_UVS = petHudUvRect(BAR_COIN_BOX.x0, BAR_COIN_BOX.y0, BAR_COIN_BOX.x1, BAR_COIN_BOX.y1)
@@ -4122,6 +4313,7 @@ const NAV_INV_UVS = petHudUvRect(NAV_INV_BOX.x0, NAV_INV_BOX.y0, NAV_INV_BOX.x1,
 const NAV_GOALS_UVS = petHudUvRect(NAV_GOALS_BOX.x0, NAV_GOALS_BOX.y0, NAV_GOALS_BOX.x1, NAV_GOALS_BOX.y1)
 const HUD_MUSIC_UVS = petHudUvRect(HUD_MUSIC_BOX.x0, HUD_MUSIC_BOX.y0, HUD_MUSIC_BOX.x1, HUD_MUSIC_BOX.y1)
 const HUD_TROPHY_UVS = petHudUvRect(HUD_TROPHY_BOX.x0, HUD_TROPHY_BOX.y0, HUD_TROPHY_BOX.x1, HUD_TROPHY_BOX.y1)
+const HUD_ALBUM_UVS = petHudUvRect(HUD_ALBUM_BOX.x0, HUD_ALBUM_BOX.y0, HUD_ALBUM_BOX.x1, HUD_ALBUM_BOX.y1)
 
 const BAR_NAME_ASPECT = (BAR_NAME_BOX.x1 - BAR_NAME_BOX.x0) / (BAR_NAME_BOX.y1 - BAR_NAME_BOX.y0)
 const BAR_COIN_ASPECT = (BAR_COIN_BOX.x1 - BAR_COIN_BOX.x0) / (BAR_COIN_BOX.y1 - BAR_COIN_BOX.y0)
@@ -4264,11 +4456,12 @@ function CarryHatchButton() {
   // While walking home there's no fixed banner — the "take your egg home"
   // guidance now rides the toast pipeline (fired when the flow starts).
   if (!st.atHome) return <UiEntity />
+  const hatchArt = localizedButtonArt('hatch')
   const bh = S(92)
-  const bw = Math.round(bh * HATCH_BUTTON_ASPECT)
+  const bw = Math.round(bh * hatchArt.aspect)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
-      <TactileButton id="carry_hatch" label="" texture={HATCH_BUTTON_ICON} width={bw} height={bh} pulse onClick={() => beginHatchFromCarry()} />
+      <TactileButton id="carry_hatch" label="" texture={hatchArt.src} uvs={hatchArt.uvs} width={bw} height={bh} pulse onClick={() => beginHatchFromCarry()} />
     </UiEntity>
   )
 }
@@ -4278,8 +4471,9 @@ function CarryHatchButton() {
 function BathButton() {
   const st = clientState.carryPet
   if (!st.active) return <UiEntity />
+  const bathArt = localizedButtonArt('bath')
   const bh = S(92)
-  const bw = Math.round(bh * BATH_BUTTON_ASPECT)
+  const bw = Math.round(bh * bathArt.aspect)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {/* BACK — cancel the bath and just keep the pet following */}
@@ -4291,7 +4485,7 @@ function BathButton() {
       ) : (
         // At the tub — place the pet.
         <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
-          <TactileButton id="place_bath" label="" texture={BATH_BUTTON_ICON} width={bw} height={bh} pulse onClick={() => placePetAtStation()} />
+          <TactileButton id="place_bath" label="" texture={bathArt.src} uvs={bathArt.uvs} width={bw} height={bh} pulse onClick={() => placePetAtStation()} />
         </UiEntity>
       )}
     </UiEntity>
@@ -4302,15 +4496,36 @@ function BathButton() {
 // 'animating' (frozen egg cinematic) render no world buttons; 'toNest' shows a
 // "Place Pet" once you reach the nest; 'ready' shows "Breed" (opens the
 // name/potion modal). BACK cancels the whole flow at any step.
-// breed.png is a 1920x1320 sheet stacking the two illustrated pill buttons:
-// PLACE PET on top, BREED on the bottom (same style as the bath button). Crop
-// each half and render it at its native aspect, like BathButton.
-const BREED_BTN_SHEET = 'assets/images/revamp/breed.png'
-const BREED_BTN_W = 812
-const BREED_BTN_H = 666
-const BREED_PLACE_UVS = sheetUvRect(0, 0, BREED_BTN_W, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H) // top half
-const BREED_GO_UVS = sheetUvRect(0, BREED_BTN_H / 2, BREED_BTN_W, BREED_BTN_H, BREED_BTN_W, BREED_BTN_H) // bottom half
-const BREED_BTN_ASPECT = BREED_BTN_W / (BREED_BTN_H / 2)
+// Place Pet / Breed artwork, with English, Spanish and Portuguese variants in
+// one 1024px sheet. Each translated button has its own bounds: the Portuguese
+// labels are slightly wider than the English ones, so treating this as a grid
+// would either crop the art or leave an uneven transparent edge.
+const BREED_BTN_SHEET = 'assets/images/buttons_place_breed_multilanguage.png'
+const BREED_BTN_SHEET_SIZE = 1024
+type BreedButtonId = 'place' | 'breed'
+const BREED_BUTTON_CROPS: Record<AppLanguage, Record<BreedButtonId, ButtonSpriteCrop>> = {
+  en: {
+    place: { x0: 13, y0: 341, x1: 354, y1: 537 },
+    breed: { x0: 13, y0: 572, x1: 351, y1: 744 }
+  },
+  es: {
+    place: { x0: 357, y0: 343, x1: 682, y1: 537 },
+    breed: { x0: 356, y0: 572, x1: 678, y1: 744 }
+  },
+  pt: {
+    place: { x0: 688, y0: 342, x1: 1014, y1: 537 },
+    breed: { x0: 681, y0: 574, x1: 1013, y1: 744 }
+  }
+}
+
+function breedButtonArt(id: BreedButtonId): LocalizedButtonArt {
+  const crop = BREED_BUTTON_CROPS[getLanguage()][id]
+  return {
+    src: BREED_BTN_SHEET,
+    uvs: sheetUvRect(crop.x0, crop.y0, crop.x1, crop.y1, BREED_BTN_SHEET_SIZE, BREED_BTN_SHEET_SIZE),
+    aspect: (crop.x1 - crop.x0) / (crop.y1 - crop.y0)
+  }
+}
 
 function BreedButtons() {
   const b = clientState.breed
@@ -4319,21 +4534,22 @@ function BreedButtons() {
   if (!b.active || b.phase === 'pickB' || b.phase === 'animating' || uiState.panel === 'breedName') return <UiEntity />
   const showPlace = b.phase === 'toNest' && b.atNest
   const showBreed = b.phase === 'ready'
+  const art = breedButtonArt(showPlace ? 'place' : 'breed')
   const bh = S(92) // match the bath/hatch button height
-  const bw = Math.round(bh * BREED_BTN_ASPECT)
+  const bw = Math.round(bh * art.aspect)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       <BackButton onClick={() => cancelBreed()} />
       {(showPlace || showBreed) && (
         <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(80), left: '50%' }, margin: { left: -bw / 2 }, width: bw, height: bh, alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
           {showPlace ? (
-            <TactileButton id="breed_place" label="" texture={BREED_BTN_SHEET} uvs={BREED_PLACE_UVS} width={bw} height={bh} pulse onClick={() => placeParentA()} />
+            <TactileButton id="breed_place" label="" texture={art.src} uvs={art.uvs} width={bw} height={bh} pulse onClick={() => placeParentA()} />
           ) : (
             <TactileButton
               id="breed_go"
               label=""
-              texture={BREED_BTN_SHEET}
-              uvs={BREED_GO_UVS}
+              texture={art.src}
+              uvs={art.uvs}
               width={bw}
               height={bh}
               pulse
@@ -4354,7 +4570,6 @@ function BreedButtons() {
 // right bowl. Non-Adults are shown but rejected with a toast. Close/BACK cancels.
 // Same shell, card size and paging as My Pets (Inventory-sized revamp panel,
 // one row of 4 roster-style cards).
-const CHOOSE_PARTNER_PANEL = 'assets/images/revamp/choose_partner_panel.png'
 
 function PartnerCard(props: { key?: string; pet: PetData }) {
   const pet = props.pet
@@ -4369,14 +4584,14 @@ function PartnerCard(props: { key?: string; pet: PetData }) {
       selected={false}
       width={cardW}
       height={cardH}
-      onClick={() => (adult ? chooseBreedPartner(pet.id) : showBreedNotice('That pet must be an Adult to breed.'))}
+      onClick={() => (adult ? chooseBreedPartner(pet.id) : showBreedNotice(t('breed.notice.mustAdult')))}
     >
       <UiEntity
         uiTransform={{ width: disc, height: disc, borderRadius: disc / 2, margin: { bottom: rosterPx(8) } }}
         uiBackground={img ? { texture: { src: img }, textureMode: 'stretch', color: adult ? undefined : { r: 1, g: 1, b: 1, a: 0.5 } } : { color: speciesColor(pet.species) }}
       />
       <Label value={pet.name} fontSize={rosterPx(17)} color={adult ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
-      <Label value={adult ? `Lv ${pet.petLevel}` : 'Not Adult'} fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
+      <Label value={adult ? t('pet.level.short', { level: pet.petLevel }) : 'Not Adult'} fontSize={rosterPx(13)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(18), margin: { top: rosterPx(2) } }} />
     </PetGridCard>
   )
 }
@@ -4392,9 +4607,9 @@ function BreedPickerPanel() {
   uiState.breedPickerPage = page
   const shown = others.slice(page * ROSTER_PAGE_SIZE, (page + 1) * ROSTER_PAGE_SIZE)
   return (
-    <RevampPanel src={CHOOSE_PARTNER_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} onClose={() => cancelBreed()}>
+    <RevampPanel width={navPanelWidth()} contentTop={REVAMP_CONTENT_TOP} title={t('panel.choosePartner.title')} subtitle={t('panel.choosePartner.subtitle')} onClose={() => cancelBreed()}>
       {shown.length === 0 ? (
-        <Label value="You need a second pet to breed with." fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
+        <Label value={t('breed.notice.needSecond')} fontSize={S(18)} color={PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40), margin: { top: S(90) } }} />
       ) : (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start', margin: { top: S(46), bottom: S(10) } }}>
           {shown.map((pet) => (
@@ -4460,9 +4675,10 @@ function ArkProgress(props: { width: number }) {
   const mine = clientState.player?.counters['arkCount'] ?? 0
   const frac = s.goal > 0 ? Math.max(0, Math.min(1, s.donated / s.goal)) : 0
   const barH = S(14)
+  const progressText = `${t('panel.ark.progress', { current: s.donated, goal: s.goal })}${mine > 0 ? t('panel.ark.progressMine', { count: mine }) : ''}`
   return (
     <UiEntity uiTransform={{ width: props.width, flexDirection: 'column', alignItems: 'center' }}>
-      <Label value={`Ark progress: ${s.donated} / ${s.goal} pets aboard${mine > 0 ? `  ·  you sent ${mine}` : ''}`} fontSize={S(16)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+      <Label value={progressText} fontSize={S(16)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
       <UiEntity uiTransform={{ width: props.width, height: barH, borderRadius: barH / 2, margin: { top: S(4) } }} uiBackground={{ color: { r: 0.87, g: 0.8, b: 0.71, a: 1 } }}>
         <UiEntity uiTransform={{ width: Math.max(barH, Math.round(props.width * frac)), height: barH, borderRadius: barH / 2 }} uiBackground={{ color: PET_UI.coinOuter }} />
       </UiEntity>
@@ -4502,7 +4718,7 @@ function ArkPetCard(props: { key?: string; pet: PetData }) {
       />
       <Label value={pet.name} fontSize={rosterPx(17)} color={blocked ? PET_UI.muted : PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(22) }} />
       <Label
-        value={blocked || Cfg.rarityLabel(pet.rarity)}
+        value={blocked || t(`rarity.${pet.rarity}`)}
         fontSize={rosterPx(13)}
         color={blocked ? PET_UI.muted : rarityColor(pet.rarity)}
         textAlign="middle-center"
@@ -4512,8 +4728,7 @@ function ArkPetCard(props: { key?: string; pet: PetData }) {
   )
 }
 
-// Same revamp frame as My Pets / Choose a Partner, with its own baked title.
-const ARK_PANEL = 'assets/images/revamp/board_ark.png'
+// Same standard revamp frame as My Pets / Choose a Partner.
 
 /** Page arrows for the Captain's picker: the Album's round arrow buttons (and
  *  their greyed-out versions at either end) around the "1 / 3" counter. */
@@ -4549,7 +4764,7 @@ function ArkDonatePanel() {
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
   const noticeOn = Date.now() < arkNotice.until
   return (
-    <RevampPanel src={ARK_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={REVAMP_CONTENT_TOP} onClose={() => ui.close()}>
+    <RevampPanel width={width} contentTop={REVAMP_CONTENT_TOP} title={t('panel.ark.title')} subtitle={t('panel.ark.subtitle')} onClose={() => ui.close()}>
       <ArkProgress width={width - S(200)} />
       {shown.length === 0 ? (
         <Label
@@ -4569,7 +4784,7 @@ function ArkDonatePanel() {
       )}
       <ArkPager page={page} pageCount={pageCount} onPage={(n) => (uiState.arkPage = n)} />
       <Label
-        value={noticeOn ? arkNotice.text : 'Tap a pet to send it aboard.'}
+        value={noticeOn ? arkNotice.text : t('panel.ark.prompt')}
         fontSize={S(15)}
         color={noticeOn ? LOC.orange : PET_UI.muted}
         textAlign="middle-center"
@@ -4667,55 +4882,57 @@ function WearablePreview(props: { key?: string; wearableId: string }) {
   return (
     <UiEntity uiTransform={{ width: tile + S(40), flexDirection: 'column', alignItems: 'center', margin: { left: S(8), right: S(8) } }}>
       <UiEntity uiTransform={{ width: tile, height: tile, borderRadius: S(18), alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: LOC.tile }}>
-        <UiEntity uiTransform={{ width: tile - S(16), height: tile - S(16) }} uiBackground={{ texture: { src: w.image }, textureMode: 'stretch' }} />
+        <UiEntity uiTransform={{ width: tile - S(16), height: tile - S(16) }} uiBackground={{ texture: { src: w.image }, textureMode: 'stretch', uvs: w.imageUvs }} />
       </UiEntity>
       <Label value={w.name} fontSize={S(15)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: '100%', height: S(40), margin: { top: S(4) } }} />
     </UiEntity>
   )
 }
 
-// One-shot celebration shown after a wearable lands in the player's backpack
-// (clientState.wearableReward, set by wearables.ts on a confirmed claim). It's a
-// single custom image: it waits until the player has closed any open UI (so it
-// lands cleanly at tutorial end, not on top of the Ark thanks panel), then shows
-// for WEARABLE_WON_MS with a short fade in/out and dismisses itself.
-const WEARABLE_WON_IMG = 'assets/images/revamp/wearable_won.png'
-const WEARABLE_WON_W = 998 // native px, for aspect
-const WEARABLE_WON_H = 730
+// One-shot celebration shown after a wearable lands in the player's backpack.
+// Its old artwork baked all copy in English, so use our shared empty panel and
+// live labels instead. That keeps the new reward flow in main while respecting
+// the selected language on every client.
 const WEARABLE_WON_MS = 3000
-const WEARABLE_WON_FADE_MS = 400
+
+function dismissWearableReward(): void {
+  clientState.wearableReward = null
+}
 
 function WearableRewardOverlay() {
-  const r = clientState.wearableReward
-  if (!r) return <UiEntity />
+  const reward = clientState.wearableReward
+  if (!reward) return <UiEntity />
   const now = Date.now()
 
   // Hold until every big panel/dialog is closed; only then start the timer.
-  if (r.shownAt === 0) {
+  if (reward.shownAt === 0) {
     if (bigUiOpen()) return <UiEntity />
-    r.shownAt = now
+    reward.shownAt = now
   }
-  const elapsed = now - r.shownAt
-  if (elapsed >= WEARABLE_WON_MS) {
-    clientState.wearableReward = null
+  if (now - reward.shownAt >= WEARABLE_WON_MS) {
+    dismissWearableReward()
     return <UiEntity />
   }
 
-  const alpha = Math.max(0, Math.min(1, Math.min(elapsed, WEARABLE_WON_MS - elapsed) / WEARABLE_WON_FADE_MS))
-  const imgW = S(460)
-  const imgH = Math.round((imgW * WEARABLE_WON_H) / WEARABLE_WON_W)
+  const wearable = Cfg.arkWearableById(reward.wearableId)
+  const width = S(560)
+  const iconSize = S(106)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}>
-      <UiEntity uiTransform={{ width: imgW, height: imgH }} uiBackground={{ texture: { src: WEARABLE_WON_IMG }, textureMode: 'stretch', color: { r: 1, g: 1, b: 1, a: alpha } }} />
-    </UiEntity>
+    <RevampPanel width={width} contentTop={184} title={t('wearableReward.title')} subtitle={t('wearableReward.subtitle')} onClose={dismissWearableReward}>
+      <UiEntity uiTransform={{ width: '100%', height: S(220), flexDirection: 'column', alignItems: 'center' }}>
+        {wearable && (
+          <UiEntity uiTransform={{ width: iconSize, height: iconSize, borderRadius: S(53), borderWidth: S(5), borderColor: { r: 0.82, g: 0.65, b: 0.5, a: 1 }, alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: LOC.tile }}>
+            <UiEntity uiTransform={{ width: iconSize - S(18), height: iconSize - S(18) }} uiBackground={{ texture: { src: wearable.image }, textureMode: 'stretch', uvs: wearable.imageUvs }} />
+          </UiEntity>
+        )}
+        <Label value={t('wearableReward.wallet')} {...panelFont(FREDOKA_SEMIBOLD)} fontSize={S(18)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" textWrap="wrap" uiTransform={{ width: width - S(110), height: S(48), margin: { top: S(12) } }} />
+      </UiEntity>
+    </RevampPanel>
   )
 }
 
-// Same revamp frame as the other Ark panels, with "Thank you!" + the Ark icon
-// baked in. The subtitle names the pet, so it's a Label set where the other
-// panels bake theirs (texture y ~144), in the same muted brown.
-const ARK_THANKS_PANEL = 'assets/images/revamp/ark_thanks.png'
-const ARK_THANKS_CONTENT_TOP = 138 // the subtitle line, right under the baked title
+// The pet-specific subtitle is live content under the shared localized header.
+const ARK_THANKS_CONTENT_TOP = 138
 const ARK_SUBTITLE_COLOR = { r: 0.61, g: 0.47, b: 0.4, a: 1 } as Color
 
 function ArkThanksPanel() {
@@ -4726,13 +4943,13 @@ function ArkThanksPanel() {
   const btnW = S(190)
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
   return (
-    <RevampPanel src={ARK_THANKS_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={ARK_THANKS_CONTENT_TOP} onClose={() => closeArkThanks()}>
-      <Label value={`${r.petName} boarded the Ark.`} fontSize={S(20)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" uiTransform={{ width: textW, height: S(28) }} />
-      <Label value={`+${r.xp} Caretaker XP  ·  +${r.coins} coins`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) } }} />
+    <RevampPanel width={width} contentTop={ARK_THANKS_CONTENT_TOP} title={t('panel.arkThanks.title')} onClose={() => closeArkThanks()}>
+      <Label value={t('panel.arkThanks.boarded', { name: r.petName })} fontSize={S(20)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" uiTransform={{ width: textW, height: S(28) }} />
+      <Label value={t('panel.arkThanks.rewards', { xp: r.xp, coins: r.coins })} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) } }} />
       <ArkProgress width={width - S(200)} />
       {r.firstWearableId !== '' && (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center', margin: { top: S(8) } }}>
-          <Label value="First donation! You'll receive this wearable:" fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
+          <Label value={t('panel.arkThanks.firstDonation')} fontSize={S(16)} color={LOC.violet} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />
           <WearablePreview wearableId={r.firstWearableId} />
         </UiEntity>
       )}
@@ -4801,11 +5018,8 @@ function ArkHandoverTuner() {
   )
 }
 
-// The launch card: one revamp frame for everybody, with the title + subtitle
-// baked into the art ("Carrying 100 companions..." — redraw it if ARK_GOAL ever
-// changes). Donors see the wearable they earned; everyone else, how to earn one.
-const ARK_LIFTED_PANEL = 'assets/images/revamp/ark_lifted.png'
-const ARK_LIFTED_CONTENT_TOP = 215 // first px below the baked title + subtitle
+// The launch card uses the common background and a live localized header.
+const ARK_LIFTED_CONTENT_TOP = 215
 
 function ArkLaunchCard() {
   const views = clientState.ark.launchCard
@@ -4817,11 +5031,11 @@ function ArkLaunchCard() {
   const btnW = S(190)
   const btnH = Math.round(btnW / PILL_HALF_ASPECT)
   return (
-    <RevampPanel src={ARK_LIFTED_PANEL} texW={REVAMP_PANEL_W} texH={MYPETS_PANEL_H} width={width} contentTop={ARK_LIFTED_CONTENT_TOP} onClose={() => closeArkLaunchCard()}>
+    <RevampPanel width={width} contentTop={ARK_LIFTED_CONTENT_TOP} title={t('panel.arkLifted.title')} subtitle={t('panel.arkLifted.subtitle')} onClose={() => closeArkLaunchCard()}>
       {donated.length > 0 ? (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', alignItems: 'center' }}>
           <Label
-            value={`Thanks for sending ${pets} of them — you'll receive ${donated.length > 1 ? 'these wearables' : 'this wearable'}:`}
+            value={t('panel.arkLifted.thanks', { pets, wearable: t(donated.length > 1 ? 'panel.arkLifted.manyWearables' : 'panel.arkLifted.oneWearable') })}
             fontSize={S(17)}
             color={PET_UI.ink}
             textAlign="middle-center"
@@ -4836,7 +5050,7 @@ function ArkLaunchCard() {
         </UiEntity>
       ) : (
         <Label
-          value="Donate an Adult pet to the Captain to earn a reward on the next launch!"
+          value={t('panel.arkLifted.noDonation')}
           fontSize={S(19)}
           color={PET_UI.ink}
           textAlign="middle-center"
@@ -5049,6 +5263,171 @@ function LoadingGate() {
 }
 
 // ---------------------------------------------------------------------------
+// Language indicator + picker. Flags and controls reuse Cozy Farm's shipped
+// artwork and layout. Only the panel background is the Marsh Colony UI frame.
+// ---------------------------------------------------------------------------
+const LANGUAGE_FLAGS_IMG = 'assets/images/revamp/languages.png'
+const LANGUAGE_ATLAS_SIZE = 1024
+const LANGUAGE_FLAG_RECTS: Record<AppLanguage, { x: number; y: number; w: number; h: number }> = {
+  en: { x: 12, y: 450, w: 512, h: 342 },
+  es: { x: 244, y: 60, w: 510, h: 338 },
+  pt: { x: 555, y: 450, w: 457, h: 344 }
+}
+const LANGUAGE_PICKER_BACKGROUND = 'assets/images/revamp/pet_actions_panel.png'
+// Keep the language panel at the same visual scale as the rest of the desktop
+// HUD (Pet Actions, My Pets and the other revamp cards).  The flag layout is
+// authored on Cozy Farm's 1024px canvas, then fitted inside Marsh's 700px card.
+const LANGUAGE_PICKER_DESIGN_WIDTH = 1024
+const LANGUAGE_PICKER_WIDTH = S(700)
+const LANGUAGE_PICKER_HEIGHT = Math.round(PET_ACTIONS_TEX_H * (LANGUAGE_PICKER_WIDTH / PET_ACTIONS_TEX_W))
+const LS = (value: number) => Math.round(value * (LANGUAGE_PICKER_WIDTH / LANGUAGE_PICKER_DESIGN_WIDTH))
+
+function languageFlagUvs(rect: { x: number; y: number; w: number; h: number }): number[] {
+  const left = rect.x / LANGUAGE_ATLAS_SIZE
+  const right = (rect.x + rect.w) / LANGUAGE_ATLAS_SIZE
+  const top = 1 - rect.y / LANGUAGE_ATLAS_SIZE
+  const bottom = 1 - (rect.y + rect.h) / LANGUAGE_ATLAS_SIZE
+  return [left, bottom, left, top, right, top, right, bottom]
+}
+
+function LanguageFlag(props: { language?: AppLanguage; width?: number; height?: number }) {
+  const language = props.language ?? getLanguage()
+  return (
+    <UiEntity
+      uiTransform={{ width: props.width ?? S(48), height: props.height ?? S(32) }}
+      uiBackground={{ texture: { src: LANGUAGE_FLAGS_IMG, wrapMode: 'clamp' }, textureMode: 'stretch', uvs: languageFlagUvs(LANGUAGE_FLAG_RECTS[language]) }}
+    />
+  )
+}
+
+let languagePickerPreview: AppLanguage = 'en'
+
+function CozyLanguageFlag(props: { language: AppLanguage }) {
+  const selected = languagePickerPreview === props.language
+  const boxSize = selected ? LS(168) : LS(150)
+  const innerMax = boxSize - LS(16)
+  const rect = LANGUAGE_FLAG_RECTS[props.language]
+  const aspect = rect.w / rect.h
+  let width = innerMax
+  let height = Math.round(width / aspect)
+  if (height > innerMax) {
+    height = innerMax
+    width = Math.round(height * aspect)
+  }
+  return (
+    <UiEntity
+      uiTransform={{ width: boxSize, height: boxSize, margin: { left: LS(20), right: LS(20) }, borderWidth: LS(4), borderColor: selected ? { r: 0.85, g: 0.65, b: 0.15, a: 1 } : { r: 0.6, g: 0.4, b: 0.19, a: 0.5 }, borderRadius: LS(16), alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: { r: 1, g: 1, b: 1, a: 0.1 } }}
+      onMouseDown={() => {
+        playUiClick()
+        languagePickerPreview = props.language
+      }}
+    >
+      <LanguageFlag language={props.language} width={width} height={height} />
+    </UiEntity>
+  )
+}
+
+function CozyLanguageButton(props: { label: string; primary?: boolean; width: number; height: number; fontSize: number; onClick: () => void }) {
+  return <PillButton id={props.primary ? 'language_select' : 'language_cancel'} label={props.label} shape="half" color={props.primary ? 'green' : 'pink'} width={props.width} height={props.height} fontSize={props.fontSize} onClick={props.onClick} />
+}
+
+function PlatformLanguageInfo() {
+  // Mobile follows the Explorer language, but keeps Marsh Colony's own frame,
+  // baked close X and safe content margins.
+  const panelW = S(500)
+  const panelH = Math.round(PET_ACTIONS_TEX_H * (panelW / PET_ACTIONS_TEX_W))
+  const MS = (value: number) => Math.round(value * (panelW / LANGUAGE_PICKER_DESIGN_WIDTH))
+  const close = () => {
+    playUiClick()
+    uiState.languageInfoOpen = false
+  }
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}>
+      <UiEntity uiTransform={{ width: panelW, height: panelH, alignItems: 'center', pointerFilter: 'block' }} uiBackground={{ texture: { src: LANGUAGE_PICKER_BACKGROUND, wrapMode: 'clamp' }, textureMode: 'stretch' }}>
+        <EcsLabel value={t('language.notice.title')} fontSize={MS(50)} color={{ r: 0.29, g: 0.17, b: 0.07, a: 1 }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: MS(132), left: 0 }, width: panelW, height: MS(64) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: MS(224), left: Math.round((panelW - MS(130)) / 2) }, width: MS(130), height: MS(88), pointerFilter: 'none' }}>
+          <LanguageFlag width={MS(130)} height={MS(88)} />
+        </UiEntity>
+        <EcsLabel value={t('language.notice.body', { language: languageName() })} fontSize={MS(30)} color={{ r: 0.29, g: 0.17, b: 0.07, a: 1 }} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: MS(332), left: MS(90) }, width: panelW - MS(180), height: MS(210) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: MS(18), left: panelW - MS(132) }, width: MS(116), height: MS(108), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={close} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function DesktopLanguagePicker() {
+  const panelW = LANGUAGE_PICKER_WIDTH
+  const panelH = LANGUAGE_PICKER_HEIGHT
+  const selectW = LS(280)
+  const cancelW = LS(160)
+  const buttonH = LS(70)
+  const gap = LS(6)
+  const totalW = selectW + gap + cancelW
+  const selectLeft = Math.round((panelW - totalW) / 2)
+  const cancelLeft = selectLeft + selectW + gap
+  const close = () => {
+    playUiClick()
+    uiState.languageInfoOpen = false
+  }
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}>
+      <UiEntity uiTransform={{ width: panelW, height: panelH, alignItems: 'center', pointerFilter: 'block' }} uiBackground={{ texture: { src: LANGUAGE_PICKER_BACKGROUND, wrapMode: 'clamp' }, textureMode: 'stretch' }}>
+        <EcsLabel value={t('language.picker.title', {}, languagePickerPreview)} fontSize={LS(38)} color={{ r: 0.29, g: 0.17, b: 0.07, a: 1 }} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: LS(160), left: 0 }, width: panelW, height: LS(56) }} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: LS(280) - Math.round((LS(168) - LS(150)) / 2), left: 0 }, width: panelW, height: LS(168), flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+          <CozyLanguageFlag language="en" />
+          <CozyLanguageFlag language="es" />
+          <CozyLanguageFlag language="pt" />
+        </UiEntity>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: LS(500), left: 0 }, width: panelW, height: buttonH }}>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: selectLeft }, width: selectW, height: buttonH }}>
+            <CozyLanguageButton label={t('language.select', {}, languagePickerPreview)} primary width={selectW} height={buttonH} fontSize={LS(26)} onClick={() => {
+              playUiClick()
+              selectDesktopLanguage(languagePickerPreview)
+              actions.setLanguage(languagePickerPreview)
+              uiState.languageInfoOpen = false
+            }} />
+          </UiEntity>
+          <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: cancelLeft }, width: cancelW, height: buttonH }}>
+            <CozyLanguageButton label={t('language.cancel', {}, languagePickerPreview)} width={cancelW} height={buttonH} fontSize={LS(24)} onClick={close} />
+          </UiEntity>
+        </UiEntity>
+        {/* This close target belongs to Marsh Colony's replacement background. */}
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: LS(18), left: panelW - LS(132) }, width: LS(116), height: LS(108), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={close} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function LanguageInfoModal() {
+  if (!uiState.languageInfoOpen) return null
+  return usesPlatformLanguage() ? <PlatformLanguageInfo /> : <DesktopLanguagePicker />
+}
+
+function LanguageIndicator() {
+  const isMobile = mobile()
+  const flagWidth = isMobile ? S(60) : S(48)
+  const flagHeight = isMobile ? S(40) : S(32)
+  const pad = S(6)
+  const width = flagWidth + pad * 2
+  const height = flagHeight + pad * 2
+  const hudFrame = { r: 0.32, g: 0.2, b: 0.11, a: 0.88 }
+  return (
+    <UiEntity
+      uiTransform={{ width, height, borderRadius: S(8), borderWidth: S(2), borderColor: hudFrame, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
+      uiBackground={{ color: { r: 1, g: 0.93, b: 0.79, a: 0.68 } }}
+      onMouseDown={() => {
+        playUiClick()
+        languagePickerPreview = getLanguage()
+        uiState.languageInfoOpen = true
+      }}
+    >
+      <LanguageFlag width={flagWidth} height={flagHeight} />
+    </UiEntity>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 // Only passive story beats get letterboxing; rubbing the egg and playing the
@@ -5189,6 +5568,7 @@ const Root = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%' }}>
       <CinematicBars />
       {content}
+      <LanguageInfoModal />
       <RewardPopup />
       <WearableRewardOverlay />
       {UI_DEBUG_MODE && <DebugBrowserBar />}

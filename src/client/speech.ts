@@ -29,6 +29,7 @@ import { Vector3, Color4 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
+import { translateText } from './i18n'
 import { getLocalPet, isBusy, petIsPresent, suppressPetTags } from './pet'
 import { petOverheadTuning } from './petOverheadCalibration'
 import { mobile } from './ui/theme'
@@ -280,7 +281,7 @@ export function petSay(text: string, seconds = C.PET_SPEECH_HOLD_SECONDS): void 
   // The feed game owns the pet from the approach through its final eating shot.
   // Drop new requests here as well as hiding an already-visible bubble in update.
   if (clientState.feedGame.active) return
-  pending = { text, seconds }
+  pending = { text: translateText(text), seconds }
   if (phase === 'hidden') return
   phase = 'out' // let the current line pop away first
   phaseT = 0
