@@ -8,14 +8,14 @@
 // rendering path) plus this file's on-screen Prev/Next/variant/jump bar.
 // Flip back to false to return to normal gameplay; nothing else changes.
 
-import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { Label, ScreenInsetArea, UiEntity } from '@dcl/sdk/react-ecs'
 import * as Cfg from '../../shared/config'
 import type { PetData, PlayerData, PresenceEntry, Rarity, SwapOfferPayload } from '../../shared/types'
 import { clientState, openDialog, pushToast } from '../state'
 import { debugForcePanel, debugSetUiState, type Panel } from '../ui'
 import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
-import { C, S, TactileButton } from './theme'
+import { C, S, TactileButton, mobile } from './theme'
 import { debugSetLanguage, getLanguage, type AppLanguage } from '../i18n'
 
 // Keep the browser available for future layout work, but never inject fixtures
@@ -522,9 +522,14 @@ export function DebugBrowserBar() {
   const entry = DEBUG_SCREENS[currentScreenIndex]
   const hasVariants = (entry.variants?.length ?? 0) > 1
   const barW = S(760)
+  // Just under the top HUD row (TopBars: top S(46)/S(10) + height S(58)) so it
+  // doesn't cover coins/pets, and inside the safe area like the real HUD.
+  const top = (mobile() ? S(46) : S(10)) + S(58) + S(10)
   return (
+    <ScreenInsetArea>
+    <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: S(12), left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
+      uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
     >
       <UiEntity
         uiTransform={{ width: '100%', height: S(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: S(16), padding: { left: S(12), right: S(12) } }}
@@ -569,5 +574,7 @@ export function DebugBrowserBar() {
         </UiEntity>
       )}
     </UiEntity>
+    </UiEntity>
+    </ScreenInsetArea>
   )
 }

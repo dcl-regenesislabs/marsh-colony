@@ -721,7 +721,8 @@ function PillButton(props: {
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center', margin: props.margin }}>
       <UiEntity
-        uiTransform={{ width: w, height: h, flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' }}
+        // flexShrink 0 so the pulse scales evenly (see TactileButton in theme.tsx).
+        uiTransform={{ width: w, height: h, flexShrink: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' }}
         uiBackground={{ texture: { src: PILL_SHEET }, textureMode: 'stretch', uvs }}
         onMouseDown={() => {
           if (props.disabled) return
@@ -2101,7 +2102,7 @@ function RosterSlotCard(props: { key?: number; index: number }) {
             : undefined
         }
       >
-        <UiEntity uiTransform={{ width: badge, height: badge, borderRadius: Math.round(badge / 2), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
+        <UiEntity uiTransform={{ width: badge, height: badge, flexShrink: 0, borderRadius: Math.round(badge / 2), alignItems: 'center', justifyContent: 'center', margin: { bottom: rosterPx(10) } }} uiBackground={{ color: canUnlock ? PET_UI.badge : PET_UI.lock }}>
           <Label value={canUnlock ? '+' : 'x'} fontSize={Math.round(rosterPx(26) * k)} color={PET_UI.white} textAlign="middle-center" uiTransform={{ width: badge, height: badge }} />
         </UiEntity>
         <Label value={canUnlock ? 'Unlock' : 'Locked'} fontSize={rosterPx(18)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ width: '100%', height: rosterPx(24) }} />
