@@ -10,8 +10,9 @@
 // The Caretaker is the only voice that teaches, always through the normal
 // dialog (tagged "Chapter x/6"). Each objective is said once when the screen is
 // free; after the dialog it stays on screen as a sticky toast until it is done
-// (FirstSessionTask in ui.tsx), and throbs if the player sits on it. No new guide
-// arrows: the player finds things; only the right button pulses.
+// (FirstSessionTask in ui.tsx), and throbs if the player sits on it. The woods
+// mushroom also uses the shared path arrow once the Caretaker directs the player
+// to find it.
 
 import {
   engine,
@@ -28,7 +29,17 @@ import { Vector3 } from '@dcl/sdk/math'
 import { clientState, actions } from './state'
 import { PLAY_MIN_ENERGY } from '../shared/config'
 import { FIRST_SESSION_STEPS } from '../shared/types'
-import { canStartPetInteraction, getEggPending, setFirstSessionBreedPartner, growthCinematicActive, startCarryEgg, startGetEgg, startHatch } from './pet'
+import {
+  canStartPetInteraction,
+  getEggPending,
+  growthCinematicActive,
+  hideArrow,
+  setFirstSessionBreedPartner,
+  showArrowTo,
+  startCarryEgg,
+  startGetEgg,
+  startHatch
+} from './pet'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { slotPrice, petStage, firstSessionPartnerSpecies, speciesLabel } from '../shared/config'
 import { openDialog, CAPTAIN_NPC_NAME } from './state'
@@ -209,15 +220,15 @@ function findMushroom(): Entity | null {
   if (e === null || !Transform.has(e) || !GltfContainer.has(e)) return null
   mushroom = e
   mushroomScale = Vector3.clone(Transform.get(e).scale)
-  // Click target: an invisible box around the mushroom (pointer layer only, so
-  // it never blocks walking). Its collider is switched off while hidden.
+  // Click target: an invisible box around the mushroom. It has no collider
+  // until the grow step is active, so it cannot block or be targeted while
+  // hidden.
   const pos = Transform.get(e).position
   const hit = engine.addEntity()
   Transform.create(hit, {
     position: Vector3.create(pos.x, pos.y + MUSHROOM_HIT_SIZE / 2, pos.z),
     scale: Vector3.create(MUSHROOM_HIT_SIZE, MUSHROOM_HIT_SIZE, MUSHROOM_HIT_SIZE)
   })
-  MeshCollider.setBox(hit, ColliderLayer.CL_NONE)
   pointerEventsSystem.onPointerDown(
     { entity: hit, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Pick the mushroom'), maxDistance: 16 } },
     () => eatMushroom()
@@ -249,16 +260,9 @@ function eatMushroom(): void {
     g.visibleMeshesCollisionMask = ColliderLayer.CL_NONE
     g.invisibleMeshesCollisionMask = ColliderLayer.CL_NONE
   }
+  clientState.firstSessionArrow = false
+  hideArrow('firstSession')
   mushroomPop = 0
-  // The pop animation is still visible for a fraction of a second, but this
-  // must stop being a valid pointer target the instant it is picked.
-  if (mushroomHit !== null) MeshCollider.setBox(mushroomHit, ColliderLayer.CL_NONE)
-  const e = findMushroom()
-  if (e !== null) {
-    const gltf = GltfContainer.getMutable(e)
-    gltf.visibleMeshesCollisionMask = ColliderLayer.CL_NONE
-    gltf.invisibleMeshesCollisionMask = ColliderLayer.CL_NONE
-  }
   actions.firstSessionGrow(pet.id) // the server grows it; the snapshot brings the new size
 }
 
@@ -279,6 +283,10 @@ function updateMushroom(dt: number): void {
     else return
   }
   const want = firstSessionActive() && step === 'grow' && !mushroomEaten
+  const guideToMushroom = want && growIntroDone
+  clientState.firstSessionArrow = guideToMushroom
+  if (guideToMushroom) showArrowTo(Transform.get(e).position, 'firstSession')
+  else hideArrow('firstSession')
   if (want && growIntroDone && playerDistanceTo(Transform.get(e).position) <= MUSHROOM_PICK_REACH) eatMushroom()
   if (want === mushroomShown) return
   mushroomShown = want
@@ -287,7 +295,10 @@ function updateMushroom(dt: number): void {
   g.visibleMeshesCollisionMask = want ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
   g.invisibleMeshesCollisionMask = want ? ColliderLayer.CL_PHYSICS | ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE
   if (want) Transform.getMutable(e).scale = Vector3.clone(mushroomScale)
-  if (mushroomHit !== null) MeshCollider.setBox(mushroomHit, want ? ColliderLayer.CL_POINTER : ColliderLayer.CL_NONE)
+  if (mushroomHit !== null) {
+    if (want) MeshCollider.setBox(mushroomHit, ColliderLayer.CL_POINTER)
+    else MeshCollider.deleteFrom(mushroomHit)
+  }
 }
 
 /** Pet 1, the one adopted at the start: chapter 5 grows and breeds it. */
