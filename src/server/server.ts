@@ -5,7 +5,7 @@ import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
 import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
-import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE } from '../shared/config'
+import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE, DEBUG_DELIVER_WEARABLE } from '../shared/config'
 import type { ArkDonateResult } from '../shared/types'
 import * as S from './state'
 import * as Ark from './ark'
@@ -31,6 +31,18 @@ const sessionStart = new Map<string, number>()
 function forwardNotes(address: string, notes: S.Notify[]): void {
   for (const n of notes) {
     room.send('notify', { kind: n.kind, message: n.message }, { to: [address] })
+  }
+}
+
+/** Ask the connected client to claim each wearable it is still owed. The mint
+ *  runs client-side (it POSTs to the dispenser with the player's wallet as
+ *  beneficiary), so the server only drives it; the grant is marked delivered when
+ *  the client reports back ('wearableClaimed'). No-op for an offline player —
+ *  their pending claims are requested again on their next requestState. */
+function requestWearableClaims(address: string, p: PlayerData): void {
+  if (!connected.has(address)) return
+  for (const wearableId of Ark.pendingWearableIds(p)) {
+    room.send('claimWearable', { wearableId }, { to: [address] })
   }
 }
 
@@ -69,8 +81,8 @@ async function announceArkLaunch(launch: Ark.ArkLaunchRecord): Promise<void> {
   for (const p of S.allCached()) {
     if ((launch.donors[p.address.toLowerCase()] ?? 0) === 0) continue
     Ark.reconcileArkGrants(p)
-    await Ark.deliverPendingWearables(p)
     await S.savePlayer(p.address)
+    requestWearableClaims(p.address, p)
   }
 }
 
@@ -132,7 +144,7 @@ export function server(): void {
     // grant now (and the snapshot below carries the launch to replay).
     await Ark.ensureArkLoaded()
     Ark.reconcileArkGrants(p)
-    if (firstThisSession && (await Ark.deliverPendingWearables(p))) await S.savePlayer(ctx.from)
+    if (firstThisSession) requestWearableClaims(ctx.from, p)
     pushSnapshot(p)
     room.send('ark', { json: JSON.stringify(Ark.arkStatus()) }, { to: [ctx.from] })
     broadcastPresence()
@@ -177,8 +189,8 @@ export function server(): void {
     }
     const launch = await Ark.recordArkDonation(ctx.from, S.displayName(ctx.from))
     if (launch) Ark.reconcileArkGrants(p)
-    await Ark.deliverPendingWearables(p)
     await S.savePlayer(ctx.from)
+    requestWearableClaims(ctx.from, p)
     room.send('arkDonateResult', { json: JSON.stringify(result) }, { to: [ctx.from] })
     forwardNotes(ctx.from, out.notes) // "boarded the Ark" toast + any level-up / journey step
     pushSnapshot(p)
@@ -209,6 +221,32 @@ export function server(): void {
     await Ark.ensureArkLoaded()
     room.send('arkLeaderboard', { json: JSON.stringify(Ark.arkLeaderboardFor(ctx.from)) }, { to: [ctx.from] })
   })
+
+  // The client finished (or failed) claiming a wearable from its dispenser. On
+  // success, mark the grant delivered so we stop asking; on failure, leave it
+  // pending to retry on the next session.
+  room.onMessage('wearableClaimed', async (data, ctx) => {
+    if (!ctx) return
+    console.log(`[Server] wearableClaimed ${data.wearableId} ok=${data.ok} from ${ctx.from}${data.ok ? '' : ` -> ${data.detail.slice(0, 300)}`}`)
+    if (!data.ok) return
+    const p = await S.loadPlayer(ctx.from)
+    if (Ark.markWearableDelivered(p, data.wearableId)) await S.savePlayer(ctx.from)
+  })
+
+  // DEBUG only (config.DEBUG_DELIVER_WEARABLE): grant the first-donation wearable to
+  // the sender and ask the client to claim it, so the Rewards dispenser can be tested
+  // without playing to the first Ark donation. Registered only when the flag is on, so
+  // it simply does not exist in a shipped build.
+  if (DEBUG_DELIVER_WEARABLE) {
+    room.onMessage('devDeliverWearable', async (_data, ctx) => {
+      if (!ctx) return
+      console.log('[Server] DEBUG devDeliverWearable from', ctx.from)
+      const p = await S.loadPlayer(ctx.from)
+      Ark.grantFirstDonationWearable(p)
+      await S.savePlayer(ctx.from)
+      requestWearableClaims(ctx.from, p)
+    })
+  }
 
   // Coins leaderboard — computed on demand (when the client opens the panel) and
   // sent only to the requester, so it's fresh without spamming every client. Rate-

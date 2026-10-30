@@ -26,6 +26,7 @@ import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
 import { setupMeteor } from './meteor'
 import { setupArk } from './ark'
+import { claimWearable } from './wearables'
 import { applyArkStatus, enqueueArkLaunch, onArkDonateResult, setupArkCinematics } from './arkCinematics'
 import { setupArkRedeem } from './arkRedeem'
 import { setupPenDoor } from './penDoor'
@@ -273,6 +274,13 @@ function registerHandlers(): void {
     } catch (e) {
       console.log('[Client] bad ark leaderboard', e)
     }
+  })
+
+  // The server says we're owed a wearable — claim it from its Rewards dispenser
+  // here, with the player's real session (see wearables.ts).
+  room.onMessage('claimWearable', (data) => {
+    markServerAlive()
+    void claimWearable(data.wearableId)
   })
 
   // Daily meteor: the server rolled and persisted it — show what we got.

@@ -50,6 +50,11 @@ export const clientState: {
   // Care rewards use their own lightweight floating treatment rather than the
   // text-toast queue, so earning XP/coins is noticeable without blocking it.
   reward: RewardFeedback | null
+  // A wearable was just delivered to this player's backpack — celebrated by a
+  // one-shot image overlay (see WearableRewardOverlay). `shownAt` is 0 while it
+  // waits for the player to close any open UI, then the time it began showing
+  // (it auto-dismisses a few seconds later). null when there's nothing to show.
+  wearableReward: { wearableId: string; shownAt: number } | null
   // Full-screen black overlay alpha (0 = invisible, 1 = fully black). Used to
   // mask an unavoidable camera hand-off pop (see fruitGame.ts's fadeAndRelease)
   // instead of trying to predict exactly where a given client's native camera
@@ -202,6 +207,7 @@ export const clientState: {
   toasts: [],
   currentToast: null,
   reward: null,
+  wearableReward: null,
   screenFade: { alpha: 0 },
   lastSpin: null,
   dialog: { open: false, npcName: '', pages: [], page: 0, finalLabel: 'Got it!', onDone: null, onPage: null, adoptCta: false },
@@ -618,5 +624,15 @@ export const actions = {
   },
   requestArkLeaderboard(): void {
     room.send('requestArkLeaderboard', {})
+  },
+  // DEBUG only (config.DEBUG_DELIVER_WEARABLE): ask the server to grant + deliver
+  // the first-donation wearable now, to test the Rewards dispenser.
+  devDeliverWearable(): void {
+    console.log('[Client] -> devDeliverWearable')
+    room.send('devDeliverWearable', {})
+  },
+  // Report the outcome of a client-side wearable claim back to the server.
+  wearableClaimed(wearableId: string, ok: boolean, detail = ''): void {
+    room.send('wearableClaimed', { wearableId, ok, detail })
   }
 }

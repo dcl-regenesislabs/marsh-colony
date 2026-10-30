@@ -142,18 +142,13 @@ export function arkLeaderboardFor(address: string): ArkLeaderboard {
 }
 
 // ---------------------------------------------------------------------------
-// Wearable rewards. Entitlements are recorded on the player right away; actual
-// delivery goes through deliverWearable(), which is a stub until the Rewards
-// campaigns exist. Undelivered grants are retried every time the player loads.
+// Wearable rewards. Entitlements are recorded on the player here (server is the
+// source of truth for WHO earned WHAT), but the actual mint is done CLIENT-side:
+// the claim POSTs to the Rewards dispenser with the player's wallet as beneficiary
+// and runs in the client runtime. So the server asks the client to claim each
+// pending grant (server.ts -> 'claimWearable') and marks it delivered when the
+// client reports success ('wearableClaimed').
 // ---------------------------------------------------------------------------
-
-/** TODO(Ark rewards): send the wearable through the Rewards campaign. Return
- *  true only once delivery is confirmed — anything else is retried later. */
-async function deliverWearable(address: string, wearable: C.ArkWearable): Promise<boolean> {
-  if (!wearable.urn) return false // no campaign wired yet: keep it pending
-  console.log('[Server] ark wearable delivery not wired yet', address, wearable.id)
-  return false
-}
 
 function addGrant(p: PlayerData, key: string, wearableId: string): void {
   const ark = arkData(p)
@@ -176,15 +171,25 @@ export function reconcileArkGrants(p: PlayerData): void {
   }
 }
 
-/** Try to deliver every pending grant. Returns true if anything changed, so
- *  the caller knows to persist the player. */
-export async function deliverPendingWearables(p: PlayerData): Promise<boolean> {
-  let changed = false
+/** Wearable ids this player still needs delivered AND whose campaign is wired
+ *  (urn + campaignId + campaignKey). These are what the client is asked to claim. */
+export function pendingWearableIds(p: PlayerData): string[] {
+  const ids: string[] = []
   for (const g of arkData(p).grants) {
     if (g.delivered) continue
-    const wearable = C.arkWearableById(g.wearableId)
-    if (!wearable) continue
-    if (await deliverWearable(p.address, wearable)) {
+    const w = C.arkWearableById(g.wearableId)
+    if (!w || !w.urn || !w.campaignId || !w.campaignKey) continue // not claimable yet
+    if (!ids.includes(g.wearableId)) ids.push(g.wearableId)
+  }
+  return ids
+}
+
+/** The client confirmed it claimed this wearable — stop asking. Returns true if
+ *  a grant flipped to delivered, so the caller knows to persist the player. */
+export function markWearableDelivered(p: PlayerData, wearableId: string): boolean {
+  let changed = false
+  for (const g of arkData(p).grants) {
+    if (g.wearableId === wearableId && !g.delivered) {
       g.delivered = true
       changed = true
     }
