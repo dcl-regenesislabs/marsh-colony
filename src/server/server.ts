@@ -150,6 +150,17 @@ export function server(): void {
     broadcastPresence()
   })
 
+  // Explorer's Bevy desktop client has no scene-accessible app language
+  // setting, so its in-scene picker persists a per-wallet preference here.
+  // Mobile never sends this message; it follows Decentraland Settings locally.
+  room.onMessage('setLanguage', async (data, ctx) => {
+    if (!ctx) return
+    const p = await S.loadPlayer(ctx.from)
+    if (!S.setLanguagePreference(p, data.language)) return
+    await S.savePlayer(ctx.from)
+    pushSnapshot(p)
+  })
+
   // Ark: hand an Adult pet to the Captain. Validation + rewards are in
   // S.donatePet; the shared counter (and a possible launch) in Ark.
   room.onMessage('donatePet', async (data, ctx) => {

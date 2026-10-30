@@ -3,6 +3,8 @@
 
 export type CareAction = 'feed' | 'clean' | 'sleep' | 'play'
 export type StatKey = 'hunger' | 'hygiene' | 'energy' | 'happiness'
+/** A language offered by the scene. Desktop/Bevy stores this per wallet. */
+export type LanguagePreference = 'en' | 'es' | 'pt'
 
 /** Checkpoints for the guided first visit. Stored with the player so a reload
  * can resume the tutorial instead of dropping them into the unrestricted game. */
@@ -65,6 +67,9 @@ export interface PetData {
 /** Per-player account. Persists across pets. Keyed by wallet address. */
 export interface PlayerData {
   address: string
+  // Desktop/Bevy language preference. Mobile ignores this and follows the
+  // Decentraland application's language setting instead.
+  language?: LanguagePreference
   // Economy
   currency: number
   inventory: { tier1: number; tier2: number; rarityPotions: number } // food consumables + rarity potions

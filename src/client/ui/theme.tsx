@@ -2,10 +2,17 @@
 // scaling, outlined labels, tactile (animated) buttons, pills, stat bars, and a
 // panel shell that blocks the mobile joystick. Inspired by the cozy-farm UI.
 
-import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { Label as EcsLabel, UiEntity } from '@dcl/sdk/react-ecs'
 import { AudioSource, engine, Entity, Transform, UiCanvasInformation } from '@dcl/sdk/ecs'
 import { getExplorerInformation } from '~system/Runtime'
 import { getPress, triggerPress, attentionPulse } from './anim'
+import { translateText } from '../i18n'
+
+// Shared primitives are used by screens outside ui.tsx too. Translate at
+// render time so an Explorer Settings change updates these captions instantly.
+function Label(props: any) {
+  return <EcsLabel {...props} value={translateText(String(props.value ?? ''))} />
+}
 
 // Generic UI tap/click feedback — played from every shared button/close/nav
 // primitive below so it's heard across the whole HUD without wiring each
@@ -210,6 +217,8 @@ export function TactileButton(props: {
   /** Optional UV crop (8 numbers, bottom-left clockwise) for pulling this
    *  button out of a spritesheet instead of a standalone texture file. */
   uvs?: number[]
+  /** Render a localized label over a text-free texture. */
+  labelOnTexture?: boolean
 }) {
   const scale = getPress(props.id) * (props.pulse && !props.disabled ? attentionPulse() : 1)
   const w = Math.round(props.width * scale)
@@ -233,7 +242,7 @@ export function TactileButton(props: {
           props.onClick()
         }}
       >
-        {!textured && (
+        {(!textured || props.labelOnTexture) && (
           <Label
             value={props.label}
             fontSize={props.fontSize ?? S(18)}
