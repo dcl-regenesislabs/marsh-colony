@@ -17,8 +17,8 @@ import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
 import { C, S, TactileButton } from './theme'
 
-// Keep the browser available for future layout work, but disabled during normal
-// gameplay testing so it never injects fixture data or overlays the HUD.
+// Keep the browser available for future layout work, but never inject fixtures
+// or show its overlay during a normal playtest.
 export const UI_DEBUG_MODE = false
 
 // ---------------------------------------------------------------------------
@@ -460,9 +460,10 @@ function resetAllDebugFlags(): void {
   debugForcePanel('none' as Panel)
 }
 
-// Debug was enabled to review the new Bath UI, so open straight on its intro.
-let currentScreenIndex = DEBUG_SCREENS.findIndex((screen) => screen.id === 'bathGame')
-let currentVariantIndex = 0
+// Open on Feed to review the Start/Exit controls first; the bar can jump to
+// every other registered UI without replaying the tutorial.
+let currentScreenIndex = DEBUG_SCREENS.findIndex((screen) => screen.id === 'feedGame')
+let currentVariantIndex = 1 // Feed's "Intro" variant, where the Start CTA is visible.
 let showJumpList = false
 let initialized = false
 

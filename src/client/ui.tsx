@@ -688,6 +688,7 @@ const PILL_INK: Record<PillColor, Color> = {
   gray: { r: 0.41, g: 0.39, b: 0.37, a: 1 }
 }
 const PILL_SHADOW_FRAC = 8 / 120 // bottom strip of each cell is the drop shadow
+const PILL_CHIP_ASPECT = (PILL_BOX.chip_orange.x1 - PILL_BOX.chip_orange.x0) / (PILL_BOX.chip_orange.y1 - PILL_BOX.chip_orange.y0)
 const PILL_HALF_ASPECT = (PILL_BOX.half_green.x1 - PILL_BOX.half_green.x0) / (PILL_BOX.half_green.y1 - PILL_BOX.half_green.y0)
 // Soft tan edge for the name field on the revamp panels' cream background.
 const ADOPT_INPUT_BORDER: Color = { r: 0.87, g: 0.8, b: 0.71, a: 1 }
@@ -708,6 +709,7 @@ function PillButton(props: {
   pulse?: boolean
   fontSize?: number
   margin?: Partial<{ top: number; right: number; bottom: number; left: number }>
+  outlineColor?: Color
 }) {
   const color: PillColor = props.disabled ? 'gray' : props.color
   const b = PILL_BOX[`${props.shape}_${color}`] ?? PILL_BOX[`${props.shape}_gray`]
@@ -728,7 +730,7 @@ function PillButton(props: {
           props.onClick()
         }}
       >
-        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(17)} color={PET_UI.white} outlineColor={PILL_INK[color]} width={w} height={bodyH} />
+        <OutlineLabel value={props.label} fontSize={props.fontSize ?? S(17)} color={PET_UI.white} outlineColor={props.outlineColor ?? PILL_INK[color]} width={w} height={bodyH} />
       </UiEntity>
     </UiEntity>
   )
@@ -1609,8 +1611,12 @@ function BreedNamePanel() {
 
   const potionIcon = S(60)
   const buyW = S(120)
-  const addW = S(120)
-  const addH = Math.round(addW / PILL_HALF_ASPECT)
+  const buyH = Math.round(buyW / PILL_HALF_ASPECT)
+  // The orange/pink chip is the real artwork for the potion toggle.  There is
+  // no orange half-pill in the atlas, so using a half here would fall back to
+  // the gray frame.
+  const addW = S(112)
+  const addH = Math.round(addW / PILL_CHIP_ASPECT)
   const breedW = S(190)
   const breedH = Math.round(breedW / PILL_HALF_ASPECT)
 
@@ -1652,10 +1658,16 @@ function BreedNamePanel() {
           <Label value={`${Cfg.RARITY_POTION_LABEL}  x${potions}`} fontSize={S(17)} color={PET_UI.ink} textAlign="middle-left" uiTransform={{ width: '100%', height: S(28) }} />
           <Label value={t('breed.potion.price', { price: Cfg.RARITY_POTION_PRICE })} fontSize={S(13)} color={PET_UI.muted} textAlign="middle-left" uiTransform={{ width: '100%', height: S(22) }} />
         </UiEntity>
-        <BuyButton
+        <PillButton
           id="breed_buy_potion"
+          label={t('Buy')}
+          shape="half"
+          color="green"
           width={buyW}
-          enabled={coins >= Cfg.RARITY_POTION_PRICE}
+          height={buyH}
+          disabled={coins < Cfg.RARITY_POTION_PRICE}
+          fontSize={S(16)}
+          outlineColor={PET_UI.ink}
           onClick={() => {
             // buyPotionLocal is the optimistic mirror (deducts coins + adds the
             // potion, false if broke); the server call confirms. Auto-add it — you
@@ -1673,8 +1685,8 @@ function BreedNamePanel() {
         <PillButton
           id="breed_add_potion"
           label={t(usingPotion ? 'breed.potion.remove' : 'breed.potion.add')}
-          shape="half"
-          color={usingPotion ? 'pink' : 'green'}
+          shape="chip"
+          color={usingPotion ? 'pink' : 'orange'}
           width={addW}
           height={addH}
           fontSize={S(16)}
@@ -1835,50 +1847,20 @@ function ShopPanel() {
 // is TAPPED to buy (enabled while affordable). Same art/size for all three so the
 // row stays uniform — the potion reuses the Magic Kibble bowl image as a stand-in.
 // Narrow enough that three fit inside the original inventory modal.
-// Illustrated BUY button — a 3-state horizontal sprite strip (0 = normal,
-// 1 = pressed, 2 = disabled). Sits under each inventory food card so a player can
-// restock the item they'd otherwise only be able to feed. Shares the tap-bounce
-// press system with TactileButton, swapping to the pressed frame while held.
-// Revamp pill buttons (same style as the Feed/Bath HUD "Start" button).
-// BUY: 3-frame strip [enabled, pressed, disabled]. USE: 2-frame strip
-// [enabled, disabled], drawn over the blank inventory card.
-const BUY_BTN_SHEET = 'assets/images/revamp/inv_buy_button.png'
-const BUY_BTN_FRAMES = 3
-const BUY_BTN_ASPECT = 360 / 104 // one state's cell aspect (~3.46, includes the soft drop shadow)
-const USE_BTN_SHEET = 'assets/images/revamp/inv_use_button.png'
-const USE_BTN_ASPECT = 360 / 104
-// Inventory card without the old baked "Use" (hud3.png card, button painted out);
-// the Use pill sits where the old one was, as fractions of the card box.
+// Inventory cards use the same text-free action buttons as the rest of the
+// game. This keeps BUY/USE live-localized and avoids a separate button PNG per
+// language.
 const INV_CARD_BLANK = 'assets/images/revamp/inv_card.png'
-const INV_USE_BOX = { left: 30 / 405, top: 377 / 499, width: 345 / 405 }
-function BuyButton(props: { key?: string; id: string; width: number; enabled: boolean; onClick: () => void }) {
-  const height = Math.round(props.width / BUY_BTN_ASPECT)
-  const scale = props.enabled ? getPress(props.id) : 1
-  const frame = !props.enabled ? 2 : scale < 0.995 ? 1 : 0 // pressed frame during the tap bounce
-  const w = Math.round(props.width * scale)
-  const h = Math.round(height * scale)
-  return (
-    <UiEntity uiTransform={{ width: props.width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: props.enabled ? 'block' : 'none' }}>
-      <UiEntity
-        uiTransform={{ width: w, height: h }}
-        uiBackground={{ texture: { src: BUY_BTN_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(frame, BUY_BTN_FRAMES) }}
-        onMouseDown={
-          props.enabled
-            ? () => {
-                triggerPress(props.id)
-                playUiClick()
-                props.onClick()
-              }
-            : undefined
-        }
-      />
-    </UiEntity>
-  )
-}
+// The blank card has room for an old wide baked button.  Live buttons use the
+// native atlas proportions instead: keep USE compact on the card and BUY just
+// below it, rather than stretching either artwork to fill that old slot.
+const INV_USE_TOP = 377 / 499
 
 function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: number[]; bowlSrc?: string; bowlAspect: number; bowlScale?: number; bowlTop?: number; count: number; enabled: boolean; onClick: () => void }) {
   const cardW = S(180)
   const cardH = Math.round(cardW / INV_CARD_ASPECT)
+  const useH = S(44)
+  const useW = Math.round(useH * PILL_CHIP_ASPECT)
   // bowlScale = art width as a fraction of the card; bowlTop = its vertical spot.
   // Defaults match the food bowls; the potion overrides them (bigger + higher).
   const bowlW = Math.round(cardW * (props.bowlScale ?? 0.46))
@@ -1886,15 +1868,7 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
   const bowlTop = Math.round(cardH * (props.bowlTop ?? 0.3))
   return (
     <UiEntity
-      uiTransform={{ width: cardW, height: cardH, margin: S(6), pointerFilter: props.enabled ? 'block' : 'none' }}
-      onMouseDown={
-        props.enabled
-          ? () => {
-              playUiClick()
-              props.onClick()
-            }
-          : undefined
-      }
+      uiTransform={{ width: cardW, height: cardH, margin: S(6) }}
     >
       <UiEntity
         uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: cardW, height: cardH }}
@@ -1903,13 +1877,13 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
       <UiEntity
         uiTransform={{
           positionType: 'absolute',
-          position: { left: Math.round(cardW * INV_USE_BOX.left), top: Math.round(cardH * INV_USE_BOX.top) },
-          width: Math.round(cardW * INV_USE_BOX.width),
-          height: Math.round((cardW * INV_USE_BOX.width) / USE_BTN_ASPECT),
-          pointerFilter: 'none'
+          position: { left: Math.round((cardW - useW) / 2), top: Math.round(cardH * INV_USE_TOP) },
+          width: useW,
+          height: useH
         }}
-        uiBackground={{ texture: { src: USE_BTN_SHEET }, textureMode: 'stretch', uvs: stripFrameUvs(props.enabled ? 0 : 1, 2) }}
-      />
+      >
+        <PillButton id={props.id} label={t('Use')} shape="chip" color="orange" width={useW} height={useH} disabled={!props.enabled} fontSize={S(14)} outlineColor={PET_UI.ink} onClick={props.onClick} />
+      </UiEntity>
       <Label
         value={`x${props.count}`}
         fontSize={S(14)}
@@ -2040,8 +2014,8 @@ function InventoryPanel() {
   // Column geometry, computed here so the row is deterministic (see InvColumn).
   const cardW = S(180)
   const cardH = Math.round(cardW / INV_CARD_ASPECT)
-  const buyW = S(150)
-  const buyH = Math.round(buyW / BUY_BTN_ASPECT)
+  const buyW = S(144)
+  const buyH = Math.round(buyW / PILL_HALF_ASPECT)
   const colGap = S(10) // gap between a card and its BUY button
   const colW = cardW + S(12) // card art + its own S(6) side margins
   const colH = cardH + S(12) + colGap + buyH // card + margins + gap + button
@@ -2055,17 +2029,17 @@ function InventoryPanel() {
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'flex-start' }}>
         <InvColumn width={colW} height={colH}>
           <InvCard key="inv-1" id="use_1" title={`${Cfg.SHOP_ITEMS[0].label}  ${price1}`} bowlUvs={INV_BOWL1_UVS} bowlAspect={INV_BOWL1_ASPECT} count={t1} enabled={t1 > 0} onClick={() => { useItemLocal(1); actions.useItem(1) }} />
-          <BuyButton id="buy_1" width={buyW} enabled={coins >= price1} onClick={buy(1)} />
+          <PillButton id="buy_1" label={t('Buy')} shape="half" color="green" width={buyW} height={buyH} disabled={coins < price1} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={buy(1)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
           <InvCard key="inv-2" id="use_2" title={`${Cfg.SHOP_ITEMS[1].label}  ${price2}`} bowlUvs={INV_BOWL2_UVS} bowlAspect={INV_BOWL2_ASPECT} count={t2} enabled={t2 > 0} onClick={() => { useItemLocal(2); actions.useItem(2) }} />
-          <BuyButton id="buy_2" width={buyW} enabled={coins >= price2} onClick={buy(2)} />
+          <PillButton id="buy_2" label={t('Buy')} shape="half" color="green" width={buyW} height={buyH} disabled={coins < price2} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={buy(2)} />
         </InvColumn>
         <InvColumn width={colW} height={colH}>
           {/* Potion is bought (never "used" from here — it's spent by breeding), so it
               buys via its BUY button like the food, not by tapping the card. */}
           <InvCard key="inv-potion" id="use_potion" title={`${Cfg.RARITY_POTION_LABEL}  ${Cfg.RARITY_POTION_PRICE}`} bowlSrc="assets/images/revamp/potion.png" bowlAspect={1} bowlScale={0.56} bowlTop={0.18} count={potions} enabled={potions > 0} onClick={() => pushToast('Rarity Potions are used when breeding')} />
-          <BuyButton id="buy_potion" width={buyW} enabled={canAffordPotion} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
+          <PillButton id="buy_potion" label={t('Buy')} shape="half" color="green" width={buyW} height={buyH} disabled={!canAffordPotion} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={() => { if (buyPotionLocal()) { pushToast('Bought a Rarity Potion!'); actions.buyPotion() } else pushToast('Not enough coins!') }} />
         </InvColumn>
       </UiEntity>
       {/* Opening Inventory hides the top bar, so the player can't see their balance
@@ -2269,8 +2243,8 @@ function RosterPanel() {
 // ---------------------------------------------------------------------------
 // Album — collection book. One page per rarity, 4x4 grid of the 16 creatures
 // (row = head family, column = body family, same order as Cfg.ALBUM_SPECIES).
-// Art (assets/images/album/): the panel with its title + close X baked in (same
-// frame as Goals), a parts sheet (rarity cards, locked card, check badge,
+// Art (assets/images/album/): the empty panel frame + close X (same frame as
+// Goals), a parts sheet (rarity cards, locked card, check badge,
 // arrows, rarity pills), one 4x4 creature sheet per rarity and a shared
 // silhouette sheet for the ones not collected yet. Every position below is in
 // panel-texture pixels and scaled by the panel's on-screen width, so the
@@ -2278,7 +2252,9 @@ function RosterPanel() {
 // ---------------------------------------------------------------------------
 const ALBUM_ICON = 'assets/images/album/album_icon.png'
 const ALBUM_PANEL = 'assets/images/album/album_panel.png'
-const ALBUM_PARTS = 'assets/images/album/album_parts.png'
+// The original controls stay in the upper portion of this expanded atlas.
+// The two lower rows add the reviewed Spanish and Portuguese rarity tabs.
+const ALBUM_PARTS = 'assets/images/album/album_parts_multilanguage.png'
 const ALBUM_SHEETS: Record<Rarity, string> = {
   common: 'assets/images/album/album_common.png',
   rare: 'assets/images/album/album_rare.png',
@@ -2295,7 +2271,7 @@ function albumUvs(b: Box, texW: number, texH: number): number[] {
   const vBottom = 1 - b.y1 / texH
   return [uL, vBottom, uL, vTop, uR, vTop, uR, vBottom]
 }
-const partUvs = (b: Box) => albumUvs(b, 1024, 512)
+const partUvs = (b: Box) => albumUvs(b, 1024, 768)
 
 // Landscape book: 16 creatures in 2 rows of 8 (row-major over ALBUM_SPECIES).
 const ALBUM_PANEL_W = 1800
@@ -2314,14 +2290,29 @@ const ALBUM_ARROW_BOX = {
   leftOff: { x0: 240, y0: 236, x1: 344, y1: 340 },
   rightOff: { x0: 356, y0: 236, x1: 460, y1: 340 }
 }
-const ALBUM_PILL_BOX: Record<Rarity, Box> = {
-  common: { x0: 8, y0: 360, x1: 308, y1: 440 },
-  rare: { x0: 320, y0: 360, x1: 620, y1: 440 },
-  legendary: { x0: 632, y0: 360, x1: 932, y1: 440 }
+const ALBUM_PILL_BOX: Record<AppLanguage, Record<Rarity, Box>> = {
+  // Existing source row — intentionally untouched.
+  en: {
+    common: { x0: 8, y0: 360, x1: 308, y1: 440 },
+    rare: { x0: 320, y0: 360, x1: 620, y1: 440 },
+    legendary: { x0: 632, y0: 360, x1: 932, y1: 440 }
+  },
+  es: {
+    common: { x0: 8, y0: 536, x1: 308, y1: 616 },
+    rare: { x0: 320, y0: 536, x1: 620, y1: 616 },
+    legendary: { x0: 632, y0: 536, x1: 932, y1: 616 }
+  },
+  pt: {
+    common: { x0: 8, y0: 648, x1: 308, y1: 728 },
+    rare: { x0: 320, y0: 648, x1: 620, y1: 728 },
+    legendary: { x0: 632, y0: 648, x1: 932, y1: 728 }
+  }
 }
 // Layout inside the panel texture.
 const AL = {
   closeX: 1667, closeY: 20, closeSize: 104, // baked close button
+  titleTop: 48, titleH: 76, titleFont: 68,
+  subtitleTop: 126, subtitleH: 48, subtitleFont: 30,
   gridTop: 196, cardW: 190, cardH: 200, gapX: 18, gapY: 16, art: 160,
   checkSize: 58, checkDx: 140, checkDy: -10,
   pagerTop: 630, arrow: 84, pillW: 300, pillH: 80, arrowGap: 26,
@@ -2413,17 +2404,33 @@ function AlbumPanel() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.45 } }}>
       <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: ALBUM_PANEL }, textureMode: 'stretch' }}>
+        <Label
+          value={t('panel.album.title')}
+          {...panelFont(FREDOKA_BOLD)}
+          fontSize={Math.round(AL.titleFont * k)}
+          color={PET_UI.ink}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.titleTop * k), left: 0 }, width: w, height: Math.round(AL.titleH * k), pointerFilter: 'none' }}
+        />
+        <Label
+          value={t('panel.album.subtitle')}
+          {...panelFont(FREDOKA_SEMIBOLD)}
+          fontSize={Math.round(AL.subtitleFont * k)}
+          color={ALBUM_INK}
+          textAlign="middle-center"
+          uiTransform={{ positionType: 'absolute', position: { top: Math.round(AL.subtitleTop * k), left: 0 }, width: w, height: Math.round(AL.subtitleH * k), pointerFilter: 'none' }}
+        />
         {Cfg.ALBUM_SPECIES.map((sp, i) => (
           <AlbumCard key={`${rarity}-${sp}`} index={i} rarity={rarity} collected={collected[i]} k={k} />
         ))}
         <AlbumArrow side="left" enabled={page > 0} k={k} onClick={() => (uiState.albumPage = page - 1)} />
         <UiEntity
           uiTransform={{ positionType: 'absolute', position: { top: Math.round((AL.pagerTop + (AL.arrow - AL.pillH) / 2) * k), left: Math.round((w - pillW) / 2) }, width: pillW, height: pillH }}
-          uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_PILL_BOX[rarity]) }}
+          uiBackground={{ texture: { src: ALBUM_PARTS }, textureMode: 'stretch', uvs: partUvs(ALBUM_PILL_BOX[getLanguage()][rarity]) }}
         />
         <AlbumArrow side="right" enabled={page < Cfg.RARITIES.length - 1} k={k} onClick={() => (uiState.albumPage = page + 1)} />
         <Label
-          value={`${pageCount} / ${Cfg.ALBUM_SPECIES.length} collected`}
+          value={t('panel.album.collected', { count: pageCount, total: Cfg.ALBUM_SPECIES.length })}
           fontSize={Math.round(AL.countFont * k)}
           color={ALBUM_INK}
           textAlign="middle-center"
@@ -2687,18 +2694,15 @@ function MeteorRewardPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Goals / achievements. The shared standard panel is the background and the
-// original goal art is cropped only for language-neutral numbered icons.
+// Goals / achievements. `goals.png` is the clean, text-free illustrated panel;
+// all copy is layered here so the full composition remains localized.
 // ---------------------------------------------------------------------------
-// `goals.png` is used only as an internal icon atlas. Its embedded English is
-// never displayed: each crop contains a numbered goal disc and its illustration.
 const GOALS_ART = 'assets/images/revamp/goals.png'
 const GOALS_TICK_IMG = 'assets/images/revamp/goals_tick.png'
 const GOALS_TICK_SIZE = 54
 type JourneyStepId = 'adopt' | 'feed' | 'bath' | 'breed' | 'ark'
 type JourneyStep = {
   id: JourneyStepId
-  icon: Box
   labelX: number
   labelY: number
   rewardX: number
@@ -2710,15 +2714,14 @@ type JourneyStep = {
   tickY: number
 }
 const JOURNEY_STEPS: JourneyStep[] = [
-  { id: 'adopt', icon: { x0: 70, y0: 305, x1: 210, y1: 445 }, labelX: 71, labelY: 451, rewardX: 93, rewardY: 492, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 192, tickY: 429 },
-  { id: 'feed', icon: { x0: 250, y0: 370, x1: 390, y1: 510 }, labelX: 251, labelY: 516, rewardX: 277, rewardY: 557, rewardWidth: 104, reward: '15', rewardKind: 'coin', tickX: 372, tickY: 494 },
-  { id: 'bath', icon: { x0: 430, y0: 305, x1: 570, y1: 445 }, labelX: 431, labelY: 451, rewardX: 453, rewardY: 492, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 552, tickY: 429 },
-  { id: 'breed', icon: { x0: 610, y0: 370, x1: 750, y1: 510 }, labelX: 611, labelY: 516, rewardX: 601, rewardY: 557, rewardWidth: 164, reward: 'spin', rewardKind: 'coin', tickX: 732, tickY: 494 },
-  { id: 'ark', icon: { x0: 790, y0: 305, x1: 930, y1: 445 }, labelX: 791, labelY: 451, rewardX: 769, rewardY: 492, rewardWidth: 182, reward: 'wearable', rewardKind: 'xp', tickX: 912, tickY: 429 }
+  // The artwork's icons/reward frames were moved up 51 px when its text was
+  // removed. These are the new blank slots, in source-image pixels.
+  { id: 'adopt', labelX: 71, labelY: 400, rewardX: 93, rewardY: 441, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 192, tickY: 378 },
+  { id: 'feed', labelX: 251, labelY: 465, rewardX: 277, rewardY: 506, rewardWidth: 104, reward: '15', rewardKind: 'coin', tickX: 372, tickY: 443 },
+  { id: 'bath', labelX: 431, labelY: 400, rewardX: 453, rewardY: 441, rewardWidth: 104, reward: '20', rewardKind: 'coin', tickX: 552, tickY: 378 },
+  { id: 'breed', labelX: 611, labelY: 465, rewardX: 601, rewardY: 506, rewardWidth: 164, reward: 'spin', rewardKind: 'coin', tickX: 732, tickY: 443 },
+  { id: 'ark', labelX: 791, labelY: 400, rewardX: 769, rewardY: 441, rewardWidth: 182, reward: 'wearable', rewardKind: 'xp', tickX: 912, tickY: 378 }
 ]
-function goalsUvs(box: Box): number[] {
-  return albumUvs(box, REVAMP_PANEL_W, REVAMP_PANEL_H)
-}
 function journeyStepDone(id: JourneyStepId): boolean {
   const p = clientState.player
   return !!p && Cfg.journeyStepDone(id, p) // same rule the server pays the Journey rewards on
@@ -2732,35 +2735,41 @@ function JourneyReward(props: { step: JourneyStep; scale: number }) {
   const label = step.reward === 'spin' ? t('panel.goals.rewardSpin', { coins: 50 }) : step.reward === 'wearable' ? t('panel.goals.rewardWearable') : step.reward
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { left: Math.round(step.rewardX * scale), top: Math.round(step.rewardY * scale) }, width: w, height: h, borderRadius: h / 2, borderWidth: Math.max(1, Math.round(2 * scale)), borderColor: { r: 0.82, g: 0.67, b: 0.46, a: 1 }, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}
-      uiBackground={{ color: { r: 1, g: 0.95, b: 0.84, a: 1 } }}
+      uiTransform={{ positionType: 'absolute', position: { left: Math.round(step.rewardX * scale), top: Math.round(step.rewardY * scale) }, width: w, height: h, pointerFilter: 'none' }}
     >
-      <UiEntity uiTransform={{ width: iconSize, height: iconSize, margin: { right: Math.round(4 * scale) } }} uiBackground={{ texture: { src: step.rewardKind === 'coin' ? REWARD_COIN_ICON : REWARD_XP_ICON }, textureMode: 'stretch' }} />
-      <Label value={label} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(22 * scale)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: w - iconSize - Math.round(10 * scale), height: h }} />
+      {/* Keep the illustrated pill's outline; repaint only its inner area so
+          values such as "spin" and "Wearable" can change language. */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.max(1, Math.round(2 * scale)), left: Math.max(1, Math.round(2 * scale)) }, width: w - Math.max(2, Math.round(4 * scale)), height: h - Math.max(2, Math.round(4 * scale)), borderRadius: Math.round(h / 2), flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }} uiBackground={{ color: { r: 1, g: 0.95, b: 0.84, a: 1 } }}>
+        <UiEntity uiTransform={{ width: iconSize, height: iconSize, margin: { right: Math.round(4 * scale) } }} uiBackground={{ texture: { src: step.rewardKind === 'coin' ? REWARD_COIN_ICON : REWARD_XP_ICON }, textureMode: 'stretch' }} />
+        <Label value={label} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(22 * scale)} color={PET_UI.ink} textAlign="middle-left" textWrap="nowrap" uiTransform={{ width: w - iconSize - Math.round(14 * scale), height: h - Math.max(2, Math.round(4 * scale)) }} />
+      </UiEntity>
     </UiEntity>
   )
 }
 
 function GoalsPanel() {
   const w = navPanelWidth()
+  const h = Math.round(REVAMP_PANEL_H * (w / REVAMP_PANEL_W))
   const k = w / REVAMP_PANEL_W
   const sz = Math.round(GOALS_TICK_SIZE * k)
   return (
-    <RevampPanel width={w} contentTop={0} title={t('panel.goals.title')} subtitle={t('panel.goals.subtitle')} onClose={() => ui.close()}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }} uiBackground={{ color: PET_UI.scrim }} onMouseDown={() => {}}>
+      <UiEntity uiTransform={{ width: w, height: h, positionType: 'relative' }} uiBackground={{ texture: { src: GOALS_ART }, textureMode: 'stretch' }}>
+        <Label value={t('panel.goals.title')} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(68 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(48 * k), left: 0 }, width: w, height: Math.round(76 * k), pointerFilter: 'none' }} />
+        <Label value={t('panel.goals.subtitle')} {...panelFont(FREDOKA_SEMIBOLD)} fontSize={Math.round(30 * k)} color={ARK_SUBTITLE_COLOR} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(126 * k), left: 0 }, width: w, height: Math.round(48 * k), pointerFilter: 'none' }} />
       {JOURNEY_STEPS.map((st) => {
-        const iconW = Math.round((st.icon.x1 - st.icon.x0) * k)
-        const iconH = Math.round((st.icon.y1 - st.icon.y0) * k)
         const done = journeyStepDone(st.id)
         return (
-          <UiEntity key={st.id} uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: w, height: Math.round(REVAMP_PANEL_H * k), pointerFilter: 'none' }}>
-            <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.icon.x0 * k), top: Math.round(st.icon.y0 * k) }, width: iconW, height: iconH }} uiBackground={{ texture: { src: GOALS_ART }, textureMode: 'stretch', uvs: goalsUvs(st.icon) }} />
-            <Label value={t(`panel.goals.step.${st.id}`)} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(28 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.labelX * k), top: Math.round(st.labelY * k) }, width: iconW, height: Math.round(38 * k) }} />
+          <UiEntity key={st.id} uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: w, height: h, pointerFilter: 'none' }}>
+            <Label value={t(`panel.goals.step.${st.id}`)} {...panelFont(FREDOKA_BOLD)} fontSize={Math.round(28 * k)} color={PET_UI.ink} textAlign="middle-center" textWrap="nowrap" uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.labelX * k), top: Math.round(st.labelY * k) }, width: Math.round(140 * k), height: Math.round(38 * k) }} />
             <JourneyReward step={st} scale={k} />
             {done && <UiEntity uiTransform={{ positionType: 'absolute', position: { left: Math.round(st.tickX * k - sz / 2), top: Math.round(st.tickY * k - sz / 2) }, width: sz, height: sz }} uiBackground={{ texture: { src: GOALS_TICK_IMG }, textureMode: 'stretch' }} />}
           </UiEntity>
         )
       })}
-    </RevampPanel>
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(REVAMP_CLOSE.y * k), left: Math.round(REVAMP_CLOSE.x * k) }, width: Math.round(REVAMP_CLOSE.size * k), height: Math.round(REVAMP_CLOSE.size * k), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0 } }} onMouseDown={() => { playUiClick(); ui.close() }} />
+      </UiEntity>
+    </UiEntity>
   )
 }
 
@@ -3598,8 +3607,8 @@ function FeedEatingPanel() {
   const barTop = Math.round(cardH * 0.59) + (isMobile ? S(1) : 0)
   // Result actions stay within the card. A compact, outlined caption reads
   // clearly without competing with the count or the pet's celebration.
-  const buttonW = S(118)
-  const buttonH = Math.round(buttonW / FEED_ACTION_BUTTON_ASPECT)
+  const buttonW = S(120)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   const resultsReady = st.phase === 'results'
   return (
     <UiEntity
@@ -3624,7 +3633,7 @@ function FeedEatingPanel() {
       </UiEntity>
       {resultsReady ? (
         <UiEntity uiTransform={{ positionType: 'absolute', position: { top: cardH - buttonH - S(11), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH, pointerFilter: 'block' }}>
-          <FeedHudButton id="feed_exit" label={t('minigame.feed.exit')} width={buttonW} height={buttonH} fontSize={S(18)} onClick={() => {
+          <PillButton id="feed_exit" label={t('minigame.feed.exit')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={() => {
             exitFeedResults()
           }} />
         </UiEntity>
@@ -3715,15 +3724,15 @@ function FeedStartCard() {
   const height = Math.round(width / FEED_START_ASPECT)
   // Keep the CTA comfortably inside the smaller panel rather than carrying
   // over the width of the previous, much wider, baked panel.
-  const buttonW = S(210)
-  const buttonH = Math.round(buttonW / FEED_ACTION_BUTTON_ASPECT)
+  const buttonW = S(156)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }} uiBackground={{ texture: { src: FEED_HUD_SHEET }, textureMode: 'stretch', uvs: FEED_START_UVS }}>
       {/* Start after the leaf/fruit topper.  At 15% the heading sat on top of
           that illustration as soon as it wrapped in Spanish or Portuguese. */}
       <Label value={`<b>${t('minigame.feed.instruction')}</b>`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.34), left: Math.round(width * 0.09) }, width: Math.round(width * 0.82), height: Math.round(height * 0.20) }} />
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.67), left: Math.round((width - buttonW) / 2) }, width: buttonW, height: buttonH }}>
-        <FeedHudButton id="feed_start" label={t('minigame.feed.start')} width={buttonW} height={buttonH} fontSize={S(20)} onClick={() => {
+        <PillButton id="feed_start" label={t('minigame.feed.start')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(17)} outlineColor={PET_UI.ink} onClick={() => {
           startCatchingCountdown()
         }} />
       </UiEntity>
@@ -3976,57 +3985,27 @@ const BATH_START_BOX = { x0: 11, y0: 19, x1: 752, y1: 444 }
 const BATH_RESULTS_BOX = BATH_START_BOX
 const BATH_TIMER_BOX = { x0: 10, y0: 712, x1: 337, y1: 869 }
 const BATH_COUNT_BOX = { x0: 333, y0: 850, x1: 668, y1: 1008 }
-const BATH_ACTION_ENABLED_BOX = { x0: 593, y0: 555, x1: 940, y1: 674 }
-const BATH_ACTION_DISABLED_BOX = { x0: 593, y0: 685, x1: 941, y1: 799 }
 const BATH_START_UVS = bathHudUvRect(BATH_START_BOX.x0, BATH_START_BOX.y0, BATH_START_BOX.x1, BATH_START_BOX.y1)
 const BATH_TIMER_UVS = bathHudUvRect(BATH_TIMER_BOX.x0, BATH_TIMER_BOX.y0, BATH_TIMER_BOX.x1, BATH_TIMER_BOX.y1)
 const BATH_COUNT_UVS = bathHudUvRect(BATH_COUNT_BOX.x0, BATH_COUNT_BOX.y0, BATH_COUNT_BOX.x1, BATH_COUNT_BOX.y1)
 const BATH_RESULTS_UVS = bathHudUvRect(BATH_RESULTS_BOX.x0, BATH_RESULTS_BOX.y0, BATH_RESULTS_BOX.x1, BATH_RESULTS_BOX.y1)
-const BATH_ACTION_ENABLED_UVS = bathHudUvRect(BATH_ACTION_ENABLED_BOX.x0, BATH_ACTION_ENABLED_BOX.y0, BATH_ACTION_ENABLED_BOX.x1, BATH_ACTION_ENABLED_BOX.y1)
-const BATH_ACTION_DISABLED_UVS = bathHudUvRect(BATH_ACTION_DISABLED_BOX.x0, BATH_ACTION_DISABLED_BOX.y0, BATH_ACTION_DISABLED_BOX.x1, BATH_ACTION_DISABLED_BOX.y1)
 const BATH_START_ASPECT = (BATH_START_BOX.x1 - BATH_START_BOX.x0) / (BATH_START_BOX.y1 - BATH_START_BOX.y0)
 const BATH_TIMER_ASPECT = (BATH_TIMER_BOX.x1 - BATH_TIMER_BOX.x0) / (BATH_TIMER_BOX.y1 - BATH_TIMER_BOX.y0)
 const BATH_COUNT_ASPECT = (BATH_COUNT_BOX.x1 - BATH_COUNT_BOX.x0) / (BATH_COUNT_BOX.y1 - BATH_COUNT_BOX.y0)
 const BATH_RESULTS_ASPECT = (BATH_RESULTS_BOX.x1 - BATH_RESULTS_BOX.x0) / (BATH_RESULTS_BOX.y1 - BATH_RESULTS_BOX.y0)
-const BATH_ACTION_BUTTON_ASPECT = (BATH_ACTION_ENABLED_BOX.x1 - BATH_ACTION_ENABLED_BOX.x0) / (BATH_ACTION_ENABLED_BOX.y1 - BATH_ACTION_ENABLED_BOX.y0)
-
-// Intro card: the whole illustrated card ("Tap the bubbles…" + a drawn Start
-// button) is one big tappable button, exactly like the feed minigame's start card.
-function BathHudButton(props: { id: string; label: string; width: number; height: number; onClick: () => void; disabled?: boolean; fontSize?: number }) {
-  const disabled = props.disabled ?? false
-  const scale = getPress(props.id)
-  const width = Math.round(props.width * scale)
-  const height = Math.round(props.height * scale)
-  return (
-    <UiEntity uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center' }}>
-      <UiEntity
-        uiTransform={{ width, height, alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
-        uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: disabled ? BATH_ACTION_DISABLED_UVS : BATH_ACTION_ENABLED_UVS }}
-        onMouseDown={() => {
-          if (disabled) return
-          triggerPress(props.id)
-          playUiClick()
-          props.onClick()
-        }}
-      >
-        <Label value={`<b>${props.label}</b>`} fontSize={props.fontSize ?? S(18)} color={{ r: 1, g: 1, b: 1, a: 1 }} textAlign="middle-center" uiTransform={{ width, height }} />
-      </UiEntity>
-    </UiEntity>
-  )
-}
-
 // The backing art contains no copy. Labels and CTA are real UI so every game
 // language uses this one atlas.
 function BathStartCard() {
   const width = S(540)
   const height = Math.round(width / BATH_START_ASPECT)
-  const buttonW = S(210)
-  const buttonH = Math.round(buttonW / BATH_ACTION_BUTTON_ASPECT)
+  // Keep the exact same green Start control as the Feed intro.
+  const buttonW = S(156)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(72), left: '50%' }, margin: { left: -width / 2 }, width, height, pointerFilter: 'block' }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_START_UVS }}>
       <Label value={`<b>${t('minigame.bath.instruction')}</b>`} fontSize={S(20)} color={PET_UI.ink} textAlign="middle-center" textWrap="wrap" uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.36), left: Math.round(width * 0.10) }, width: Math.round(width * 0.80), height: Math.round(height * 0.22) }} />
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top: Math.round(height * 0.67), left: Math.round((width - buttonW) / 2) }, width: buttonW, height: buttonH }}>
-        <BathHudButton id="bath_start" label={t('minigame.bath.start')} width={buttonW} height={buttonH} fontSize={S(18)} onClick={() => startBathCountdown()} />
+        <PillButton id="bath_start" label={t('minigame.bath.start')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(17)} outlineColor={PET_UI.ink} onClick={() => startBathCountdown()} />
       </UiEntity>
     </UiEntity>
   )
@@ -4090,8 +4069,8 @@ function BathResultsPanel() {
   const barH = Math.max(S(14), Math.round(cardH * 0.075))
   const barLeft = Math.round((cardW - barW) / 2)
   const barTop = Math.round(cardH * 0.64)
-  const buttonW = S(187)
-  const buttonH = Math.round(buttonW / BATH_ACTION_BUTTON_ASPECT)
+  const buttonW = S(144)
+  const buttonH = Math.round(buttonW / PILL_HALF_ASPECT)
   const elapsed = Math.max(0, (Date.now() - st.resultsAt) / 1000 - BATH_RESULTS_FILL_DELAY_S)
   const raw = Math.max(0, Math.min(1, elapsed / BATH_RESULTS_FILL_DUR_S))
   const eased = raw * raw * (3 - 2 * raw) // smoothstep
@@ -4102,7 +4081,7 @@ function BathResultsPanel() {
       uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
       uiBackground={{ color: C.scrim }}
     >
-      <UiEntity uiTransform={{ width: cardW, height: cardH + S(10) + buttonH, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}>
+      <UiEntity uiTransform={{ width: cardW, height: cardH, pointerFilter: 'block' }}>
         <UiEntity uiTransform={{ width: cardW, height: cardH }} uiBackground={{ texture: { src: BATH_HUD_SHEET }, textureMode: 'stretch', uvs: BATH_RESULTS_UVS }}>
           <Label value={`<b>x ${st.popped}</b>`} fontSize={S(32)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.34), left: 0 }, width: '100%', height: Math.round(cardH * 0.17) }} />
           <Label value={t('minigame.bath.progress')} fontSize={S(14)} color={PET_UI.ink} textAlign="middle-center" uiTransform={{ positionType: 'absolute', position: { top: Math.round(cardH * 0.52), left: S(12) }, width: cardW - S(24), height: Math.round(cardH * 0.10) }} />
@@ -4114,8 +4093,8 @@ function BathResultsPanel() {
             </UiEntity>
           </UiEntity>
         </UiEntity>
-        <UiEntity uiTransform={{ width: buttonW, height: buttonH, margin: { top: S(10) } }}>
-          <BathHudButton id="bath_exit" label={t('minigame.bath.exit')} width={buttonW} height={buttonH} fontSize={S(20)} onClick={() => exitBathResults()} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: cardH - buttonH - S(10), left: Math.round((cardW - buttonW) / 2) }, width: buttonW, height: buttonH }}>
+          <PillButton id="bath_exit" label={t('minigame.bath.exit')} shape="half" color="green" width={buttonW} height={buttonH} fontSize={S(16)} outlineColor={PET_UI.ink} onClick={() => exitBathResults()} />
         </UiEntity>
       </UiEntity>
     </UiEntity>
@@ -4144,7 +4123,7 @@ function BathGameOverlay() {
           {getPops().map((p) => (
             <BathPop key={`pop-${p.id}`} p={p} />
           ))}
-          {/* Illustrated HUD (bath_hud.png): timer+counter pills while popping,
+          {/* Illustrated HUD (bath_hud_new.png): timer+counter pills while popping,
               timer-only during the 3-2-1, and the full Start card during intro —
               the same sprite-card presentation as the revamped feed minigame. */}
           {popping || countdown ? <BathRoundHud timeLeft={st.timeLeft} popped={st.popped} countdown={countdown ? countdownNum : undefined} flashing={flashing} /> : null}
