@@ -11,6 +11,7 @@ import { clientState, openDialog, pushToast, CAPTAIN_NPC_NAME } from './state'
 import { canQueueCareAction } from './pet'
 import { playerName } from './ui/dialog'
 import { ui } from './ui'
+import { onLanguageChanged, translateText } from './i18n'
 import { firstSessionAllowsInteraction } from './firstSession'
 
 const TALK_SOUND = 'assets/sounds/AlienNod.mp3'
@@ -53,11 +54,12 @@ function captainIntro(): string[] {
 
 /** Captain.glb supplies its own collider; attach the pointer event to the model
  *  entity itself so its collider shape receives the tap/click. */
-function ensureClickHandler(captain: Entity): void {
-  if (clickHandlerSet) return
+function ensureClickHandler(captain: Entity, refresh = false): void {
+  if (clickHandlerSet && !refresh) return
   clickHandlerSet = true
+  pointerEventsSystem.removeOnPointerDown(captain)
   pointerEventsSystem.onPointerDown(
-    { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to the Captain', maxDistance: ARK_CAPTAIN_CLICK_DISTANCE, showHighlight: true } },
+    { entity: captain, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Talk to the Captain'), maxDistance: ARK_CAPTAIN_CLICK_DISTANCE, showHighlight: true } },
     () => {
       if (clientState.dialog.open) return
       if (!firstSessionAllowsInteraction('captain')) {
@@ -90,6 +92,9 @@ function ensureClickHandler(captain: Entity): void {
 
 export function setupCaptain(): void {
   let captain: Entity | null = null
+  onLanguageChanged(() => {
+    if (captain !== null) ensureClickHandler(captain, true)
+  })
   engine.addSystem(() => {
     // Resolve the entity once, then keep the reference — no per-frame name scan.
     if (captain === null) {

@@ -22,6 +22,7 @@ import { dailyClaimable, meteorAvailable } from './sim'
 import { showHint, petActivityActive, pushToast } from './state'
 import { ui } from './ui'
 import { firstSessionActive } from './firstSession'
+import { translateText } from './i18n'
 
 const METEOR_SOUND = 'assets/sounds/meteorland.mp3' // shared by the meteor's appearance AND its collection poof
 let meteorSfx: Entity | null = null
@@ -150,7 +151,7 @@ function spawnMeteor(): void {
   // Click to inspect the daily-reward ladder. The meteor stays in-world until
   // its Claim button confirms the collection flow above.
   pointerEventsSystem.onPointerDown(
-    { entity: meteor, opts: { button: InputAction.IA_POINTER, hoverText: 'Explore', maxDistance: 12 } },
+    { entity: meteor, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Explore'), maxDistance: 12 } },
     () => {
       if (firstSessionActive() || disappearing) return
       // Not in the middle of an activity (walking to the feeder or the bath, a

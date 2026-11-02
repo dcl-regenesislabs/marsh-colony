@@ -15,7 +15,7 @@
 // whichever pet is out and active.
 
 import { engine, Entity, Transform, Billboard, MeshRenderer, Material, MaterialTransparencyMode, VisibilityComponent } from '@dcl/sdk/ecs'
-import { Color3, Vector3 } from '@dcl/sdk/math'
+import { Vector3 } from '@dcl/sdk/math'
 import * as C from '../shared/config'
 import type { PetData, StatKey } from '../shared/types'
 import { clientState } from './state'
@@ -76,16 +76,13 @@ type EmoteState = {
 const emotes = new Map<string, EmoteState>()
 
 // Basic materials ignore alphaTest when alphaTexture is present, so use PBR's
-// explicit alpha-test mode to produce a real binary cutout. A modest textured
-// emission keeps the artwork readable in shade without washing out its colors.
+// explicit alpha-test mode to produce a real binary cutout. No emissive layer:
+// it washes the pale icons out to white and glows under mobile bloom.
 function makeMaterial(src: string): Parameters<typeof Material.setPbrMaterial>[1] {
   const texture = Material.Texture.Common({ src })
   return {
     texture,
     alphaTexture: texture,
-    emissiveTexture: texture,
-    emissiveColor: Color3.White(),
-    emissiveIntensity: 0.7,
     roughness: 1,
     metallic: 0,
     transparencyMode: MaterialTransparencyMode.MTM_ALPHA_TEST,

@@ -8,6 +8,9 @@ export const Messages = {
   // ---- Client -> Server ----
   // Ask the server for my full state (sent once the room is ready).
   requestState: Schemas.Map({ guestName: Schemas.String }),
+  // Desktop/Bevy's language selection. The server validates and persists it
+  // with this wallet's normal PlayerData record.
+  setLanguage: Schemas.Map({ language: Schemas.String }),
   // Adopt a pet (first time or into a free slot).
   adopt: Schemas.Map({ species: Schemas.String, name: Schemas.String }),
   // Trigger a care action: feed | clean | sleep | play. onBed = slept on the Bed.

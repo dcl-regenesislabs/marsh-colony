@@ -14,6 +14,7 @@ import { startFeedTask } from './feed'
 import { actions, clientState, pushToast, hasPendingHatchling } from './state'
 import { ui } from './ui'
 import { firstSessionAllowsPetAction, type PetActionId } from './firstSession'
+import { onLanguageChanged, translateText } from './i18n'
 
 const ACTION_CLIP: Record<CareAction, PetClip> = {
   feed: 'eat',
@@ -114,7 +115,10 @@ function onClick(name: string, hoverText: string, cb: () => void): void {
     console.log('[Client] entity not found:', name)
     return
   }
-  pointerEventsSystem.onPointerDown({ entity: ent, opts: { button: InputAction.IA_POINTER, hoverText, maxDistance: 16 } }, cb)
+  // Pointer prompts are native Explorer text, not React UI. Re-registering this
+  // event lets an in-session language change update the prompt too.
+  pointerEventsSystem.removeOnPointerDown(ent)
+  pointerEventsSystem.onPointerDown({ entity: ent, opts: { button: InputAction.IA_POINTER, hoverText: translateText(hoverText), maxDistance: 16 } }, cb)
 }
 
 /** First session: the feeder / pool / bed only answer when that is the action the
@@ -129,7 +133,7 @@ function gated(action: PetActionId, cb: () => void): () => void {
   }
 }
 
-export function setupInput(): void {
+function setupCarePointers(): void {
   // Feed is no longer a walk-to-the-bowl care action — it starts the tree errand
   // (client/feed.ts): arrow to the tree, click it there, then the feeding game.
   onClick(EntityNames.PetFeeder_glb, 'Feed', gated('feed', () => startFeedTask()))
@@ -143,5 +147,15 @@ export function setupInput(): void {
   // onClick(EntityNames.Ball, 'Play', () => triggerCare('play'))
   // Caretaker click is handled in caretaker.ts (click collider, not the raw GLTF).
   // Shop is suspended for now — the object stays in the scene but isn't clickable.
+}
+
+let carePointersListening = false
+
+export function setupInput(): void {
+  setupCarePointers()
+  if (!carePointersListening) {
+    carePointersListening = true
+    onLanguageChanged(setupCarePointers)
+  }
   setupCareQueue()
 }

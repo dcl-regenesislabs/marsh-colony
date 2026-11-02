@@ -153,7 +153,7 @@ const SCORCH_TINT = Color4.create(0.32, 0.2, 0.11, 1)
 // to, and lower than, the raw spot. This is also the "pulled back" game-camera
 // position the cinematic zooms IN from and, later, back OUT to. Mobile only.
 // These values are intentionally fixed so the minigame framing is consistent.
-const CAM_CLOSER_DIST = 3.5
+const CAM_CLOSER_DIST = 1.5
 const CAM_RAISE = -2.0
 // Same idea, much lighter touch — desktop has no zoom/close shot, this is
 // just a small correction on the single camera position it uses throughout.
@@ -172,13 +172,10 @@ const DESKTOP_LOOK_LEFT = 0.6
 // close zoomed-in hold use this same target) — higher above ground, and
 // shifted toward the player's own left (confirmed direction: +rightRef) so
 // the shot doesn't read as dead-center/tilted.
-const ARRIVAL_LOOK_HEIGHT = 3.0
+// Mobile looks at the avatar's torso in the arrival frame so the full body
+// remains visible while the player reads the pre-game instruction.
+const ARRIVAL_LOOK_HEIGHT = 1.6
 const ARRIVAL_LOOK_LEFT = 0.7 // metres, along +rightRef
-// The close "personal" shot for the reveal: this many metres from the player,
-// same height as the wide game-camera position.
-const CLOSE_CAM_DIST = 3.0
-const ZOOM_IN_MS = 1000
-
 // Freeze -> emote reveal timeline (seconds since intro began). The crate
 // reveal is delayed a little past the emote trigger so it pops in once the
 // arms have actually reached the holding pose, instead of appearing mid-swing
@@ -208,7 +205,6 @@ export const COUNTDOWN_S = 3 // exported so ui.tsx's countdown number matches th
 //     pulls the SAME camera back OUT to the wide game-camera position and
 //     re-aims it at the canopy — this is the shot gameplay actually uses.
 const ARRIVAL_HOLD_S = 1.4
-const GAME_CAM_PAN_MS = 800
 // Blends the very first cut (live follow-cam -> cinCam) via VirtualCamera's
 // own defaultTransition, instead of a hard instant snap — this is a real
 // engine-side blend (unlike Tweening an already-active camera, which doesn't
@@ -1323,25 +1319,11 @@ function countdownTick(): void {
   beginCatching()
 }
 
-/** Zoom the cinematic camera back out to the wide game position and start
+/** Start dropping fruit from the wide cinematic position.
  *  dropping fruit — the jump/glide lock and lane pen are already in place
  *  from arrivalTick, since the player's been free to move (and try the
  *  buttons) since 'intro' began. */
 function beginCatching(): void {
-  // Zoom the SAME camera back out to the wide game position and re-aim it at
-  // the canopy, from wherever the close shot currently sits.
-  if (cinCam) {
-    const cur = Transform.get(cinCam)
-    const gameRot = Quaternion.fromLookAt(pendingCamPos, pendingLookTarget)
-    Tween.createOrReplace(cinCam, {
-      mode: Tween.Mode.MoveRotateScale({
-        position: { start: cur.position, end: pendingCamPos },
-        rotation: { start: cur.rotation, end: gameRot }
-      }),
-      duration: GAME_CAM_PAN_MS,
-      easingFunction: EasingFunction.EF_EASEQUAD
-    })
-  }
   for (const f of fruits) armFruit(f)
   poisonDueTimes = pickPoisonTimes()
   phase = 'catching'
@@ -1467,8 +1449,7 @@ function poisonLessonTick(): void {
   }
   const pos = Transform.get(fruit.entity).position
   if (cinCam) {
-    // The intro push-in has finished by drop time. Tilt this same camera down
-    // with the actual fruit instead of holding a close shot aimed at the ground.
+    // Tilt the wide camera down with the actual fruit as it falls.
     Tween.deleteFrom(cinCam)
     const cam = Transform.getMutable(cinCam)
     cam.rotation = Quaternion.fromLookAt(cam.position, Vector3.create(pos.x, Math.max(groundY + 2.2, pos.y), pos.z))
@@ -1594,7 +1575,7 @@ function applyResults(): void {
 
 // How long the camera blends from its last shot back to the post-feed avatar
 // pose before the movement/camera freeze lifts. Matches the wide-shot pan's
-// own feel (see GAME_CAM_PAN_MS).
+// own pacing.
 const CAMERA_RETURN_MS = 700
 
 /** Start the native-camera hand-off while the screen is black. The virtual
@@ -1871,10 +1852,7 @@ interface CinematicGeometry {
   viewDir: Vector3
   rightRef: Vector3
   gameLookTarget: Vector3
-  arrivalLookTarget: Vector3
   wideRot: Quaternion
-  closeCamPos: Vector3
-  closeRot: Quaternion
 }
 
 /** Camera math shared by the minigame's arrival and gameplay shots. */
@@ -1902,27 +1880,12 @@ function computeCinematicGeometry(rawCamPos: Vector3, spawnPos: Vector3, gY: num
   // Desktop has no separate "look at the player" arrival shot at all — it's
   // the exact same framing as gameplay from the very first frame, so there's
   // nothing in between that could point the wrong way.
-  const arrivalLookTarget = onMobile
-    ? Vector3.create(
-        spawnPos.x + rightRef.x * ARRIVAL_LOOK_LEFT,
-        gY + ARRIVAL_LOOK_HEIGHT,
-        spawnPos.z + rightRef.z * ARRIVAL_LOOK_LEFT
-      )
-    : gameLookTarget
-  const wideRot = Quaternion.fromLookAt(camPos, arrivalLookTarget)
+  const wideRot = Quaternion.fromLookAt(camPos, gameLookTarget)
 
   // Close "personal" shot: same height as the wide position, just this much
   // nearer to the player, along the same camera-to-player line. Mobile only,
   // but computed unconditionally — harmless for the shared shot geometry.
-  const towardCam = Vector3.create(-viewDir.x, 0, -viewDir.z)
-  const closeCamPos = Vector3.create(
-    spawnPos.x + towardCam.x * CLOSE_CAM_DIST,
-    camPos.y,
-    spawnPos.z + towardCam.z * CLOSE_CAM_DIST
-  )
-  const closeRot = Quaternion.fromLookAt(closeCamPos, arrivalLookTarget)
-
-  return { camPos, viewDir, rightRef, gameLookTarget, arrivalLookTarget, wideRot, closeCamPos, closeRot }
+  return { camPos, viewDir, rightRef, gameLookTarget, wideRot }
 }
 
 /** Hand-off once the walk-to-tree errand arrives: freeze + camera cut + "hands
@@ -1967,7 +1930,7 @@ export function startFruitGame(mascotaId: string): void {
   groundY = spawnPos.y
 
   const geo = computeCinematicGeometry(rawCamPos, spawnPos, groundY, onMobile)
-  const { camPos, viewDir, rightRef, arrivalLookTarget, wideRot } = geo
+  const { camPos, viewDir, rightRef, wideRot } = geo
   localForward = viewDir
   let laneSpan = Vector3.create(p4.x - p3.x, 0, p4.z - p3.z)
   if (Vector3.dot(laneSpan, rightRef) < 0) laneSpan = Vector3.create(-laneSpan.x, 0, -laneSpan.z)
@@ -1982,8 +1945,6 @@ export function startFruitGame(mascotaId: string): void {
   )
 
   const laneMid = Vector3.create(canopyCenter.x, groundY, canopyCenter.z)
-  // Both layouts seat the pet on screen-right. Only desktop/Unity receives the
-  // calibrated XYZ offset; mobile keeps that right-side placement unadjusted.
   const usingMobileLayout = mobile()
   const offset = usingMobileLayout ? { x: 0, y: 0, z: 0 } : feedPetSitOffset
   const petSitPos = Vector3.create(
@@ -2040,17 +2001,6 @@ export function startFruitGame(mascotaId: string): void {
     defaultTransition: { transitionMode: VirtualCamera.Transition.Time(ARRIVAL_CAM_TRANSITION_S) }
   })
   MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: cinCam })
-
-  if (onMobile) {
-    Tween.createOrReplace(cinCam, {
-      mode: Tween.Mode.MoveRotateScale({
-        position: { start: camPos, end: geo.closeCamPos },
-        rotation: { start: wideRot, end: geo.closeRot }
-      }),
-      duration: ZOOM_IN_MS,
-      easingFunction: EasingFunction.EF_EASEOUTQUAD
-    })
-  }
 
   tutorialPoisonBite = false
   for (const f of fruits) {

@@ -2,10 +2,17 @@
 // scaling, outlined labels, tactile (animated) buttons, pills, stat bars, and a
 // panel shell that blocks the mobile joystick. Inspired by the cozy-farm UI.
 
-import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { Label as EcsLabel, UiEntity } from '@dcl/sdk/react-ecs'
 import { AudioSource, engine, Entity, Transform, UiCanvasInformation } from '@dcl/sdk/ecs'
 import { getExplorerInformation } from '~system/Runtime'
 import { getPress, triggerPress, attentionPulse } from './anim'
+import { translateText } from '../i18n'
+
+// Shared primitives are used by screens outside ui.tsx too. Translate at
+// render time so an Explorer Settings change updates these captions instantly.
+function Label(props: any) {
+  return <EcsLabel {...props} value={translateText(String(props.value ?? ''))} />
+}
 
 // Generic UI tap/click feedback — played from every shared button/close/nav
 // primitive below so it's heard across the whole HUD without wiring each
@@ -210,6 +217,8 @@ export function TactileButton(props: {
   /** Optional UV crop (8 numbers, bottom-left clockwise) for pulling this
    *  button out of a spritesheet instead of a standalone texture file. */
   uvs?: number[]
+  /** Render a localized label over a text-free texture. */
+  labelOnTexture?: boolean
 }) {
   const scale = getPress(props.id) * (props.pulse && !props.disabled ? attentionPulse() : 1)
   const w = Math.round(props.width * scale)
@@ -220,7 +229,10 @@ export function TactileButton(props: {
       uiTransform={{ width: props.width, height: props.height, alignItems: 'center', justifyContent: 'center', margin: props.margin }}
     >
       <UiEntity
-        uiTransform={{ width: w, height: h, alignItems: 'center', justifyContent: 'center', borderRadius: textured ? 0 : props.radius ?? S(16) }}
+        // flexShrink 0: the parent is a row sized to the un-pulsed button, and
+        // the default shrink would clamp the width while the height still grows,
+        // stretching the art vertically instead of scaling it evenly.
+        uiTransform={{ width: w, height: h, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: textured ? 0 : props.radius ?? S(16) }}
         uiBackground={
           textured
             ? { texture: { src: props.texture! }, textureMode: 'stretch', uvs: props.uvs }
@@ -233,7 +245,7 @@ export function TactileButton(props: {
           props.onClick()
         }}
       >
-        {!textured && (
+        {(!textured || props.labelOnTexture) && (
           <Label
             value={props.label}
             fontSize={props.fontSize ?? S(18)}
@@ -264,7 +276,7 @@ export function CareButton(props: {
     <UiEntity uiTransform={{ width: props.size, height: props.size + S(22), flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', margin: { left: S(7), right: S(7) } }}>
       <UiEntity uiTransform={{ width: props.size, height: props.size, alignItems: 'center', justifyContent: 'center' }}>
         <UiEntity
-          uiTransform={{ width: d, height: d, alignItems: 'center', justifyContent: 'center', borderRadius: Math.round(props.size) }}
+          uiTransform={{ width: d, height: d, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: Math.round(props.size) }}
           uiBackground={{ color: props.disabled ? dimColor(props.bg) : props.bg }}
           onMouseDown={() => {
             if (props.disabled) return

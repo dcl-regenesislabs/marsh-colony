@@ -8,15 +8,18 @@
 // rendering path) plus this file's on-screen Prev/Next/variant/jump bar.
 // Flip back to false to return to normal gameplay; nothing else changes.
 
-import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { Label, ScreenInsetArea, UiEntity } from '@dcl/sdk/react-ecs'
 import * as Cfg from '../../shared/config'
 import type { PetData, PlayerData, PresenceEntry, Rarity, SwapOfferPayload } from '../../shared/types'
 import { clientState, openDialog, pushToast } from '../state'
 import { debugForcePanel, debugSetUiState, type Panel } from '../ui'
 import { playSong, setMusicVolume, setMuted } from '../music'
 import { CARETAKER_TIPS, caretakerIntro } from './dialog'
-import { C, S, TactileButton } from './theme'
+import { C, S, TactileButton, mobile } from './theme'
+import { debugSetLanguage, getLanguage, type AppLanguage } from '../i18n'
 
+// Keep the browser available for future layout work, but never inject fixtures
+// or show its overlay during a normal playtest.
 export const UI_DEBUG_MODE = false
 
 // ---------------------------------------------------------------------------
@@ -150,6 +153,22 @@ const DEBUG_SCREENS: DebugScreen[] = [
         { ...base, phase: 'results' as const, caught: 8, resultsAt: Date.now() }
       ]
       clientState.feedGame = byVariant[v] ?? byVariant[0]
+    }
+  },
+  {
+    id: 'bathGame',
+    label: 'Bath Minigame',
+    variants: ['Intro (Start button)', 'Countdown 3-2-1', 'Popping HUD', 'Results'],
+    activate: (v) => {
+      applyFixturePlayer(fakePlayer(), fakePet())
+      const base = { active: true, popped: 0, timeLeft: 16, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
+      const byVariant = [
+        { ...base, phase: 'intro' as const },
+        { ...base, phase: 'countdown' as const, countdownAt: Date.now() },
+        { ...base, phase: 'popping' as const, popped: 4, timeLeft: 9, popFlashUntil: Date.now() + 300 },
+        { ...base, phase: 'results' as const, popped: Cfg.BATH_BUBBLE_GOAL, resultsAt: Date.now() - 2000 }
+      ]
+      clientState.bathGame = byVariant[v] ?? byVariant[0]
     }
   },
   {
@@ -385,6 +404,15 @@ const DEBUG_SCREENS: DebugScreen[] = [
     }
   },
   {
+    id: 'breedNest',
+    label: 'Breeding Nest Buttons',
+    variants: ['At nest — Place Pet', 'Ready — Breed'],
+    activate: (v) => {
+      applyFixturePlayer(fakePlayer(), fakePet({ size: Cfg.SIZE_MAX }))
+      clientState.breed = { active: true, phase: v === 1 ? 'ready' : 'toNest', partnerId: '', atNest: true, name: '', usePotion: false }
+    }
+  },
+  {
     id: 'normalHud',
     label: 'Normal HUD (top bar / side buttons / bottom nav)',
     variants: ['With an active pet', 'Hatchling pending (Keep/Discard)', 'No pets yet'],
@@ -436,6 +464,7 @@ function resetAllDebugFlags(): void {
   clientState.petting = { active: false, progress: 0, celebrationUntil: 0 }
   clientState.hatch = { active: false, progress: 0 }
   clientState.feedGame = { active: false, phase: 'arrival', caught: 0, timeLeft: 0, catchFlashUntil: 0, countdownAt: 0, resultsAt: 0, petSitPos: null, petSitLook: null, hungerTarget: 0, hungerFillProgress: 0 }
+  clientState.bathGame = { active: false, phase: 'intro', popped: 0, timeLeft: 0, popFlashUntil: 0, countdownAt: 0, resultsAt: 0 }
   clientState.dialog.open = false
   clientState.fetch = { active: false, busy: false, charging: false, charge: 0 }
   clientState.carryEgg = { active: false, species: '', name: '', atHome: false }
@@ -451,8 +480,16 @@ function resetAllDebugFlags(): void {
   debugForcePanel('none' as Panel)
 }
 
-let currentScreenIndex = 0
-let currentVariantIndex = 0
+// Open on the Hatch button to review the localized world-action buttons
+// (Hatch / Bath / Place Pet / Breed); the bar can jump to every other UI.
+let currentScreenIndex = DEBUG_SCREENS.findIndex((screen) => screen.id === 'carryEgg')
+let currentVariantIndex = 1 // "Home — Hatch button"
+
+const DEBUG_LANGUAGES: AppLanguage[] = ['en', 'es', 'pt']
+function cycleLanguage(): void {
+  const i = DEBUG_LANGUAGES.indexOf(getLanguage())
+  debugSetLanguage(DEBUG_LANGUAGES[(i + 1) % DEBUG_LANGUAGES.length])
+}
 let showJumpList = false
 let initialized = false
 
@@ -485,9 +522,14 @@ export function DebugBrowserBar() {
   const entry = DEBUG_SCREENS[currentScreenIndex]
   const hasVariants = (entry.variants?.length ?? 0) > 1
   const barW = S(760)
+  // Just under the top HUD row (TopBars: top S(46)/S(10) + height S(58)) so it
+  // doesn't cover coins/pets, and inside the safe area like the real HUD.
+  const top = (mobile() ? S(46) : S(10)) + S(58) + S(10)
   return (
+    <ScreenInsetArea>
+    <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: 0, left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
+      uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -barW / 2 }, width: barW, flexDirection: 'column', alignItems: 'center', pointerFilter: 'block' }}
     >
       <UiEntity
         uiTransform={{ width: '100%', height: S(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: S(16), padding: { left: S(12), right: S(12) } }}
@@ -508,6 +550,9 @@ export function DebugBrowserBar() {
           <TactileButton id="dbg_variant_next" label="Variant >" width={S(130)} height={S(34)} bg={C.cardAlt} margin={{ left: S(8) }} onClick={() => gotoVariant(1)} />
         </UiEntity>
       )}
+      <UiEntity uiTransform={{ width: '100%', height: S(38), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: { top: S(4) } }}>
+        <TactileButton id="dbg_lang" label={`Lang: ${getLanguage().toUpperCase()}`} width={S(130)} height={S(34)} bg={C.cardAlt} onClick={() => cycleLanguage()} />
+      </UiEntity>
       {showJumpList && (
         <UiEntity
           uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', margin: { top: S(6) }, borderRadius: S(12), padding: S(8), overflow: 'hidden' }}
@@ -529,5 +574,7 @@ export function DebugBrowserBar() {
         </UiEntity>
       )}
     </UiEntity>
+    </UiEntity>
+    </ScreenInsetArea>
   )
 }

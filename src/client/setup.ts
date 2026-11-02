@@ -20,6 +20,7 @@ import { evaluateStreak, petXpReward, seedLocalPlayer, simTick } from './sim'
 import { setupUi, ui } from './ui'
 import { applyDefaultTouchControls } from './touchControls'
 import { openCaretakerIntro } from './ui/dialog'
+import { applyStoredLanguage, setupLocalization } from './i18n'
 import { setupInput } from './input'
 import { setupPetSystems, receiveBreedResult } from './pet'
 import { setupPlay } from './play'
@@ -129,6 +130,7 @@ function registerHandlers(): void {
       const hadSnapshot = firstSnapshotSeen
       const activePetWasSick = clientState.activePet?.sick ?? false
       applySnapshot(snap)
+      applyStoredLanguage(snap.player.language)
       // Sickness is persisted and server-authoritative. Only a newly confirmed
       // sickness during this session gets the post-Feed cinematic; a returning
       // player simply resumes the Caretaker errand below.
@@ -305,6 +307,9 @@ function registerHandlers(): void {
 }
 
 export function setupClient(): void {
+  // Mobile follows Explorer Settings; Bevy desktop applies the wallet setting
+  // when its first server snapshot arrives. Start detection before UI renders.
+  setupLocalization()
   // Start the Raft-style HUD cache before any client bootstrap work. Its
   // critical first-frame textures also gate the HUD reveal below.
   preloadUiAssets()

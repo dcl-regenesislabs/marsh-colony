@@ -7,6 +7,7 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import { EntityNames } from '../../assets/scene/entity-names'
 import { clientState, pushToast } from './state'
 import { ui } from './ui'
+import { onLanguageChanged, translateText } from './i18n'
 import { firstSessionActive, firstSessionAllowsInteraction } from './firstSession'
 
 const TALK_SOUND = 'assets/sounds/AlienNod.mp3'
@@ -36,14 +37,17 @@ function setClip(e: Entity, clip: string): void {
 }
 
 let clickHandlerSet = false
+let caretakerClickTarget: Entity | null = null
 
 /** The Caretaker GLB supplies its own collider. Attach the pointer event to the
  *  model entity itself so its collider shape receives the interaction. */
-function ensureClickHandler(caretaker: Entity): void {
-  if (clickHandlerSet) return
+function ensureClickHandler(caretaker: Entity, refresh = false): void {
+  if (clickHandlerSet && !refresh) return
   clickHandlerSet = true
+  caretakerClickTarget = caretaker
+  pointerEventsSystem.removeOnPointerDown(caretaker)
   pointerEventsSystem.onPointerDown(
-    { entity: caretaker, opts: { button: InputAction.IA_POINTER, hoverText: 'Talk to Caretaker', maxDistance: 16, showHighlight: true } },
+    { entity: caretaker, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Talk to Caretaker'), maxDistance: 16, showHighlight: true } },
     () => {
       // Once the tutorial has handed over the first egg, its only next step is
       // taking it home to hatch. Do not replay the Caretaker intro on click.
@@ -100,6 +104,9 @@ export function isCaretakerIntroLocked(): boolean {
 }
 
 export function setupCaretaker(): void {
+  onLanguageChanged(() => {
+    if (caretakerClickTarget !== null) ensureClickHandler(caretakerClickTarget, true)
+  })
   engine.addSystem(() => {
     const e = engine.getEntityOrNullByName(EntityNames.Caretaker_glb)
     if (!e || !Transform.has(e)) return // not loaded yet

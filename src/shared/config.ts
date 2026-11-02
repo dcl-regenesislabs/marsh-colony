@@ -851,7 +851,10 @@ export interface ArkWearable {
   id: string
   name: string
   urn: string // '' until the Rewards campaign exists -> delivery stays pending
-  image: string // UI preview (placeholder art until the real thumbnails land)
+  image: string // UI preview image or shared spritesheet
+  // Optional crop from a shared preview sheet. UV order is bottom-left,
+  // top-left, top-right, bottom-right (PBUiBackground convention).
+  imageUvs?: number[]
   // Rewards campaign UUID — delivery POSTs to {ARK_REWARDS_API}/{campaignId}/rewards.
   // Leave undefined until the campaign exists -> delivery stays pending.
   campaignId?: string
@@ -865,23 +868,32 @@ export const ARK_REWARDS_API = 'https://rewards.decentraland.org/api/campaigns'
 /** Catalyst realm sent as `catalyst` in the claim body — a required field the
  *  Rewards API resolves the beneficiary's profile against. */
 export const ARK_REWARDS_CATALYST = 'https://realm-provider-ea.decentraland.org'
+/** Five 512×512 wearable previews in order: Captain Hat, Pepito, Sprout,
+ * Fluflito, Amebita. One sheet keeps the reward cards visually consistent. */
+export const ARK_WEARABLE_SHEET = 'assets/images/wearables/ark_wearables_sheet.png'
+function arkWearableUvs(frame: number): number[] {
+  const left = frame / 5
+  const right = (frame + 1) / 5
+  return [left, 0, left, 1, right, 1, right, 0]
+}
 /** Earned on a player's first donation. */
 export const ARK_FIRST_DONATION_WEARABLE: ArkWearable = {
   id: 'caretaker_head',
-  name: 'Caretaker Head',
-  // Marsh Colony collection, item 1 (Caretaker Head helmet).
+  name: 'Ark Captain Hat',
+  // Marsh Colony collection, item 1 (Ark Captain Hat).
   urn: 'urn:decentraland:matic:collections-v2:0x6a9e21e65ab097e1ed7835b02354cb3ead00f0c0:1',
-  image: 'assets/images/revamp/caretaker.png',
+  image: ARK_WEARABLE_SHEET,
+  imageUvs: arkWearableUvs(0),
   // Rewards campaign for this wearable (Caretaker Head dispenser).
   campaignId: '1d191ec1-bd76-4ac7-821e-338e53ee8d4e',
   campaignKey: 'MwVU4nIQTTeVUO6VECW0YB0ZHsG9dkrHgh4zjlPujU4=.YSWYNN83YA0C9qTm0G11AcJEXbqWKauXHm7ahzUd1jg='
 }
 /** Launch rewards, rotating one per event (event 1 -> [0], event 5 -> [0] again). */
 export const ARK_LAUNCH_WEARABLES: ArkWearable[] = [
-  { id: 'ark_launch_1', name: 'Ark Captain Hat', urn: '', image: 'assets/images/revamp/capitan.png' },
-  { id: 'ark_launch_2', name: 'Star Voyager Helmet', urn: '', image: 'assets/images/revamp/capitan.png' },
-  { id: 'ark_launch_3', name: 'Colony Pioneer Badge', urn: '', image: 'assets/images/revamp/capitan.png' },
-  { id: 'ark_launch_4', name: 'Cosmic Caretaker Cape', urn: '', image: 'assets/images/revamp/capitan.png' }
+  { id: 'ark_launch_1', name: 'Pepito', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(1) },
+  { id: 'ark_launch_2', name: 'Sprout', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(2) },
+  { id: 'ark_launch_3', name: 'Fluflito', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(3) },
+  { id: 'ark_launch_4', name: 'Amebita', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(4) }
 ]
 
 export function arkLaunchWearable(eventId: number): ArkWearable {

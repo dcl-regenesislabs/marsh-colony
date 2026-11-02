@@ -63,6 +63,7 @@ import { triggerHoldEmote, stopHoldEmote } from './holdEmote'
 import { petOverheadTuning } from './petOverheadCalibration'
 import { isInsidePrivateAvatarArea } from './privacyAreas'
 import { createStarburst, hideStarburst, Starburst, updateStarburst } from './starburst'
+import { t, translateText } from './i18n'
 import { PET_ACTIONS_TOUCH_ACTION, PET_FOLLOW_TOUCH_ACTION, petTouchControlsAreVisible } from './touchControls'
 import { firstSessionActive, firstSessionAllowsInteraction } from './firstSession'
 
@@ -792,7 +793,7 @@ function swapActiveWithRoamer(newPet: PetData, targetRoamer: Roamer): void {
     const outName = p.pets[outIndex].name
     const outSpecies = p.pets[outIndex].species
     pointerEventsSystem.onPointerDown(
-      { entity: outEntity, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${outName}`, maxDistance: 8 } },
+      { entity: outEntity, opts: { button: InputAction.IA_POINTER, hoverText: translateText(`Select ${outName}`), maxDistance: 8 } },
       () => {
         if (firstSessionActive()) return
         playPetVoice(outSpecies)
@@ -860,7 +861,7 @@ function retireActiveEntity(): void {
  *  tooltip/cursor, which just sits there doing nothing and reads as broken. */
 function registerPetOpenClick(entity: Entity): void {
   pointerEventsSystem.onPointerDown(
-    { entity, opts: { button: InputAction.IA_POINTER, hoverText: 'Open', maxDistance: 8 } },
+    { entity, opts: { button: InputAction.IA_POINTER, hoverText: translateText('Open'), maxDistance: 8 } },
     () => {
       if (!firstSessionAllowsInteraction('petPanel')) {
         if (!clientState.dialog.open) pushToast("Follow the Caretaker's instructions first!", 'info', true)
@@ -3281,7 +3282,7 @@ function updateRemotePets(dt: number): void {
       remoteTags.set(addr, makeTag(false)) // another player's pet — name only
       const targetAddr = entry.address
       pointerEventsSystem.onPointerDown(
-        { entity: ent, opts: { button: InputAction.IA_POINTER, hoverText: 'View', maxDistance: 8 } },
+        { entity: ent, opts: { button: InputAction.IA_POINTER, hoverText: translateText('View'), maxDistance: 8 } },
         () => {
           if (firstSessionActive() || hiddenRemotePets.has(addr)) return
           clientState.viewingPetAddress = targetAddr
@@ -3429,7 +3430,7 @@ function updateInactivePets(dt: number): void {
         const petId = pet.id
         const petSpecies = pet.species
         pointerEventsSystem.onPointerDown(
-          { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Select ${pet.name}`, maxDistance: 8 } },
+          { entity: e, opts: { button: InputAction.IA_POINTER, hoverText: translateText(`Select ${pet.name}`), maxDistance: 8 } },
           () => {
             if (firstSessionActive()) return
             playPetVoice(petSpecies)
@@ -3518,7 +3519,7 @@ function updateSleepCountdown(): void {
       outlineWidth: 0.22
     })
   }
-  const t = Transform.getMutable(sleepLabel)
+  const sleepTransform = Transform.getMutable(sleepLabel)
   const ts = TextShape.getMutable(sleepLabel)
   const pet = clientState.activePet
   const atMs = Date.now()
@@ -3526,14 +3527,14 @@ function updateSleepCountdown(): void {
   const lockLeft = pet ? C.sleepLockRemaining(pet, atMs) : 0
   if (localPet === null || !pet || napLeft <= 0 || !petIsPresent()) {
     if (ts.text !== '') ts.text = ''
-    if (t.scale.x !== 0) t.scale = Vector3.Zero()
+    if (sleepTransform.scale.x !== 0) sleepTransform.scale = Vector3.Zero()
     return
   }
   const pos = Transform.get(localPet).position
   const tune = petOverheadTuning(pet.species, pet.size)
-  t.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(pet.size) + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
-  t.scale = Vector3.One()
-  ts.text = lockLeft > 0 ? `Wake in ${C.formatLockCountdown(lockLeft)}` : C.formatLockCountdown(napLeft)
+  sleepTransform.position = Vector3.create(pos.x, pos.y + TAG_MIN + TAG_SIZE_MULT * stageScaleFor(pet.size) + tune.nameLift + SLEEP_LABEL_LIFT, pos.z)
+  sleepTransform.scale = Vector3.One()
+  ts.text = lockLeft > 0 ? t('pet.wakeIn', { time: C.formatLockCountdown(lockLeft) }) : C.formatLockCountdown(napLeft)
 }
 
 export function setupPetSystems(): void {
