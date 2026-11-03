@@ -109,6 +109,10 @@ type Dictionary = Record<string, string>
 // the gameplay code is migrated incrementally to t('namespace.key'). New copy
 // should always use t() below.
 const ES: Dictionary = {
+  'Your pet is already an adult.': 'Tu mascota ya es adulta.',
+  'Move closer to the mushroom.': 'Acércate más al hongo.',
+  'Select a pet from My Pets first.': 'Selecciona primero una mascota de Mis Mascotas.',
+  'This mushroom is unavailable. Please try again.': 'Este hongo no está disponible. Inténtalo de nuevo.',
   'Could not save mushroom growth. Please try again.': 'No se pudo guardar el crecimiento. Inténtalo de nuevo.',
   'Accept': 'Aceptar',
   'Add': 'Añadir',
@@ -291,6 +295,10 @@ const ES: Dictionary = {
 }
 
 const PT: Dictionary = {
+  'Your pet is already an adult.': 'Seu pet já é adulto.',
+  'Move closer to the mushroom.': 'Chegue mais perto do cogumelo.',
+  'Select a pet from My Pets first.': 'Selecione primeiro um pet em Meus Pets.',
+  'This mushroom is unavailable. Please try again.': 'Este cogumelo não está disponível. Tente novamente.',
   'Could not save mushroom growth. Please try again.': 'Não foi possível salvar o crescimento. Tente novamente.',
   'Accept': 'Aceitar',
   'Add': 'Adicionar',
@@ -609,6 +617,7 @@ export function translateText(text: string): string {
 /** New code uses named keys and supports lightweight {variable} interpolation. */
 const COPY: Record<AppLanguage, Dictionary> = {
   en: {
+    'happyHour.busy': "Finish your pet's current activity first.",
     'happyHour.ready': 'Find the glowing mushrooms in the woods.',
     'happyHour.selectPet': 'Select a pet first.',
     'happyHour.adult': 'Your pet is already an adult.',
@@ -716,6 +725,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'leaderboard.soon': 'soon'
   },
   es: {
+    'happyHour.busy': 'Termina primero la actividad de tu mascota.',
     'happyHour.ready': 'Busca los hongos brillantes en el bosque.',
     'happyHour.selectPet': 'Selecciona una mascota primero.',
     'happyHour.adult': 'Tu mascota ya es adulta.',
@@ -823,6 +833,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'leaderboard.soon': 'próximamente'
   },
   pt: {
+    'happyHour.busy': 'Termine primeiro a atividade do seu pet.',
     'happyHour.ready': 'Encontre os cogumelos brilhantes na floresta.',
     'happyHour.selectPet': 'Selecione um pet primeiro.',
     'happyHour.adult': 'Seu pet já é adulto.',

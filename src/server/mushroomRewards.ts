@@ -25,6 +25,9 @@ export function createMushroomRewards(deps: {
       for (const receipt of receipts) apply(p, receipt)
     },
     async grant(p: PlayerData, receipt: GrowthReceipt): Promise<boolean> {
+      // Hatchlings are not roster pets until Keep. Never persist a reward that
+      // cannot be applied, consume its cooldown, or replay it after Keep.
+      if (p.hatchling || !p.pets.some(pet => pet.id === receipt.petId)) return false
       const receipts = cached.get(p.address) ?? await deps.read(p.address) ?? []
       // One latest receipt per owned pet bounds the journal by the player's roster.
       const next = receipts.filter(r => r.petId !== receipt.petId && p.pets.some(pet => pet.id === r.petId))

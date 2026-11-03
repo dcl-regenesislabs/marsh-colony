@@ -7,9 +7,15 @@ import { createStarburst, hideStarburst, removeStarburst, Starburst, updateStarb
 export function createMushroomGlow() {
   let rays: Starburst | null = null
   let clock = 0
+  let shown = false
   return {
     update(dt: number, visible: boolean, base: Vector3): void {
-      if (!visible) { if (rays) hideStarburst(rays); return }
+      if (!visible) {
+        if (shown && rays) hideStarburst(rays)
+        shown = false
+        return
+      }
+      shown = true
       if (!rays) rays = createStarburst(1.5)
       clock += dt
       const center = Vector3.create(base.x, base.y + 0.35, base.z)
@@ -23,6 +29,7 @@ export function createMushroomGlow() {
     dispose(): void {
       if (rays) removeStarburst(rays)
       rays = null
+      shown = false
     }
   }
 }

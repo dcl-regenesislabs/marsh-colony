@@ -5,6 +5,7 @@
 //  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
+import { REVAMP_PANEL_W, REVAMP_PANEL_H, REVAMP_PANEL_BG, REVAMP_CLOSE } from './ui/revampLayout'
 import { canPresentHappyHour } from './ui/happyHourPresentation'
 import { HappyHourCard } from './ui/happyHourCard'
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label as EcsLabel, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
@@ -12,7 +13,7 @@ import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation
 import * as Cfg from '../shared/config'
 import { cancelArkRedeem, confirmArkRedeem, openArkConfirm, startArkRedeem } from './arkRedeem'
 import type { CareAction, PetData, Rarity } from '../shared/types'
-import { actions, clientState, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
+import { actions, clientState, petActivityActive, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
 import {
   startPetting,
   cancelPetting,
@@ -1921,9 +1922,6 @@ function InvCard(props: { key?: string; id: string; title: string; bowlUvs?: num
 // chrome (frame, close X and decoration); titles and subtitles are live,
 // localized text. Children start at `contentTop` in texture pixels.
 // ---------------------------------------------------------------------------
-const REVAMP_PANEL_W = 998
-const REVAMP_PANEL_H = 730
-const REVAMP_PANEL_BG = 'assets/images/revamp/panel_standard_bg.png'
 const FREDOKA_SEMIBOLD = 'assets/fonts/Fredoka-SemiBold.ttf'
 const FREDOKA_BOLD = 'assets/fonts/Fredoka-Bold.ttf'
 // Godot mobile currently mishandles local `fontSrc` and paints the label's
@@ -1938,7 +1936,6 @@ function navPanelWidth(): number {
   return S(660)
 }
 const REVAMP_CONTENT_TOP = 190 // first px below the live title + subtitle
-const REVAMP_CLOSE = { x: 865, y: 20, size: 104 } // baked close button box
 
 function RevampPanel(props: { width: number; contentTop: number; onClose: () => void; title?: string; subtitle?: string; children?: any }) {
   const w = props.width
@@ -5563,7 +5560,7 @@ const Root = () => {
           </UiEntity>
         )}
         <DialogBox />
-        {!hideHudForPepitoTheft && canPresentHappyHour(clientState, bigUiOpen(), cinematicBarsActive()) && <HappyHourCard />}
+        {!hideHudForPepitoTheft && canPresentHappyHour(clientState, bigUiOpen(), cinematicBarsActive(), petActivityActive()) && <HappyHourCard />}
         {/* Toasts are the only global notification surface. */}
         {!hideHudForPepitoTheft && <Toasts />}
         {!hideHudForPepitoTheft && <FirstSessionTask />}

@@ -1,11 +1,14 @@
+import { createHappyHourPresentation } from './ui/happyHourPresentation'
 import { resolveMushroomPositions, mushroomPlacements } from '../shared/mushroomPlacement'
 import { ColliderLayer, engine, GltfContainer, InputAction, MeshCollider, Transform, pointerEventsSystem, VisibilityComponent } from '@dcl/sdk/ecs'
-import { HappyHourView, mushroomEventEligible } from '../shared/happyHour'
+import { HAPPY_HOUR, HappyHourView, mushroomEventEligible } from '../shared/happyHour'
 import { room } from '../shared/messages'
-import { clientState, pushToast } from './state'
+import { clientState, pushToast, petActivityActive } from './state'
 import { t, onLanguageChanged } from './i18n'
 import { createMushroomGlow } from './mushroomGlow'
 import { petStage } from '../shared/config'
+
+export const happyHourPresentation = createHappyHourPresentation()
 
 let view: HappyHourView | null = null
 let expires = 0
@@ -37,7 +40,7 @@ export function happyHourStatus(): { remaining: number; refresh: number; availab
 
 export function setupHappyHour(): void {
   resolveMushroomPositions()
-  const pickups = [...mushroomPlacements].map(([slot, { entity, position }]) => {
+  function createPickup(slot: number, { entity, position }: NonNullable<ReturnType<typeof mushroomPlacements.get>>) {
     // Keep the Creator Hub GLB, rotation, scale and elevation. A separate,
     // forgiving pointer-only box provides the mobile tap target.
     VisibilityComponent.createOrReplace(entity, { visible: false, propagateToChildren: true })
@@ -56,6 +59,7 @@ export function setupHappyHour(): void {
         button: InputAction.IA_POINTER, hoverText: t('happyHour.pick'), maxDistance: 4
       } }, () => {
         if (!happyHourActive() || !view || !view.available.includes(slot)) return
+        if (petActivityActive()) { pushToast(t('happyHour.busy')); return }
         const pet = clientState.activePet
         if (!pet) { pushToast(t('happyHour.selectPet')); return }
         if (petStage(pet.size) === 'ADULT') { pushToast(t('happyHour.adult')); return }
@@ -65,17 +69,32 @@ export function setupHappyHour(): void {
     register()
     onLanguageChanged(register)
     return pickup
-  })
+  }
+  const pickups = new Map<number, ReturnType<typeof createPickup>>()
+  function addResolvedPickups(): void {
+    for (const [slot, placement] of mushroomPlacements) {
+      if (!pickups.has(slot)) pickups.set(slot, createPickup(slot, placement))
+    }
+  }
+  addResolvedPickups()
+  let retryAcc = 0
   engine.addSystem((dt: number) => {
     elapsed += Math.max(0, dt)
+    retryAcc += dt
+    if (pickups.size < HAPPY_HOUR.entityNames.length && retryAcc >= 1) {
+      retryAcc = 0
+      resolveMushroomPositions()
+      addResolvedPickups()
+    }
     const active = happyHourActive()
-    for (const pickup of pickups) {
+    happyHourPresentation.sync(active && view ? view.endsAt : null)
+    for (const pickup of pickups.values()) {
       const visible = active && !!view?.available.includes(pickup.slot)
       if (visible !== pickup.visible) {
         pickup.visible = visible
         VisibilityComponent.createOrReplace(pickup.entity, { visible, propagateToChildren: true })
         if (visible) MeshCollider.setBox(pickup.hit, ColliderLayer.CL_POINTER)
-        else MeshCollider.deleteFrom(pickup.hit)
+        else { MeshCollider.deleteFrom(pickup.hit); pickup.glow.dispose() }
       }
       pickup.glow.update(dt, visible, pickup.position)
     }

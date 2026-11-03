@@ -1,10 +1,11 @@
+import { EntityNames } from '../../assets/scene/entity-names'
 import type { PlayerData } from './types'
 
 export const HAPPY_HOUR = {
   durationMinutes: 60,
   spawnMinutes: 10,
   model: 'assets/Models/Mushroom_02.glb',
-  entityNames: ['Mushroom_event', 'Mushroom_event_2', 'Mushroom_event_3', 'Mushroom_event_4', 'Mushroom_event_5']
+  entityNames: [EntityNames.Mushroom_event, EntityNames.Mushroom_event_2, EntityNames.Mushroom_event_3, EntityNames.Mushroom_event_4, EntityNames.Mushroom_event_5]
 }
 export interface MushroomEventState { enabled: boolean; startedAt: number }
 export interface HappyHourView {
@@ -25,7 +26,7 @@ export function happyHourWindow(now: number, event: MushroomEventState | null): 
 }
 export function happyHourView(p: PlayerData, now: number, event: MushroomEventState | null,
   slots: number[] = HAPPY_HOUR.entityNames.map((_, i) => i)): HappyHourView | null {
-  if (!mushroomEventEligible(p)) return null
+  if (!mushroomEventEligible(p) || slots.length === 0) return null
   const window = happyHourWindow(now, event)
   if (!window) return null
   const available: number[] = []

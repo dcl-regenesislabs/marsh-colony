@@ -5693,36 +5693,36 @@
         "704": {
           "json": {
             "src": "assets/Models/Mushroom_02.glb",
-            "visibleMeshesCollisionMask": 3,
-            "invisibleMeshesCollisionMask": 3
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 0
           }
         },
         "705": {
           "json": {
             "src": "assets/Models/Mushroom_02.glb",
             "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
+            "invisibleMeshesCollisionMask": 0
           }
         },
         "706": {
           "json": {
             "src": "assets/Models/Mushroom_02.glb",
             "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
+            "invisibleMeshesCollisionMask": 0
           }
         },
         "707": {
           "json": {
             "src": "assets/Models/Mushroom_02.glb",
             "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
+            "invisibleMeshesCollisionMask": 0
           }
         },
         "708": {
           "json": {
             "src": "assets/Models/Mushroom_02.glb",
             "visibleMeshesCollisionMask": 0,
-            "invisibleMeshesCollisionMask": 3
+            "invisibleMeshesCollisionMask": 0
           }
         },
         "66059": {

@@ -14,7 +14,9 @@ function load(file, mocks = {}, globals = {}) {
   } })
   return exports
 }
-const shared = () => load('src/shared/happyHour.ts')
+const shared = () => load('src/shared/happyHour.ts', {
+  '../../assets/scene/entity-names': load('assets/scene/entity-names.ts')
+})
 const start = Date.parse('2026-11-03T18:00:00Z')
 
 test('one global hour: boundaries, stable activation ID, no daily repetition', () => {
@@ -171,10 +173,11 @@ test('placed models, tap targets and effects hide during tutorial/off/cooldown a
     '../shared/mushroomPlacement': { resolveMushroomPositions() {}, mushroomPlacements: placements },
     '../shared/happyHour': shared(),
     '../shared/messages': { room: { send() {} } },
-    './state': { clientState: state, pushToast() {} },
+    './state': { clientState: state, pushToast() {}, petActivityActive: () => false },
     './i18n': { t: key => key, onLanguageChanged() {} },
+    './ui/happyHourPresentation': load('src/client/ui/happyHourPresentation.ts'),
     './mushroomGlow': { createMushroomGlow: () => {
-      const glow = { visible: false, update(_, visible) { this.visible = visible } }
+      const glow = { visible: false, update(_, visible) { this.visible = visible }, dispose() { this.visible = false } }
       glows.push(glow); return glow
     } },
     '../shared/config': { petStage() {} },
@@ -262,29 +265,146 @@ test('event waits through Captain dialog, donation response, animation, reward a
   const s = { firstSession: true, dialog: { open: true },
     ark: { pendingDonation: null, cinematic: 'none', thanks: null, launchCard: null },
     arkRedeem: { active: false }, wearableReward: null, reward: null, screenFade: { alpha: 0 } }
-  assert.equal(show(s, false, false, start), false)
+  assert.equal(show(s, false, false, false, start), false)
   s.firstSession = false // talking to Captain completed the tutorial
-  assert.equal(show(s, false, false, start), false)
+  assert.equal(show(s, false, false, false, start), false)
   s.dialog.open = false
   s.arkRedeem.active = true // confirm / approach
-  assert.equal(show(s, false, false, start), false)
+  assert.equal(show(s, false, false, false, start), false)
   s.arkRedeem.active = false; s.ark.pendingDonation = {}
-  assert.equal(show(s, false, false, start), false) // await authoritative result
+  assert.equal(show(s, false, false, false, start), false) // await authoritative result
   s.ark.pendingDonation = null; s.ark.cinematic = 'handover'
-  assert.equal(show(s, false, false, start), false)
+  assert.equal(show(s, false, false, false, start), false)
   s.ark.cinematic = 'none'; s.ark.thanks = {}
-  assert.equal(show(s, false, false, start), false)
+  assert.equal(show(s, false, false, false, start), false)
   s.ark.thanks = null; s.wearableReward = { shownAt: 0 }
-  assert.equal(show(s, false, false, start), false) // reward queued, not just visible
+  assert.equal(show(s, false, false, false, start), false) // reward queued, not just visible
   s.wearableReward = null; s.reward = { until: start + 2000 }
-  assert.equal(show(s, false, false, start), false)
-  assert.equal(show(s, false, false, start + 2001), true)
-  assert.equal(show(s, true, false, start + 2001), false)
-  assert.equal(show(s, false, true, start + 2001), false)
+  assert.equal(show(s, false, false, false, start), false)
+  assert.equal(show(s, false, false, false, start + 2001), true)
+  assert.equal(show(s, true, false, false, start + 2001), false)
+  assert.equal(show(s, false, true, false, start + 2001), false)
   s.screenFade.alpha = 0.1
-  assert.equal(show(s, false, false, start + 2001), false)
+  assert.equal(show(s, false, false, false, start + 2001), false)
   s.screenFade.alpha = 0; s.ark.launchCard = [{}]
-  assert.equal(show(s, false, false, start + 2001), false)
+  assert.equal(show(s, false, false, false, start + 2001), false)
   s.ark.launchCard = null
-  assert.equal(show(s, false, false, start + 2001), true)
+  assert.equal(show(s, false, false, false, start + 2001), true)
+})
+
+test('pending or unknown hatchlings never write a receipt or burn a cooldown, including after Keep', async () => {
+  let writes = 0
+  const { createMushroomRewards: create } = load('src/server/mushroomRewards.ts', {
+    '@dcl/sdk/server': { Storage: {} }, '../shared/config': { SIZE_MAX: 3 }
+  })
+  const rewards = create({ read: async () => [], write: async () => { writes++; return true } })
+  const baby = { id: 'pending', size: 1, careCount: 0 }
+  const p = { address: 'player', pets: [{ id: 'owned', size: 1, careCount: 0 }], hatchling: baby, counters: {} }
+  assert.equal(await rewards.grant(p, { petId: baby.id, slot: 0, pickedAt: start }), false)
+  assert.equal(await rewards.grant(p, { petId: 'owned', slot: 0, pickedAt: start }), false)
+  assert.equal(writes, 0)
+  assert.equal(p.counters['happyHour:0'], undefined)
+  p.hatchling = null; p.pets.push(baby)
+  await rewards.recover(p)
+  assert.equal(baby.size, 1)
+  assert.equal(await rewards.grant(p, { petId: 'missing', slot: 0, pickedAt: start }), false)
+  assert.equal(writes, 0)
+  assert.equal(await rewards.grant(p, { petId: baby.id, slot: 0, pickedAt: start }), true)
+  assert.equal(baby.size, 3)
+})
+
+test('event waits for every actual pet activity flag, including pending Keep/Discard', () => {
+  const { clientState: s, petActivityActive } = load('src/client/state.ts', {
+    '@dcl/sdk/players': {}, '../shared/messages': { room: {} },
+    '../shared/config': { ARK_GOAL: 100, NEW_PET_STATS: {} }
+  })
+  const { canPresentHappyHour: show } = load('src/client/ui/happyHourPresentation.ts')
+  s.firstSession = false
+  assert.equal(show(s, false, false, petActivityActive()), true)
+  for (const key of ['hatch', 'carryEgg', 'carryPet', 'breed', 'petting', 'fetch', 'feedGame', 'bathGame', 'feedTask', 'sicknessErrand', 'pepitoChase']) {
+    s[key].active = true
+    assert.equal(show(s, false, false, petActivityActive()), false, key)
+    s[key].active = false
+  }
+  s.player = { hatchling: { id: 'newborn' } }
+  assert.equal(show(s, false, false, petActivityActive()), false)
+  s.player.hatchling = null
+  assert.equal(show(s, false, false, petActivityActive()), true)
+})
+
+test('dismissing the event survives snapshot outages and only a new activation reopens it', () => {
+  const { createHappyHourPresentation } = load('src/client/ui/happyHourPresentation.ts')
+  const p = createHappyHourPresentation()
+  p.sync(start + 3600000)
+  assert.equal(p.isDismissed(), false)
+  p.dismiss()
+  p.sync(null); p.sync(null); p.sync(start + 3600000)
+  assert.equal(p.isDismissed(), true)
+  p.sync(start + 7200000)
+  assert.equal(p.isDismissed(), false)
+  p.dismiss(); p.open()
+  assert.equal(p.isDismissed(), false)
+})
+
+test('hidden mushroom glows write only on the hide transition and dispose releases the entities', () => {
+  let hides = 0, creates = 0, removes = 0
+  const { createMushroomGlow } = load('src/client/mushroomGlow.ts', {
+    '@dcl/sdk/ecs': { engine: {}, Transform: { has: () => false } },
+    '@dcl/sdk/math': { Vector3: { create: (x, y, z) => ({ x, y, z }) } },
+    './starburst': { createStarburst: () => { creates++; return {} },
+      hideStarburst: () => { hides++ }, removeStarburst: () => { removes++ }, updateStarburst() {} }
+  })
+  const glow = createMushroomGlow(), base = { x: 0, y: 0, z: 0 }
+  glow.update(0.1, false, base)
+  assert.equal(creates, 0)
+  glow.update(0.1, true, base)
+  for (let i = 0; i < 200; i++) glow.update(0.1, false, base)
+  assert.equal(hides, 1)
+  glow.dispose()
+  for (let i = 0; i < 200; i++) glow.update(0.1, false, base)
+  assert.equal(removes, 1)
+  assert.equal(hides, 1)
+})
+
+test('missing composite entities are retried and recover; no absent-model event is announced', () => {
+  const { HAPPY_HOUR, happyHourView } = shared()
+  let present = false
+  const { resolveMushroomPositions: resolve, mushroomPlacements } = load('src/shared/mushroomPlacement.ts', {
+    './happyHour': { HAPPY_HOUR }, '@dcl/sdk/ecs': {
+      engine: { getEntityOrNullByName: name => present ? HAPPY_HOUR.entityNames.indexOf(name) + 1 : null },
+      Transform: { has: () => true }, getWorldPosition: () => ({ x: 120, y: 0, z: 260 })
+    }
+  })
+  assert.equal(resolve(), false)
+  assert.equal(mushroomPlacements.size, 0)
+  assert.equal(happyHourView({ firstSessionStep: 'done', counters: {} }, start,
+    { enabled: true, startedAt: start }, [...mushroomPlacements.keys()]), null)
+  present = true
+  assert.equal(resolve(), true)
+  assert.equal(mushroomPlacements.size, 5)
+})
+
+test('shared panel geometry matches the original texture and event artwork stays within mobile budget', () => {
+  const layout = load('src/client/ui/revampLayout.ts')
+  const frame = fs.readFileSync(layout.REVAMP_PANEL_BG)
+  assert.equal(layout.REVAMP_PANEL_W, frame.readUInt32BE(16))
+  assert.equal(layout.REVAMP_PANEL_H, frame.readUInt32BE(20))
+  const mushroom = fs.readFileSync('assets/images/revamp/growth_mushroom_red.png')
+  assert.equal(mushroom.readUInt32BE(16), 512)
+  assert.equal(mushroom.readUInt32BE(20), 512)
+  assert.ok(mushroom.length < 400000)
+})
+
+test('all mushroom server rejection notes are localized in Spanish and Portuguese', () => {
+  const i18n = load('src/client/i18n/index.ts', {
+    '@dcl/sdk/platform': {}, '~system/Runtime': {}
+  })
+  for (const lang of ['es', 'pt']) {
+    i18n.debugSetLanguage(lang)
+    for (const note of ['Your pet is already an adult.', 'Move closer to the mushroom.',
+      'Select a pet from My Pets first.', 'This mushroom is unavailable. Please try again.',
+      'Could not save mushroom growth. Please try again.']) {
+      assert.notEqual(i18n.translateText(note), note, `${lang}: ${note}`)
+    }
+  }
 })

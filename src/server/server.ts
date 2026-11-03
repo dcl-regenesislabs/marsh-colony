@@ -10,7 +10,7 @@ import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE, D
 import type { ArkDonateResult } from '../shared/types'
 import { mushroomRewards } from './mushroomRewards'
 import { mushroomEvent } from './mushroomEvent'
-import { happyHourView } from '../shared/happyHour'
+import { HAPPY_HOUR, happyHourView } from '../shared/happyHour'
 import { petStage } from '../shared/config'
 import * as S from './state'
 import * as Ark from './ark'
@@ -469,15 +469,26 @@ export function server(): void {
         return
       }
       const position = mushroomPlacements.get(data.slot)?.position
-      if (!position) return
+      if (!position) {
+        forwardNotes(ctx.from, [{ kind: 'shop', message: 'This mushroom is unavailable. Please try again.' }])
+        pushSnapshot(p)
+        return
+      }
       let near = false
       for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
         if (identity.address.toLowerCase() !== ctx.from.toLowerCase()) continue
         const transform = Transform.getOrNull(entity)
         if (transform) near = Math.hypot(transform.position.x - position.x, transform.position.y - position.y, transform.position.z - position.z) <= 4
       }
-      const pet = S.snapshotFor(p).activePet
-      if (!near || !pet || pet.id !== data.petId) return
+      const pet = S.slottedActivePet(p)
+      if (!near) {
+        forwardNotes(ctx.from, [{ kind: 'shop', message: 'Move closer to the mushroom.' }])
+        return
+      }
+      if (!pet || pet.id !== data.petId) {
+        forwardNotes(ctx.from, [{ kind: 'shop', message: 'Select a pet from My Pets first.' }])
+        return
+      }
       if (petStage(pet.size) === 'ADULT') {
         forwardNotes(ctx.from, [{ kind: 'shop', message: 'Your pet is already an adult.' }])
         return
@@ -642,6 +653,7 @@ export function server(): void {
 
     if (tickAcc >= TICK_INTERVAL) {
       tickAcc = 0
+      if (mushroomPlacements.size < HAPPY_HOUR.entityNames.length) resolveMushroomPositions()
       void mushroomEvent.refresh()
       for (const p of S.allCached()) {
         S.tickPlayer(p)

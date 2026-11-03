@@ -1134,8 +1134,8 @@ export function petOther(giver: PlayerData, target: PlayerData): { giverNotes: N
 export type SwapOffer = { from: string; fromPetId: string; to: string; toPetId: string; at: number }
 const pendingSwaps = new Map<string, SwapOffer>() // keyed by target (to) address, lowercased
 
-/** The active *slotted* pet (never a hatchling) a player would swap. */
-function slottedActivePet(p: PlayerData): PetData | null {
+/** The active roster pet, unavailable while a hatchling decision is pending. */
+export function slottedActivePet(p: PlayerData): PetData | null {
   if (p.hatchling) return null
   return p.pets.find((pet) => pet.id === p.activePetId) ?? null
 }

@@ -1,18 +1,15 @@
+import { REVAMP_PANEL_W, REVAMP_PANEL_H, REVAMP_PANEL_BG, REVAMP_CLOSE } from './revampLayout'
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { HAPPY_HOUR } from '../../shared/happyHour'
-import { happyHourStatus } from '../happyHour'
+import { happyHourStatus, happyHourPresentation } from '../happyHour'
 import { t } from '../i18n'
 import { mobile, S, playUiClick } from './theme'
 
 const accent = { r: 0.64, g: 0.26, b: 0.13, a: 1 }
 const muted = { r: 0.52, g: 0.39, b: 0.29, a: 1 }
 const ink = { r: 0.32, g: 0.2, b: 0.14, a: 1 }
-const ART = 'assets/images/revamp/panel_standard_bg.png'
+const ART = REVAMP_PANEL_BG
 const MUSHROOM = 'assets/images/revamp/growth_mushroom_red.png'
-
-let dismissed = false
-let lastEventEndsAt = 0
-let wasActive = false
 
 function clock(ms: number): string {
   const seconds = Math.ceil(ms / 1000)
@@ -22,21 +19,16 @@ function clock(ms: number): string {
 /** Illustrated event panel. Only the art is baked; every word is localized live. */
 export function HappyHourCard() {
   const status = happyHourStatus()
-  if (!status) { wasActive = false; return null }
-  if (!wasActive || status.endsAt !== lastEventEndsAt) {
-    dismissed = false
-    wasActive = true
-    lastEventEndsAt = status.endsAt ?? 0
-  }
+  if (!status) return null
   const isMobile = mobile()
   // Same mobile width as navPanelWidth(): Inventory, My Pets and Goals.
   const width = S(isMobile ? 660 : 820)
-  const height = width * 732 / 1000
-  const px = (n: number) => Math.round(n * width / 1000)
+  const height = Math.round(width * REVAMP_PANEL_H / REVAMP_PANEL_W)
+  const px = (n: number) => Math.round(n * width / REVAMP_PANEL_W)
   const font = mobile() ? {} : { fontSrc: 'assets/fonts/Fredoka-SemiBold.ttf' }
   const bold = mobile() ? {} : { fontSrc: 'assets/fonts/Fredoka-Bold.ttf' }
-  const close = () => { playUiClick(); dismissed = true }
-  if (dismissed) {
+  const close = () => { playUiClick(); happyHourPresentation.dismiss() }
+  if (happyHourPresentation.isDismissed()) {
     const iconSize = S(isMobile ? 88 : 72)
     return (
       <UiEntity
@@ -45,7 +37,7 @@ export function HappyHourCard() {
           borderWidth: S(2), borderColor: { r: 0.78, g: 0.58, b: 0.34, a: 1 },
           alignItems: 'center', justifyContent: 'center', pointerFilter: 'block' }}
         uiBackground={{ color: { r: 1, g: 0.96, b: 0.85, a: 0.97 } }}
-        onMouseDown={() => { playUiClick(); dismissed = false }}
+        onMouseDown={() => { playUiClick(); happyHourPresentation.open() }}
       >
         <UiEntity uiTransform={{ width: iconSize * 0.9, height: iconSize * 0.9, pointerFilter: 'none' }}
           uiBackground={{ texture: { src: MUSHROOM }, textureMode: 'stretch' }} />
@@ -79,7 +71,7 @@ export function HappyHourCard() {
           <Label value={t('happyHour.available', { count: status.available })} {...bold} fontSize={px(isMobile ? 24 : 18)} color={accent} uiTransform={{ width: '100%', height: '100%' }} />
         </UiEntity>
         {/* Match the standard panel's baked close button exactly. */}
-        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: px(20), left: px(865) }, width: px(104), height: px(104), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={close} />
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: px(REVAMP_CLOSE.y), left: px(REVAMP_CLOSE.x) }, width: px(REVAMP_CLOSE.size), height: px(REVAMP_CLOSE.size), pointerFilter: 'block' }} uiBackground={{ color: { r: 0, g: 0, b: 0, a: 0.001 } }} onMouseDown={close} />
       </UiEntity>
     </UiEntity>
   )
