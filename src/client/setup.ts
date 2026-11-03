@@ -13,6 +13,7 @@
 import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { room } from '../shared/messages'
+import { setAnalyticsEnabled } from '../shared/analytics'
 import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, SICKNESS_CURE_COINS, SICKNESS_CURE_XP, type SpinReward } from '../shared/config'
 import { actions, applyPresence, applySnapshot, clientState, markServerAlive, pushToast, resolveMyAddress, showReward } from './state'
@@ -127,6 +128,9 @@ function registerHandlers(): void {
     clientState.serverReady = true // lifts the loading gate in ui.tsx (Root)
     try {
       const snap = JSON.parse(data.json) as PlayerSnapshot
+      // Analytics master switch is resolved server-side (from the env var); apply
+      // it here so the client's own events (e.g. first_session_step) gate on it.
+      if (typeof snap.analyticsEnabled === 'boolean') setAnalyticsEnabled(snap.analyticsEnabled)
       const hadSnapshot = firstSnapshotSeen
       const activePetWasSick = clientState.activePet?.sick ?? false
       applySnapshot(snap)
