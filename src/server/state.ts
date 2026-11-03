@@ -3,6 +3,7 @@
 // and the spin wheel. All money/stat mutations live here so they can be
 // validated and persisted in one place.
 
+import { mushroomRewards } from './mushroomRewards'
 import { Storage } from '@dcl/sdk/server'
 import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
@@ -457,6 +458,7 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
     if (isIncompleteFirstSessionStep(data.firstSessionStep)) firstSessionPlayers.add(address)
     tickPlayer(data)
   }
+  if (!ephemeralPlayers.has(address)) await mushroomRewards.recover(data)
   applyDailyStreak(data)
   players.set(address, data)
   await savePlayer(address)
@@ -1132,8 +1134,8 @@ export function petOther(giver: PlayerData, target: PlayerData): { giverNotes: N
 export type SwapOffer = { from: string; fromPetId: string; to: string; toPetId: string; at: number }
 const pendingSwaps = new Map<string, SwapOffer>() // keyed by target (to) address, lowercased
 
-/** The active *slotted* pet (never a hatchling) a player would swap. */
-function slottedActivePet(p: PlayerData): PetData | null {
+/** The active roster pet, unavailable while a hatchling decision is pending. */
+export function slottedActivePet(p: PlayerData): PetData | null {
   if (p.hatchling) return null
   return p.pets.find((pet) => pet.id === p.activePetId) ?? null
 }

@@ -109,6 +109,11 @@ type Dictionary = Record<string, string>
 // the gameplay code is migrated incrementally to t('namespace.key'). New copy
 // should always use t() below.
 const ES: Dictionary = {
+  'Your pet is already an adult.': 'Tu mascota ya es adulta.',
+  'Move closer to the mushroom.': 'Acércate más al hongo.',
+  'Select a pet from My Pets first.': 'Selecciona primero una mascota de Mis Mascotas.',
+  'This mushroom is unavailable. Please try again.': 'Este hongo no está disponible. Inténtalo de nuevo.',
+  'Could not save mushroom growth. Please try again.': 'No se pudo guardar el crecimiento. Inténtalo de nuevo.',
   'Accept': 'Aceptar',
   'Add': 'Añadir',
   'Adopt': 'Adoptar',
@@ -290,6 +295,11 @@ const ES: Dictionary = {
 }
 
 const PT: Dictionary = {
+  'Your pet is already an adult.': 'Seu pet já é adulto.',
+  'Move closer to the mushroom.': 'Chegue mais perto do cogumelo.',
+  'Select a pet from My Pets first.': 'Selecione primeiro um pet em Meus Pets.',
+  'This mushroom is unavailable. Please try again.': 'Este cogumelo não está disponível. Tente novamente.',
+  'Could not save mushroom growth. Please try again.': 'Não foi possível salvar o crescimento. Tente novamente.',
   'Accept': 'Aceitar',
   'Add': 'Adicionar',
   'Adopt': 'Adotar',
@@ -607,6 +617,19 @@ export function translateText(text: string): string {
 /** New code uses named keys and supports lightweight {variable} interpolation. */
 const COPY: Record<AppLanguage, Dictionary> = {
   en: {
+    'happyHour.busy': "Finish your pet's current activity first.",
+    'happyHour.ready': 'Find the glowing mushrooms in the woods.',
+    'happyHour.selectPet': 'Select a pet first.',
+    'happyHour.adult': 'Your pet is already an adult.',
+    'happyHour.endsLabel': 'EVENT ENDS IN',
+    'happyHour.lastBloom': "Last bloom — don't miss it!",
+    'happyHour.eyebrow': 'MAGIC BLOOM',
+    'happyHour.title': 'Growth Mushroom Festival',
+    'happyHour.body': 'The woods are blooming! Select a young pet and collect a glowing mushroom to help it become an Adult instantly.',
+    'happyHour.available': '{count} mushrooms available',
+    'happyHour.refresh': 'New mushrooms in {time}',
+    'happyHour.duration': 'A {minutes}-minute woodland event',
+    'happyHour.pick': 'Pick a growth mushroom',
     'tutorial.chapter': 'CHAPTER {current}/{total}',
     'language.notice.title': 'Language',
     'language.notice.body': 'Your Decentraland app language is {language}. To change it, go to Profile > Settings > Language > Select language.',
@@ -702,6 +725,19 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'leaderboard.soon': 'soon'
   },
   es: {
+    'happyHour.busy': 'Termina primero la actividad de tu mascota.',
+    'happyHour.ready': 'Busca los hongos brillantes en el bosque.',
+    'happyHour.selectPet': 'Selecciona una mascota primero.',
+    'happyHour.adult': 'Tu mascota ya es adulta.',
+    'happyHour.endsLabel': 'EL EVENTO TERMINA EN',
+    'happyHour.lastBloom': '¡Último brote, no te lo pierdas!',
+    'happyHour.eyebrow': 'BROTE MÁGICO',
+    'happyHour.title': 'Festival de hongos de crecimiento',
+    'happyHour.body': '¡El bosque florece! Selecciona una mascota joven y recoge un hongo brillante para convertirla en adulta al instante.',
+    'happyHour.available': '{count} hongos disponibles',
+    'happyHour.refresh': 'Nuevos hongos en {time}',
+    'happyHour.duration': 'Un evento del bosque de {minutes} minutos',
+    'happyHour.pick': 'Recoger hongo de crecimiento',
     'tutorial.chapter': 'CAPÍTULO {current}/{total}',
     'language.notice.title': 'Idioma',
     'language.notice.body': 'El idioma de tu app de Decentraland es {language}. Para cambiarlo, ve a Profile > Settings > Language > Select language.',
@@ -797,6 +833,19 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'leaderboard.soon': 'próximamente'
   },
   pt: {
+    'happyHour.busy': 'Termine primeiro a atividade do seu pet.',
+    'happyHour.ready': 'Encontre os cogumelos brilhantes na floresta.',
+    'happyHour.selectPet': 'Selecione um pet primeiro.',
+    'happyHour.adult': 'Seu pet já é adulto.',
+    'happyHour.endsLabel': 'O EVENTO TERMINA EM',
+    'happyHour.lastBloom': 'Último broto — aproveite!',
+    'happyHour.eyebrow': 'BROTO MÁGICO',
+    'happyHour.title': 'Festival dos cogumelos de crescimento',
+    'happyHour.body': 'A floresta floresceu! Selecione um pet jovem e colha um cogumelo brilhante para torná-lo adulto na hora.',
+    'happyHour.available': '{count} cogumelos disponíveis',
+    'happyHour.refresh': 'Novos cogumelos em {time}',
+    'happyHour.duration': 'Um evento da floresta de {minutes} minutos',
+    'happyHour.pick': 'Colher cogumelo de crescimento',
     'tutorial.chapter': 'CAPÍTULO {current}/{total}',
     'language.notice.title': 'Idioma',
     'language.notice.body': 'O idioma do seu app Decentraland é {language}. Para alterá-lo, vá em Profile > Settings > Language > Select language.',
