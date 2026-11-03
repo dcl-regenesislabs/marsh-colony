@@ -8,6 +8,7 @@ import { Storage } from '@dcl/sdk/server'
 import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
+import { trackEvent, analyticsEnabledNow } from '../shared/analytics'
 
 const STORAGE_KEY = 'petdata-v1'
 const STAT_KEYS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
@@ -660,6 +661,11 @@ function grantCaretakerXp(p: PlayerData, xp: number, notes: Notify[]): void {
     const reward = C.CARETAKER_LEVEL_REWARDS.find((r) => r.level === p.caretakerLevel)
     if (reward) applyLevelReward(p, reward, notes)
     notes.push({ kind: 'level', message: `Caretaker Level ${p.caretakerLevel}!` })
+    // Milestone progression event (not every level) — how far players get. A
+    // milestone is crossed once (levels only go up), so no dedupe is needed.
+    if (C.ANALYTICS_LEVEL_MILESTONES.includes(p.caretakerLevel)) {
+      trackEvent('level reached', p.address, { level: p.caretakerLevel })
+    }
   }
 }
 
@@ -670,6 +676,7 @@ function applyLevelReward(p: PlayerData, r: C.LevelReward, notes: Notify[]): voi
       break
     case 'slot':
       p.petSlots += r.amount
+      unlockFeature(p, 'pet_slot')
       break
     case 'spinTicket':
       p.spinTickets += r.amount
@@ -682,6 +689,20 @@ function applyLevelReward(p: PlayerData, r: C.LevelReward, notes: Notify[]): voi
       break
   }
   notes.push({ kind: 'reward', message: `Level reward: ${r.label}` })
+}
+
+/** Fire a `feature unlocked` analytics event the FIRST time a player reaches a
+ *  feature. Deduped via the achievements set (its "unlocked ids" convention), so
+ *  it persists across sessions and never re-fires. No-op when analytics is off. */
+function unlockFeature(p: PlayerData, feature: string): void {
+  const id = `feature_${feature}`
+  if (p.achievements.indexOf(id) !== -1) return
+  // Don't burn the dedupe while analytics is off, or the unlock would be lost
+  // forever (marked as seen but never sent). Leaving it unmarked lets it fire the
+  // next time the player hits this path with analytics on.
+  if (!analyticsEnabledNow()) return
+  p.achievements.push(id)
+  trackEvent('feature unlocked', p.address, { feature })
 }
 
 function checkAchievements(p: PlayerData, notes: Notify[]): void {
@@ -742,6 +763,7 @@ export function keepPet(p: PlayerData): Notify[] {
   delete p.firstSessionEggState
   p.pets.push(pet)
   p.activePetId = pet.id
+  unlockFeature(p, 'first_hatch')
   bump(p, 'adoptCount')
   const notes: Notify[] = [{ kind: 'adopt', message: `${pet.name} joined your colony!` }]
   if (pet.generation > 0) grantCaretakerXp(p, C.CARETAKER_XP_HATCH, notes) // hatched a BRED egg
@@ -814,6 +836,7 @@ export function breed(p: PlayerData, partnerId: string, name = '', usePotion = f
   p.hatchling = child
   if (isFirstSession(p.address)) p.firstSessionEggState = 'carrying'
   bump(p, 'breedCount')
+  unlockFeature(p, 'breeding')
 
   const potionNote = usePotion ? ` (${C.RARITY_POTION_LABEL} used)` : ''
   const notes: Notify[] = [{ kind: 'breed', message: `You bred a ${C.rarityLabel(rarity)} egg${potionNote} — carry it home to hatch!${fee > 0 ? ` (-${fee} coins)` : ''}` }]
@@ -1317,6 +1340,7 @@ export function buySlot(p: PlayerData): Notify[] {
   if (p.currency < price) return [{ kind: 'error', message: 'Not enough coins' }]
   p.currency -= price
   p.petSlots += 1
+  unlockFeature(p, 'pet_slot')
   return [{ kind: 'shop', message: `Unlocked pet slot ${p.petSlots}!` }]
 }
 

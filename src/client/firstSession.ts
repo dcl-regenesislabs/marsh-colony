@@ -492,13 +492,20 @@ function goTo(next: FirstSessionStep, breathe = 0): void {
 }
 
 /** Every step reached goes to PostHog, so the funnel shows how far first
- *  visits get. Forced debug sessions stay out of the stats. */
+ *  visits get. The terminal 'done' step fires `tutorial completed` instead (the
+ *  funnel's last stage), matching the cross-scene event convention. Forced debug
+ *  sessions stay out of the stats. */
 let sessionClock = 0
 let stepIndex = 0
 function reportStep(next: FirstSessionStep): void {
   stepIndex += 1
   if (DEBUG_FORCE_FIRST_SESSION) return
-  trackEvent('first_session_step', clientState.player?.address ?? '', {
+  const wallet = clientState.player?.address ?? ''
+  if (next === 'done') {
+    trackEvent('tutorial completed', wallet, { seconds_in_session: Math.round(sessionClock) })
+    return
+  }
+  trackEvent('tutorial step reached', wallet, {
     step: next,
     step_index: stepIndex,
     chapter: CHAPTER[next],

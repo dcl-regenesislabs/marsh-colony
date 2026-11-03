@@ -15,6 +15,7 @@ import { petStage } from '../shared/config'
 import * as S from './state'
 import * as Ark from './ark'
 import { trackEvent } from '../shared/analytics'
+import { refreshAnalyticsEnabled, analyticsEnabledNow, analyticsReady } from './analyticsConfig'
 
 const TICK_INTERVAL = 5 // seconds between decay/persist passes
 const SNAPSHOT_INTERVAL = 3 // seconds between owner snapshot pushes
@@ -53,7 +54,14 @@ function requestWearableClaims(address: string, p: PlayerData): void {
 }
 
 function pushSnapshot(p: PlayerData): void {
-  const snap = { ...S.snapshotFor(p), happyHour: happyHourView(p, Date.now(), mushroomEvent.state(), [...mushroomPlacements.keys()]), arkUnseen: Ark.unseenArkLaunchesFor(p) }
+  // Relay both live server switches with the owning player's snapshot.
+  refreshAnalyticsEnabled()
+  const snap = {
+    ...S.snapshotFor(p),
+    happyHour: happyHourView(p, Date.now(), mushroomEvent.state(), [...mushroomPlacements.keys()]),
+    arkUnseen: Ark.unseenArkLaunchesFor(p),
+    analyticsEnabled: analyticsEnabledNow()
+  }
   room.send('stateSnapshot', { json: JSON.stringify(snap) }, { to: [p.address] })
 }
 
@@ -132,6 +140,7 @@ export function server(): void {
   console.log('[Server] MyDearPet authoritative server starting')
   void mushroomEvent.refresh()
   void Ark.ensureArkLoaded() // warm the Ark record so the first snapshots carry it
+  refreshAnalyticsEnabled() // resolve the analytics switch from env before first events
 
   // -- Message handlers -----------------------------------------------------
   room.onMessage('requestState', async (data, ctx) => {
@@ -146,7 +155,14 @@ export function server(): void {
     const p = await S.loadPlayer(ctx.from)
     if (firstThisSession) {
       sessionStart.set(ctx.from, Date.now()) // start the clock for session-duration
-      trackEvent('session started', ctx.from, { is_new_user: S.isFreshPlayer(ctx.from) })
+      // Wait for the first env resolution so the booting player's `session started`
+      // isn't dropped by the fallback before the switch is known (instant after boot).
+      await analyticsReady()
+      trackEvent('session started', ctx.from, {
+        is_new_user: S.isFreshPlayer(ctx.from),
+        level: p.caretakerLevel,
+        tutorial_complete: p.firstSessionStep === 'done'
+      })
     }
     // Ark: a donor who was away when their launch happened gets its wearable
     // grant now (and the snapshot below carries the launch to replay).
@@ -655,7 +671,11 @@ export function server(): void {
         // Report duration only when we have a start (a missing clock is skipped,
         // not reported as 0s — which would read as an instant session), capped so
         // a stuck clock can't post an absurd number.
-        const props = start ? { duration_seconds: Math.min(Math.round((nowMs - start) / 1000), MAX_SESSION_SECONDS) } : {}
+        // `source: "server"` matches the cross-scene convention: session ended is
+        // always server-detected (onLeaveScene is unreliable on Bevy/mobile), so
+        // the PostHog session-duration query filters on it.
+        const props: Record<string, any> = { source: 'server' }
+        if (start) props.duration_seconds = Math.min(Math.round((nowMs - start) / 1000), MAX_SESSION_SECONDS)
         trackEvent('session ended', addr, props)
         connected.delete(addr)
         sessionStart.delete(addr)

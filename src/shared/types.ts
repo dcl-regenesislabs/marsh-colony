@@ -198,6 +198,10 @@ export interface PlayerSnapshot {
   firstSession?: boolean
   // Ark launches this player donated to but hasn't seen yet (they were away).
   arkUnseen?: ArkLaunchView[]
+  // Analytics master switch resolved server-side from the ANALYTICS_ENABLED env
+  // var. The client can't read the env var itself, so the server relays it here
+  // and the client gates its own events on it (see shared/analytics.ts).
+  analyticsEnabled?: boolean
 }
 
 /** A pending pet-swap offer, sent to the target so they can review + decide. */

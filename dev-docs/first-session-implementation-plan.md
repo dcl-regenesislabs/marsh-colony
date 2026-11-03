@@ -35,7 +35,7 @@
 
 - Viven **solo en el cliente** (`src/client/firstSession.ts`) y avanzan con los eventos reales del juego (keep, resultado del Feed, cura, baño, rondas de fetch, cría…), igual que hoy los snapshots actualizan el HUD.
 - Si recargan a mitad, el checkpoint guardado reanuda la misma lección. Las actividades transitorias vuelven a su límite seguro (por ejemplo, al objetivo anterior al minijuego).
-- Cada paso alcanzado se reporta a PostHog (`first_session_step`) cuando hagamos el tracking.
+- Cada paso alcanzado se reporta a PostHog (`tutorial step reached`), y el cierre del tutorial dispara `tutorial completed`.
 
 ## 3. Sistema de guía (sin arte nuevo)
 

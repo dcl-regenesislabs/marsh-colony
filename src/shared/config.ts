@@ -1103,10 +1103,16 @@ export const PET_BASE_Y = 0
 // Analytics (PostHog) — see dev-docs/posthog-analytics-integration.md.
 // The project API key is a write-only public capture token: safe to ship.
 // ---------------------------------------------------------------------------
-// Master on/off switch. OFF by default so local dev / preview runs never
-// pollute the stats. Flip to `true` to test tracking locally, AND remember to
-// set it `true` for the production deploy — otherwise production sends nothing.
+// Master on/off switch — the FALLBACK default only. The live switch is the
+// ANALYTICS_ENABLED env var, resolved at runtime (server/analyticsConfig.ts) and
+// relayed to the client, so analytics can be flipped WITHOUT a redeploy:
+//   npx sdk-commands storage env set ANALYTICS_ENABLED --value true   # (or false)
+// This const is used only until that env value is read, and when it's unset/blank.
+// Keep it `false` so local dev / preview never pollutes the stats by default.
 export const ANALYTICS_ENABLED = false
 export const GAME_ID = 'mydearpet' // deadsurge | cozyfarm | mydearpet
 export const POSTHOG_HOST = 'eu.i.posthog.com' // EU Cloud
 export const POSTHOG_PROJECT_API_KEY = 'phc_vnCGXbvJSyfA5qVW7QKGLnMipCMpqUhTZkMFRBKayKUp'
+// Caretaker levels that fire a `level reached` event (milestones only, not every
+// level-up) — measures how far players progress, mirroring the cross-scene set.
+export const ANALYTICS_LEVEL_MILESTONES: readonly number[] = [2, 5, 10]
