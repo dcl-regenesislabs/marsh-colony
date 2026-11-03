@@ -13,13 +13,32 @@
 import { signedFetch } from '~system/SignedFetch'
 import * as C from './config'
 
+// Runtime master switch, read by trackEvent() below instead of the compile-time
+// C.ANALYTICS_ENABLED const — so analytics can be flipped WITHOUT a redeploy.
+// It starts at the config default (the fallback) and is overridden at runtime:
+//   • server-side, from the ANALYTICS_ENABLED env var (see server/analyticsConfig.ts)
+//   • client-side, from the value the server sends in the state snapshot
+// EnvVar is server-only, so the client can't read it directly — hence the relay.
+let analyticsEnabled = C.ANALYTICS_ENABLED
+
+/** Set the runtime master switch. Called by the server (from env) and by the
+ *  client (from the snapshot the server sends). */
+export function setAnalyticsEnabled(enabled: boolean): void {
+  analyticsEnabled = enabled
+}
+
+/** Current runtime master switch — what the server stamps into the snapshot. */
+export function analyticsEnabledNow(): boolean {
+  return analyticsEnabled
+}
+
 /**
  * Emit one analytics event. `distinctId` is the player's wallet (identity that
  * ties sessions together for retention). Adding a future event is just another
  * trackEvent(...) call — no new plumbing.
  */
 export function trackEvent(name: string, distinctId: string, properties: Record<string, any> = {}): void {
-  if (!C.ANALYTICS_ENABLED) return
+  if (!analyticsEnabled) return
   if (!distinctId) return // no wallet -> no usable identity, skip
 
   try {
@@ -42,8 +61,10 @@ export function trackEvent(name: string, distinctId: string, properties: Record<
       }
     })
       .then((res) => {
-        // TEMP verification log — shows every send. Revert to `if (!res.ok)` once confirmed.
-        console.log(`[analytics] ${name} -> ${res.status}${res.ok ? '' : ' (rejected)'}`)
+        // Silent on success — only a rejection leaves a trace, so this stays quiet
+        // under load (15+ concurrent players send many events). Confirm delivery in
+        // PostHog's Live events, not the server log.
+        if (!res.ok) console.log(`[analytics] ${name} rejected -> ${res.status}`)
       })
       .catch((e) => {
         console.log(`[analytics] ${name} failed:`, e)
