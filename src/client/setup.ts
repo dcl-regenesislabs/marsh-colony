@@ -12,6 +12,7 @@
 
 import { AvatarModifierArea, AvatarModifierType, engine, Entity, InputModifier, Transform } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
+import { receiveHappyHour, setupHappyHour } from './happyHour'
 import { room } from '../shared/messages'
 import type { ArkDonateResult, ArkLaunchView, ArkLeaderboard, ArkStatus, LeaderboardEntry, PlayerSnapshot, PresenceEntry, SwapOfferPayload } from '../shared/types'
 import { DEV_SKIP_SERVER_GATE, SICKNESS_CURE_COINS, SICKNESS_CURE_XP, type SpinReward } from '../shared/config'
@@ -130,6 +131,7 @@ function registerHandlers(): void {
       const hadSnapshot = firstSnapshotSeen
       const activePetWasSick = clientState.activePet?.sick ?? false
       applySnapshot(snap)
+      receiveHappyHour(snap.happyHour ?? null)
       applyStoredLanguage(snap.player.language)
       // Sickness is persisted and server-authoritative. Only a newly confirmed
       // sickness during this session gets the post-Feed cinematic; a returning
@@ -345,6 +347,7 @@ export function setupClient(): void {
   setupFruitGame() // fruit pool for the Feed minigame (feed.ts hands off to it on tree click)
   setupBathGame() // bubble-bath minigame (pet.ts placePetAtStation hands off to it at the tub)
   setupFeedTask() // Feed action: guide arrow to the composite tree, auto-starts the feeding game on arrival
+  setupHappyHour()
   setupFirstSession() // brand-new players only: the Caretaker-guided first visit (firstSession.ts)
   setupSicknessCinematic() // poisoned Feed round: sad pet + Caretaker introduction
   setupSicknessProps() // runtime-only medicine table + potion; intentionally absent from the composite

@@ -1,12 +1,17 @@
 // Headless authoritative server. Owns all game state, validates actions,
 // runs decay, persists to Storage, and broadcasts presence for social render.
 
+import { resolveMushroomPositions, mushroomPlacements } from '../shared/mushroomPlacement'
 import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
 import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
 import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE, DEBUG_DELIVER_WEARABLE } from '../shared/config'
 import type { ArkDonateResult } from '../shared/types'
+import { mushroomRewards } from './mushroomRewards'
+import { mushroomEvent } from './mushroomEvent'
+import { happyHourView } from '../shared/happyHour'
+import { petStage } from '../shared/config'
 import * as S from './state'
 import * as Ark from './ark'
 import { trackEvent } from '../shared/analytics'
@@ -24,6 +29,7 @@ const FEED_TREE_RADIUS = 12
 
 // Track which addresses are currently connected (seen via PlayerIdentityData).
 const connected = new Set<string>()
+const pendingMushroomPicks = new Set<string>()
 // address -> ms timestamp when their session started, so we can report the
 // session's duration in the `session ended` event when they disconnect.
 const sessionStart = new Map<string, number>()
@@ -47,7 +53,7 @@ function requestWearableClaims(address: string, p: PlayerData): void {
 }
 
 function pushSnapshot(p: PlayerData): void {
-  const snap = { ...S.snapshotFor(p), arkUnseen: Ark.unseenArkLaunchesFor(p) }
+  const snap = { ...S.snapshotFor(p), happyHour: happyHourView(p, Date.now(), mushroomEvent.state(), [...mushroomPlacements.keys()]), arkUnseen: Ark.unseenArkLaunchesFor(p) }
   room.send('stateSnapshot', { json: JSON.stringify(snap) }, { to: [p.address] })
 }
 
@@ -122,7 +128,9 @@ function broadcastPresence(): void {
 }
 
 export function server(): void {
+  resolveMushroomPositions()
   console.log('[Server] MyDearPet authoritative server starting')
+  void mushroomEvent.refresh()
   void Ark.ensureArkLoaded() // warm the Ark record so the first snapshots carry it
 
   // -- Message handlers -----------------------------------------------------
@@ -142,6 +150,7 @@ export function server(): void {
     }
     // Ark: a donor who was away when their launch happened gets its wearable
     // grant now (and the snapshot below carries the launch to replay).
+    await mushroomEvent.refresh()
     await Ark.ensureArkLoaded()
     Ark.reconcileArkGrants(p)
     if (firstThisSession) requestWearableClaims(ctx.from, p)
@@ -432,6 +441,48 @@ export function server(): void {
     pushSnapshot(p)
   })
 
+  room.onMessage('pickHappyHour', async (data, ctx) => {
+    if (!ctx || pendingMushroomPicks.has(ctx.from)) return
+    pendingMushroomPicks.add(ctx.from)
+    try {
+      await mushroomEvent.refresh()
+      const p = await S.loadPlayer(ctx.from)
+      const view = happyHourView(p, Date.now(), mushroomEvent.state(), [...mushroomPlacements.keys()])
+      if (!view || S.isFirstSession(ctx.from) || String(view.wave) !== data.wave || !view.available.includes(data.slot)) {
+        pushSnapshot(p)
+        return
+      }
+      const position = mushroomPlacements.get(data.slot)?.position
+      if (!position) return
+      let near = false
+      for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
+        if (identity.address.toLowerCase() !== ctx.from.toLowerCase()) continue
+        const transform = Transform.getOrNull(entity)
+        if (transform) near = Math.hypot(transform.position.x - position.x, transform.position.y - position.y, transform.position.z - position.z) <= 4
+      }
+      const pet = S.snapshotFor(p).activePet
+      if (!near || !pet || pet.id !== data.petId) return
+      if (petStage(pet.size) === 'ADULT') {
+        forwardNotes(ctx.from, [{ kind: 'shop', message: 'Your pet is already an adult.' }])
+        return
+      }
+      const saved = await mushroomRewards.grant(p, { petId: pet.id, slot: data.slot, pickedAt: Date.now() })
+      if (!saved) {
+        forwardNotes(ctx.from, [{ kind: 'shop', message: 'Could not save mushroom growth. Please try again.' }])
+        return
+      }
+      pushSnapshot(p)
+      broadcastPresence()
+      await S.savePlayer(ctx.from)
+      forwardNotes(ctx.from, [{ kind: 'shop', message: `${pet.name} grew into an Adult!` }])
+    } catch (error) {
+      console.log('[Server] Mushroom pickup failed', error)
+      forwardNotes(ctx.from, [{ kind: 'shop', message: 'Could not save mushroom growth. Please try again.' }])
+    } finally {
+      pendingMushroomPicks.delete(ctx.from)
+    }
+  })
+
   room.onMessage('firstSessionGrow', async (data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
@@ -575,6 +626,7 @@ export function server(): void {
 
     if (tickAcc >= TICK_INTERVAL) {
       tickAcc = 0
+      void mushroomEvent.refresh()
       for (const p of S.allCached()) {
         S.tickPlayer(p)
         void S.savePlayer(p.address)

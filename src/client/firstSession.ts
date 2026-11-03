@@ -49,6 +49,7 @@ import { mobile } from './ui/theme'
 import { petTouchControlsAreVisible } from './touchControls'
 import { trackEvent } from '../shared/analytics'
 import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
+import { HAPPY_HOUR } from '../shared/happyHour'
 import { showMushroomGlow } from './mushroomGlow'
 import { translateText } from './i18n'
 
@@ -219,6 +220,9 @@ function findMushroom(): Entity | null {
   const e = engine.getEntityOrNullByName(EntityNames.Gypsy_mushroom)
   if (e === null || !Transform.has(e) || !GltfContainer.has(e)) return null
   mushroom = e
+  // The asset-pack GLB references missing external file1.png. Use the
+  // self-contained model while preserving the Creator Hub transform.
+  GltfContainer.getMutable(e).src = HAPPY_HOUR.model
   mushroomScale = Vector3.clone(Transform.get(e).scale)
   // Click target: an invisible box around the mushroom. It has no collider
   // until the grow step is active, so it cannot block or be targeted while

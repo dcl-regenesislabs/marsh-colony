@@ -190,6 +190,7 @@ export interface LeaderboardEntry {
 
 /** Snapshot sent to the owning client to drive the HUD. */
 export interface PlayerSnapshot {
+  happyHour?: import('./happyHour').HappyHourView | null
   player: PlayerData
   activePet: PetData | null
   // True while a new player's guided first visit is incomplete. Its checkpoint

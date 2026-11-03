@@ -46,6 +46,8 @@ export const Messages = {
   // First session only: the player has played Fetch for a while without wearing
   // the pet out — tire it so the "rest on the bed" beat can't strand them.
   firstSessionTire: Schemas.Map({}),
+  // Event mushroom pickup; the server validates activation, distance and cooldown.
+  pickHappyHour: Schemas.Map({ slot: Schemas.Int, wave: Schemas.String, petId: Schemas.String }),
   // First session only, once: the woods mushroom grows pet 1 to Adult (no coins).
   firstSessionGrow: Schemas.Map({ petId: Schemas.String }),
   // First session only, once: not enough coins for the baby's slot, the Caretaker tops them up.

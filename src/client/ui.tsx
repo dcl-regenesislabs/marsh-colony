@@ -5,6 +5,8 @@
 //  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
+import { canPresentHappyHour } from './ui/happyHourPresentation'
+import { HappyHourCard } from './ui/happyHourCard'
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label as EcsLabel, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
@@ -5561,6 +5563,7 @@ const Root = () => {
           </UiEntity>
         )}
         <DialogBox />
+        {!hideHudForPepitoTheft && canPresentHappyHour(clientState, bigUiOpen(), cinematicBarsActive()) && <HappyHourCard />}
         {/* Toasts are the only global notification surface. */}
         {!hideHudForPepitoTheft && <Toasts />}
         {!hideHudForPepitoTheft && <FirstSessionTask />}

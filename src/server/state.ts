@@ -3,6 +3,7 @@
 // and the spin wheel. All money/stat mutations live here so they can be
 // validated and persisted in one place.
 
+import { mushroomRewards } from './mushroomRewards'
 import { Storage } from '@dcl/sdk/server'
 import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
@@ -456,6 +457,7 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
     if (isIncompleteFirstSessionStep(data.firstSessionStep)) firstSessionPlayers.add(address)
     tickPlayer(data)
   }
+  if (!ephemeralPlayers.has(address)) await mushroomRewards.recover(data)
   applyDailyStreak(data)
   players.set(address, data)
   await savePlayer(address)
