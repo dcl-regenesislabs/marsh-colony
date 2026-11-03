@@ -4,9 +4,16 @@
 //   npx sdk-commands storage env set ANALYTICS_ENABLED --value true    # (or false)
 //
 // EnvVar.get reads the server-side Storage service live on every call, so we
-// re-read on a short TTL and the change is picked up within REFRESH_MS. An
-// unset/blank value falls back to the config default (C.ANALYTICS_ENABLED).
+// re-read on a short TTL and the change is picked up within REFRESH_MS.
 // Server-only: EnvVar throws off-server, so this module is never imported client-side.
+//
+// IMPORTANT — EnvVar.get does NOT reject on a failed read: the SDK logs and
+// returns '' (same as a genuinely unset var). We can't tell "unset" from
+// "transient failure" apart, so an EMPTY result KEEPS the current value instead
+// of resetting to the config default — otherwise a blip would silently flip
+// analytics off for a whole TTL. The config default only seeds the value before
+// the first successful read. To disable analytics, set ANALYTICS_ENABLED to
+// "false" explicitly — do NOT delete the var (a delete reads as empty = keep).
 
 import { EnvVar } from '@dcl/sdk/server'
 import * as C from '../shared/config'
@@ -20,8 +27,21 @@ let lastFetch = 0
 let inFlight = false
 let loggedOnce = false // so the first resolved value is always logged (env is write-only — no `env get`)
 
-/** Parse the env value. Returns null for unset/blank so the caller can fall
- *  back to the config default rather than reading "" as false. */
+// Resolves on the FIRST completed env read, so callers can await a real value
+// before emitting the event new-user/retention metrics are built on (otherwise
+// the first player — the one who boots the server — races the boot read and the
+// fallback `false` drops their `session started`).
+let markReady: () => void = () => {}
+const ready: Promise<void> = new Promise((resolve) => {
+  markReady = resolve
+})
+/** Await the first env resolution (already-resolved after that, so it's instant). */
+export function analyticsReady(): Promise<void> {
+  return ready
+}
+
+/** Parse the env value. Returns null for unset/blank (caller then keeps the
+ *  current value — see the file header). */
 function parse(raw: string): boolean | null {
   const v = raw.trim().toLowerCase()
   if (v === '') return null
@@ -29,16 +49,17 @@ function parse(raw: string): boolean | null {
 }
 
 /** Re-read the env var if the cache is stale (older than REFRESH_MS). Fire-and-
- *  forget: it never blocks, and on error it keeps the last known value. Safe to
- *  call on a hot path — the TTL + in-flight guards make it cheap. */
+ *  forget: it never blocks, and an empty/failed read keeps the last known value.
+ *  Safe to call on a hot path — the TTL + in-flight guards make it cheap. */
 export function refreshAnalyticsEnabled(): void {
   const now = Date.now()
   if (inFlight || now - lastFetch < REFRESH_MS) return
   inFlight = true
-  lastFetch = now
   void EnvVar.get(ENV_KEY)
     .then((raw) => {
-      const next = parse(raw) ?? C.ANALYTICS_ENABLED
+      // Empty (unset OR failed read) -> keep the current value, never reset.
+      const parsed = parse(raw)
+      const next = parsed === null ? enabled : parsed
       // Log the first resolution and every later change — the only way to confirm
       // the env value, since the storage CLI is write-only (no `env get`/`env list`).
       if (!loggedOnce || next !== enabled) {
@@ -52,7 +73,11 @@ export function refreshAnalyticsEnabled(): void {
       console.log('[analytics] env read failed, keeping', enabled, e)
     })
     .finally(() => {
+      // Stamp the TTL from completion (not before the call), so a slow read
+      // doesn't shorten the next window; then mark the first resolution done.
+      lastFetch = Date.now()
       inFlight = false
+      markReady()
     })
 }
 

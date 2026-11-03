@@ -2,7 +2,30 @@
 
 **Goal:** add a small, provider-agnostic event-tracking layer to the game so we can measure player behaviour. The **only mandatory event for v1 is `session started`**, which unlocks D1 / D7 / D30 retention. Everything else is added later by calling one function — the owner will specify additional events over time.
 
-This is a requirements doc, not final code. Where a Decentraland-specific detail can't be assumed, it's flagged under **Verify before building**.
+This is the original requirements doc. **Sections 1–10 are the pre-build spec; the "As-built" section just below is the current reality** — read it first. When they disagree, the code wins.
+
+---
+
+## As-built (current implementation)
+
+- **Choke point:** [`src/shared/analytics.ts`](../src/shared/analytics.ts). Signature is `trackEvent(name, distinctId, properties)` — the wallet is passed explicitly (not a singleton), so it works unchanged on both the server and the client. Transport is `signedFetch` (the authoritative-server runtime has no global `fetch`; PostHog ignores the extra DCL signature headers). Silent on success; logs only on a rejected/failed send.
+- **Runtime master switch — no redeploy.** `ANALYTICS_ENABLED` is resolved at runtime from the env var via [`src/server/analyticsConfig.ts`](../src/server/analyticsConfig.ts) (server-only; TTL-cached, ~60s) and relayed to the client in the state snapshot. `config.ts`'s `ANALYTICS_ENABLED` is only the fallback default (`false`). Flip it with:
+  ```
+  npx sdk-commands storage env set ANALYTICS_ENABLED --value true   # or false
+  ```
+  An empty read keeps the current value (so a transient storage failure never flips it off); to disable, set `"false"` explicitly — do not delete the var. Confirm the resolved value in the server log (`[analytics] enabled=...`, via `npm run server-logs`) and delivery in PostHog → Live events.
+- **Event catalog (all carry `game: "mydearpet"` + `$lib`):**
+
+  | Event | Side | Key properties |
+  |---|---|---|
+  | `session started` | server | `is_new_user`, `level`, `tutorial_complete` |
+  | `session ended` | server | `duration_seconds` (capped 4h), `source: "server"` |
+  | `tutorial step reached` | client | `step`, `step_index`, `chapter`, `seconds_in_session` |
+  | `tutorial completed` | client | `seconds_in_session` |
+  | `level reached` | server | `level` (milestones only: `ANALYTICS_LEVEL_MILESTONES`) |
+  | `feature unlocked` | server | `feature`: `breeding` \| `pet_slot` \| `first_hatch` (first-time, deduped in `achievements[]`) |
+
+  Event names match our other scenes (CozyFarm) field-for-field, so PostHog funnels/retention queries are shared across games.
 
 ---
 

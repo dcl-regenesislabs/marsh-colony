@@ -10,7 +10,7 @@ import type { ArkDonateResult } from '../shared/types'
 import * as S from './state'
 import * as Ark from './ark'
 import { trackEvent } from '../shared/analytics'
-import { refreshAnalyticsEnabled, analyticsEnabledNow } from './analyticsConfig'
+import { refreshAnalyticsEnabled, analyticsEnabledNow, analyticsReady } from './analyticsConfig'
 
 const TICK_INTERVAL = 5 // seconds between decay/persist passes
 const SNAPSHOT_INTERVAL = 3 // seconds between owner snapshot pushes
@@ -143,6 +143,9 @@ export function server(): void {
     const p = await S.loadPlayer(ctx.from)
     if (firstThisSession) {
       sessionStart.set(ctx.from, Date.now()) // start the clock for session-duration
+      // Wait for the first env resolution so the booting player's `session started`
+      // isn't dropped by the fallback before the switch is known (instant after boot).
+      await analyticsReady()
       trackEvent('session started', ctx.from, {
         is_new_user: S.isFreshPlayer(ctx.from),
         level: p.caretakerLevel,

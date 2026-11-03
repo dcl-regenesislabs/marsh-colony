@@ -1113,3 +1113,6 @@ export const ANALYTICS_ENABLED = false
 export const GAME_ID = 'mydearpet' // deadsurge | cozyfarm | mydearpet
 export const POSTHOG_HOST = 'eu.i.posthog.com' // EU Cloud
 export const POSTHOG_PROJECT_API_KEY = 'phc_vnCGXbvJSyfA5qVW7QKGLnMipCMpqUhTZkMFRBKayKUp'
+// Caretaker levels that fire a `level reached` event (milestones only, not every
+// level-up) — measures how far players progress, mirroring the cross-scene set.
+export const ANALYTICS_LEVEL_MILESTONES: readonly number[] = [2, 5, 10]

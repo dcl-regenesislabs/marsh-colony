@@ -7,7 +7,7 @@ import { Storage } from '@dcl/sdk/server'
 import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
-import { trackEvent } from '../shared/analytics'
+import { trackEvent, analyticsEnabledNow } from '../shared/analytics'
 
 const STORAGE_KEY = 'petdata-v1'
 const STAT_KEYS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
@@ -659,6 +659,11 @@ function grantCaretakerXp(p: PlayerData, xp: number, notes: Notify[]): void {
     const reward = C.CARETAKER_LEVEL_REWARDS.find((r) => r.level === p.caretakerLevel)
     if (reward) applyLevelReward(p, reward, notes)
     notes.push({ kind: 'level', message: `Caretaker Level ${p.caretakerLevel}!` })
+    // Milestone progression event (not every level) — how far players get. A
+    // milestone is crossed once (levels only go up), so no dedupe is needed.
+    if (C.ANALYTICS_LEVEL_MILESTONES.includes(p.caretakerLevel)) {
+      trackEvent('level reached', p.address, { level: p.caretakerLevel })
+    }
   }
 }
 
@@ -690,6 +695,10 @@ function applyLevelReward(p: PlayerData, r: C.LevelReward, notes: Notify[]): voi
 function unlockFeature(p: PlayerData, feature: string): void {
   const id = `feature_${feature}`
   if (p.achievements.indexOf(id) !== -1) return
+  // Don't burn the dedupe while analytics is off, or the unlock would be lost
+  // forever (marked as seen but never sent). Leaving it unmarked lets it fire the
+  // next time the player hits this path with analytics on.
+  if (!analyticsEnabledNow()) return
   p.achievements.push(id)
   trackEvent('feature unlocked', p.address, { feature })
 }
