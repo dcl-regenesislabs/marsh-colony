@@ -2,7 +2,8 @@
 
 > A cozy, multiplayer virtual-pet game built for Decentraland.
 
-![Marsh Colony scene preview](assets/images/thumbnail.png)
+<img width="2752" height="1536" alt="MarshColonyThumbnail (1)" src="https://github.com/user-attachments/assets/ade40d79-855c-4178-af92-29839de99c20" />
+
 
 **Marsh Colony** turns everyday pet care into a shared Decentraland adventure. Adopt a companion, keep it healthy and happy, help it grow, discover new family combinations through breeding, and meet other caretakers in a persistent social world.
 
