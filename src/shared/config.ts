@@ -888,12 +888,56 @@ export const ARK_FIRST_DONATION_WEARABLE: ArkWearable = {
   campaignId: '1d191ec1-bd76-4ac7-821e-338e53ee8d4e',
   campaignKey: 'MwVU4nIQTTeVUO6VECW0YB0ZHsG9dkrHgh4zjlPujU4=.YSWYNN83YA0C9qTm0G11AcJEXbqWKauXHm7ahzUd1jg='
 }
-/** Launch rewards, rotating one per event (event 1 -> [0], event 5 -> [0] again). */
+// Launch rewards, one per event in rotation. ARRAY ORDER IS THE LAUNCH SEQUENCE:
+// event 1 -> index 0, ..., event 5 -> index 0 again. The intended order is
+// Sprout -> Amebita -> Fluflito -> Pepito. All four live in the SAME Rewards
+// campaign as the Caretaker Head (shared campaignId), each with its own dispenser
+// super key and collection item. Each `id` stays tied to its wearable identity (so
+// the ids are not in numeric order here); `imageUvs` follows the shared sheet order
+// (Captain Hat 0, Pepito 1, Sprout 2, Fluflito 3, Amebita 4).
+const ARK_CAMPAIGN_ID = '1d191ec1-bd76-4ac7-821e-338e53ee8d4e'
+const ARK_COLLECTION = 'urn:decentraland:matic:collections-v2:0x6a9e21e65ab097e1ed7835b02354cb3ead00f0c0'
 export const ARK_LAUNCH_WEARABLES: ArkWearable[] = [
-  { id: 'ark_launch_1', name: 'Pepito', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(1) },
-  { id: 'ark_launch_2', name: 'Sprout', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(2) },
-  { id: 'ark_launch_3', name: 'Fluflito', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(3) },
-  { id: 'ark_launch_4', name: 'Amebita', urn: '', image: ARK_WEARABLE_SHEET, imageUvs: arkWearableUvs(4) }
+  // Event 1 — Sprout Head Pal (item 2)
+  {
+    id: 'ark_launch_2',
+    name: 'Sprout',
+    urn: `${ARK_COLLECTION}:2`,
+    image: ARK_WEARABLE_SHEET,
+    imageUvs: arkWearableUvs(2),
+    campaignId: ARK_CAMPAIGN_ID,
+    campaignKey: '/4th8nkcTXGdObtDJHAMGh0ZHsG9dkrHgh4zjlPujU4=.R/IFZuRoVk3U3DzBig4WpcJ8dPA6mueArO5xh+Fz8Dw='
+  },
+  // Event 2 — Amebita Head Pal (item 4)
+  {
+    id: 'ark_launch_4',
+    name: 'Amebita',
+    urn: `${ARK_COLLECTION}:4`,
+    image: ARK_WEARABLE_SHEET,
+    imageUvs: arkWearableUvs(4),
+    campaignId: ARK_CAMPAIGN_ID,
+    campaignKey: 'sBsiPrUZS66fiM1JPLHvJB0ZHsG9dkrHgh4zjlPujU4=.7UtKdc04BJtYt6DZzmKH9zJLHy+7bWAvR9w9TSpmjEU='
+  },
+  // Event 3 — Fluflito Head Pal (item 0)
+  {
+    id: 'ark_launch_3',
+    name: 'Fluflito',
+    urn: `${ARK_COLLECTION}:0`,
+    image: ARK_WEARABLE_SHEET,
+    imageUvs: arkWearableUvs(3),
+    campaignId: ARK_CAMPAIGN_ID,
+    campaignKey: 'XppR10qtRsGJbsCUvtJ/wx0ZHsG9dkrHgh4zjlPujU4=.Gim+aKBwUbrfbnuFamDF1btComevnXLS5V5pVyM7i3o='
+  },
+  // Event 4 — Pepito Head Pal (item 3)
+  {
+    id: 'ark_launch_1',
+    name: 'Pepito',
+    urn: `${ARK_COLLECTION}:3`,
+    image: ARK_WEARABLE_SHEET,
+    imageUvs: arkWearableUvs(1),
+    campaignId: ARK_CAMPAIGN_ID,
+    campaignKey: 'yt7641wEQC2WhNBpHoFB/B0ZHsG9dkrHgh4zjlPujU4=.UrkC2y2YON4PQY4KMNPe7YwBxjyZKYMehYeMb2VQTk4='
+  }
 ]
 
 export function arkLaunchWearable(eventId: number): ArkWearable {
