@@ -475,23 +475,15 @@ export function server(): void {
         pushSnapshot(p)
         return
       }
-      const position = mushroomPlacements.get(data.slot)?.position
-      if (!position) {
+      if (!mushroomPlacements.has(data.slot)) {
         forwardNotes(ctx.from, [{ kind: 'shop', message: 'This mushroom is unavailable. Please try again.' }])
         pushSnapshot(p)
         return
       }
-      let near = false
-      for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
-        if (identity.address.toLowerCase() !== ctx.from.toLowerCase()) continue
-        const transform = Transform.getOrNull(entity)
-        if (transform) near = Math.hypot(transform.position.x - position.x, transform.position.y - position.y, transform.position.z - position.z) <= 4
-      }
+      // No server distance check: the click itself (maxDistance 4 on the client)
+      // is the proximity gate. The server's view of the player position lagged
+      // or differed enough to reject every legit pick.
       const pet = S.slottedActivePet(p)
-      if (!near) {
-        forwardNotes(ctx.from, [{ kind: 'shop', message: 'Move closer to the mushroom.' }])
-        return
-      }
       if (!pet || pet.id !== data.petId) {
         forwardNotes(ctx.from, [{ kind: 'shop', message: 'Select a pet from My Pets first.' }])
         return
