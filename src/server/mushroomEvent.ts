@@ -1,17 +1,32 @@
-import { EnvVar, Storage } from '@dcl/sdk/server'
-import type { MushroomEventState } from '../shared/happyHour'
+// Each date-time in MUSHROOM_EVENT_SCHEDULE opens one event (command in README).
+// EnvVar.get returns '' for a failed read as well as a missing key, so an empty
+// value keeps the last schedule; "off" is the explicit way to clear it.
 
-const KEY = 'mushroomEvent'
+import { EnvVar } from '@dcl/sdk/server'
+import type { MushroomEventSchedule } from '../shared/happyHour'
+
+const ENV_KEY = 'MUSHROOM_EVENT_SCHEDULE'
 const POLL_MS = 5000
+const ENTRY = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(:\d{2})?(Z|[+-]\d{2}:\d{2})?$/
 
-/** Read live environment changes; persist the shared clock before exposing it. */
+function parseSchedule(raw: string): { starts: number[]; invalid: string[] } {
+  const starts: number[] = []
+  const invalid: string[] = []
+  for (const entry of raw.split(/[,\s]+/).filter(Boolean)) {
+    const match = ENTRY.exec(entry.toUpperCase())
+    const time = match ? Date.parse(`${match[1]}${match[2] ?? ':00'}${match[3] ?? 'Z'}`) : NaN
+    if (Number.isFinite(time)) starts.push(time)
+    else invalid.push(entry)
+  }
+  return { starts: starts.sort((a, b) => a - b), invalid }
+}
+
 export function createMushroomEventController(deps: {
-  flag: () => Promise<string>
-  read: () => Promise<MushroomEventState | null>
-  write: (value: MushroomEventState) => Promise<boolean>
+  schedule: () => Promise<string>
   now: () => number
 }) {
-  let state: MushroomEventState | null = null
+  let state: MushroomEventSchedule | null = null
+  let lastRaw = ''
   let pending: Promise<void> | null = null
   let nextPoll = 0
   return {
@@ -21,24 +36,22 @@ export function createMushroomEventController(deps: {
       if (deps.now() < nextPoll) return Promise.resolve()
       pending = (async () => {
         try {
-          const flag = (await deps.flag()).trim().toLowerCase()
-          const stored = await deps.read()
-          // EnvVar.get returns an empty string on HTTP errors as well as a
-          // missing key. It must not cancel/rearm an existing activation.
-          if (flag !== 'true' && flag !== 'false') { state = stored; return }
-          const enabled = flag === 'true'
-          if (stored && stored.enabled === enabled && Number.isFinite(stored.startedAt)) {
-            state = stored
-          } else {
-            const next = { enabled, startedAt: enabled ? deps.now() : 0 }
-            if (!await deps.write(next)) throw new Error('Could not persist mushroom event clock')
-            state = next
-            if (enabled) console.log('[Server] Mushroom event started', next.startedAt)
-            else console.log('[Server] Mushroom event disabled; ready for next true')
+          const raw = (await deps.schedule()).trim()
+          if (!raw || raw === lastRaw) return
+          lastRaw = raw
+          if (raw.toLowerCase() === 'off') {
+            state = []
+            console.log('[Server] Mushroom event schedule cleared')
+            return
           }
+          const { starts, invalid } = parseSchedule(raw)
+          if (invalid.length) console.log('[Server] Mushroom event schedule: ignored', invalid.join(', '))
+          if (!starts.length) return
+          state = starts
+          // The storage CLI is write-only, so this log is the only confirmation.
+          console.log('[Server] Mushroom event schedule (UTC):', starts.map(t => new Date(t).toISOString()).join(', '))
         } catch (error) {
-          // Never invent a start time on a failed read/write; keep the last known hour.
-          console.log('[Server] Mushroom event refresh failed', error)
+          console.log('[Server] Mushroom event schedule refresh failed', error)
         } finally {
           nextPoll = deps.now() + POLL_MS
           pending = null
@@ -50,8 +63,6 @@ export function createMushroomEventController(deps: {
 }
 
 export const mushroomEvent = createMushroomEventController({
-  flag: () => EnvVar.get('START_MUSHROOM_EVENT'),
-  read: () => Storage.get<MushroomEventState>(KEY, { fresh: true }),
-  write: (value) => Storage.set(KEY, value),
+  schedule: () => EnvVar.get(ENV_KEY),
   now: () => Date.now()
 })

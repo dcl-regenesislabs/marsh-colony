@@ -7,9 +7,9 @@ export const HAPPY_HOUR = {
   model: 'assets/Models/Mushroom_02.glb',
   entityNames: [EntityNames.Mushroom_event, EntityNames.Mushroom_event_2, EntityNames.Mushroom_event_3, EntityNames.Mushroom_event_4, EntityNames.Mushroom_event_5]
 }
-export interface MushroomEventState { enabled: boolean; startedAt: number }
+export type MushroomEventSchedule = readonly number[] // scheduled event starts, epoch ms
 export interface HappyHourView {
-  wave: number // activation ID, stable throughout the hour (message compatibility)
+  wave: number // the scheduled start: activation ID, stable throughout the hour
   serverNow: number
   endsAt: number
   available: number[]
@@ -18,16 +18,19 @@ export interface HappyHourView {
 export function mushroomEventEligible(p: Pick<PlayerData, 'firstSessionStep'>): boolean {
   return p.firstSessionStep === undefined || p.firstSessionStep === 'done'
 }
-export function happyHourWindow(now: number, event: MushroomEventState | null): { wave: number; endsAt: number } | null {
-  if (!event?.enabled || !Number.isFinite(event.startedAt) || event.startedAt <= 0) return null
-  const endsAt = event.startedAt + HAPPY_HOUR.durationMinutes * 60000
-  if (now < event.startedAt || now >= endsAt) return null
-  return { wave: event.startedAt, endsAt }
+export function happyHourWindow(now: number, schedule: MushroomEventSchedule | null): { wave: number; endsAt: number } | null {
+  const duration = HAPPY_HOUR.durationMinutes * 60000
+  let wave = 0
+  // Overlapping entries: the latest start wins and opens a fresh hour.
+  for (const start of schedule ?? []) {
+    if (start > wave && start <= now && now < start + duration) wave = start
+  }
+  return wave ? { wave, endsAt: wave + duration } : null
 }
-export function happyHourView(p: PlayerData, now: number, event: MushroomEventState | null,
+export function happyHourView(p: PlayerData, now: number, schedule: MushroomEventSchedule | null,
   slots: number[] = HAPPY_HOUR.entityNames.map((_, i) => i)): HappyHourView | null {
   if (!mushroomEventEligible(p) || slots.length === 0) return null
-  const window = happyHourWindow(now, event)
+  const window = happyHourWindow(now, schedule)
   if (!window) return null
   const available: number[] = []
   const respawnsAt: Record<number, number> = {}
