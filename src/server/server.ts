@@ -127,8 +127,15 @@ function isAtFeedTree(address: string): boolean {
 }
 
 function broadcastPresence(): void {
+  // Only ONLINE players, not every player ever cached. The players Map is never
+  // pruned, so walking allCached() here made the presence message grow with every
+  // distinct visitor — past ~200 it hits the scene-message size cap and presence
+  // stops going out for EVERYONE. Scoping to `connected` bounds it to who's here
+  // and also stops departed players being broadcast as present (ghost pets).
   const entries: PresenceEntry[] = []
-  for (const p of S.allCached()) {
+  for (const addr of connected) {
+    const p = S.getCached(addr)
+    if (!p) continue
     const e = S.presenceFor(p)
     if (e) entries.push(e)
   }
