@@ -34,7 +34,7 @@ Confirmed art with English copy includes the standalone buttons
   `inv_buy_button.png`, `inv_use_button.png`, `inventory_panel.png`,
   `jukebox.png`, `keepbutton.png`, `mypets_panel.png`.
 - Album/marketing art: `album_panel.png`, `album_parts.png`, and
-  `assets/images/thumbnail.png`.
+  `assets/images/thumbnail.jpeg`.
 
 Pokédex creature sprites and textures were inspected as image art rather than
 language content; they do not need localized variants.
