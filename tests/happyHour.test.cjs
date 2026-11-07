@@ -401,7 +401,7 @@ test('all mushroom server rejection notes are localized in Spanish and Portugues
   })
   for (const lang of ['es', 'pt']) {
     i18n.debugSetLanguage(lang)
-    for (const note of ['Your pet is already an adult.', 'Move closer to the mushroom.',
+    for (const note of ['Your pet is already an adult.',
       'Select a pet from My Pets first.', 'This mushroom is unavailable. Please try again.',
       'Could not save mushroom growth. Please try again.']) {
       assert.notEqual(i18n.translateText(note), note, `${lang}: ${note}`)

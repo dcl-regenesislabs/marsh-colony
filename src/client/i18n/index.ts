@@ -110,7 +110,6 @@ type Dictionary = Record<string, string>
 // should always use t() below.
 const ES: Dictionary = {
   'Your pet is already an adult.': 'Tu mascota ya es adulta.',
-  'Move closer to the mushroom.': 'Acércate más al hongo.',
   'Select a pet from My Pets first.': 'Selecciona primero una mascota de Mis Mascotas.',
   'This mushroom is unavailable. Please try again.': 'Este hongo no está disponible. Inténtalo de nuevo.',
   'Could not save mushroom growth. Please try again.': 'No se pudo guardar el crecimiento. Inténtalo de nuevo.',
@@ -296,7 +295,6 @@ const ES: Dictionary = {
 
 const PT: Dictionary = {
   'Your pet is already an adult.': 'Seu pet já é adulto.',
-  'Move closer to the mushroom.': 'Chegue mais perto do cogumelo.',
   'Select a pet from My Pets first.': 'Selecione primeiro um pet em Meus Pets.',
   'This mushroom is unavailable. Please try again.': 'Este cogumelo não está disponível. Tente novamente.',
   'Could not save mushroom growth. Please try again.': 'Não foi possível salvar o crescimento. Tente novamente.',
@@ -539,7 +537,6 @@ const TOAST_FIXED: Record<AppLanguage, Dictionary> = {
     'Switched active pet': 'Cambiaste la mascota activa',
     'Finish with your new pet first.': 'Primero termina con tu nueva mascota.',
     'That pet is no longer in your roster.': 'Esa mascota ya no está en tu lista.',
-    'Talk to the Captain at the Ark to donate a pet.': 'Habla con el Capitán en el Arca para donar una mascota.',
     'One moment...': 'Un momento...',
     "Today's meteor is already collected.": 'El meteorito de hoy ya fue recogido.'
   },
@@ -599,7 +596,6 @@ const TOAST_FIXED: Record<AppLanguage, Dictionary> = {
     'Switched active pet': 'Você trocou o pet ativo',
     'Finish with your new pet first.': 'Termine primeiro com seu novo pet.',
     'That pet is no longer in your roster.': 'Esse pet não está mais na sua lista.',
-    'Talk to the Captain at the Ark to donate a pet.': 'Fale com o Capitão na Arca para doar um pet.',
     'One moment...': 'Um momento...',
     "Today's meteor is already collected.": 'O meteoro de hoje já foi coletado.'
   }
