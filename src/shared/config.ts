@@ -835,14 +835,8 @@ export function journeyStepDone(id: JourneyStepId, p: { pets: unknown[]; counter
 // Captain; when ARK_GOAL pets are aboard the Ark launches, every donor
 // of that event earns the launch wearable, and a new event starts right away.
 // ---------------------------------------------------------------------------
-/** Captain.glb's spot in main.composite — the server validates a donation is
- *  made next to it, and the client stages the hand-over from here. */
-export const ARK_CAPTAIN_POSITION = { x: 162, z: 221 }
 /** How close the Captain can be talked to (client click range). */
 export const ARK_CAPTAIN_CLICK_DISTANCE = 8
-/** Server-side reach for a donation: the click range plus slack for the steps a
- *  player takes while the picker / confirm card is open. */
-export const ARK_DONATE_RADIUS = 10
 /** Launch records kept for donors who were away (each holds <= GOAL donors). */
 export const ARK_LAUNCH_HISTORY = 10
 export const ARK_LEADERBOARD_SIZE = 10

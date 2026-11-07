@@ -61,13 +61,12 @@ export function setEggCarriedState(address: string, carried: boolean): void {
   carriedEggState.set(address.toLowerCase(), carried)
 }
 
-/** Arm a cure only after server-side position validation at the Care Center. */
-export function beginSicknessCure(p: PlayerData, atCareCenter: boolean): Notify[] {
+/** Arm a cure for the active sick pet. */
+export function beginSicknessCure(p: PlayerData): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
   if (!pet.sick) return [{ kind: 'error', message: `${pet.name} is not sick.` }]
-  if (!atCareCenter) return [{ kind: 'error', message: 'Go to the Caretaker to begin the cure.' }]
 
   const key = p.address.toLowerCase()
   const existing = sicknessCureAuthorizations.get(key)
@@ -85,12 +84,11 @@ export function beginSicknessCure(p: PlayerData, atCareCenter: boolean): Notify[
   return []
 }
 
-/** Record a position-validated Feed round before its client-side result arrives. */
-export function beginFeedMinigame(p: PlayerData, atFeedTree: boolean): Notify[] {
+/** Record a Feed round before its client-side result arrives. */
+export function beginFeedMinigame(p: PlayerData): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
-  if (!atFeedTree) return [{ kind: 'error', message: 'Go to the tree to start feeding.' }]
 
   const key = p.address.toLowerCase()
   const existing = feedRoundAuthorizations.get(key)
@@ -1318,14 +1316,13 @@ export function switchPet(p: PlayerData, petId: string): Notify[] {
 // ---------------------------------------------------------------------------
 export type DonateOutcome = { notes: Notify[]; pet: PetData | null; xp: number; coins: number; firstDonation: boolean }
 
-export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): DonateOutcome {
+export function donatePet(p: PlayerData, petId: string): DonateOutcome {
   const fail = (message: string): DonateOutcome => ({ notes: [{ kind: 'error', message }], pet: null, xp: 0, coins: 0, firstDonation: false })
   if (p.hatchling) return fail('Finish with your new pet first.')
   const idx = p.pets.findIndex((x) => x.id === petId)
   if (idx === -1) return fail('That pet is no longer in your roster.')
   tickPlayer(p) // decay first, so sleep/sickness are judged on CURRENT state
   const pet = p.pets[idx]
-  if (!nearCaptain) return fail('Talk to the Captain at the Ark to donate a pet.')
   if (C.petStage(pet.size) !== 'ADULT') return fail('Only Adult pets can board the Ark.')
   if (pet.sleeping) return fail(`${pet.name} is asleep — let it wake up first.`)
   if (pet.sick) return fail(`${pet.name} is sick — cure it at the Care Center first.`)
