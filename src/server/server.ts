@@ -127,8 +127,15 @@ function isAtFeedTree(address: string): boolean {
 }
 
 function broadcastPresence(): void {
+  // Only ONLINE players, not every player ever cached. The players Map is never
+  // pruned, so walking allCached() here made the presence message grow with every
+  // distinct visitor — past ~200 it hits the scene-message size cap and presence
+  // stops going out for EVERYONE. Scoping to `connected` bounds it to who's here
+  // and also stops departed players being broadcast as present (ghost pets).
   const entries: PresenceEntry[] = []
-  for (const p of S.allCached()) {
+  for (const addr of connected) {
+    const p = S.getCached(addr)
+    if (!p) continue
     const e = S.presenceFor(p)
     if (e) entries.push(e)
   }
@@ -655,9 +662,15 @@ export function server(): void {
       tickAcc = 0
       if (mushroomPlacements.size < HAPPY_HOUR.entityNames.length) resolveMushroomPositions()
       void mushroomEvent.refresh()
-      for (const p of S.allCached()) {
+      // Only ONLINE players — not every player ever cached. The players Map still
+      // holds every visitor until restart (cache-growth is a separate change), but
+      // we no longer re-save ALL of them every pass, which was the burst that
+      // flooded the runtime's concurrent-request cap.
+      for (const addr of connected) {
+        const p = S.getCached(addr)
+        if (!p) continue
         S.tickPlayer(p)
-        void S.savePlayer(p.address)
+        void S.savePlayer(addr)
       }
       broadcastPresence()
 

@@ -431,6 +431,28 @@ export function deriveMood(pet: PetData): number {
 // ---------------------------------------------------------------------------
 // Load / save
 // ---------------------------------------------------------------------------
+/** Read a player's save, retrying a few times. Returns { ok: true } with the data
+ *  (or null when the player genuinely has no save), or { ok: false } when EVERY
+ *  attempt failed. It NEVER throws: loadPlayer must stay a resolving call, because
+ *  the SDK's message dispatch neither awaits nor catches handlers — a rejection
+ *  would freeze the client (it stops retrying requestState after ~30s while still
+ *  holding the input lock). A failed read is handled as a transient, non-persisting
+ *  session instead (see loadPlayer), so a storage blip never clobbers real
+ *  progress. No timed backoff — the runtime has no server-side setTimeout; the real
+ *  spacing comes from the client re-issuing requestState. */
+async function readPlayer(address: string): Promise<{ ok: boolean; data: PlayerData | null }> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return { ok: true, data: await Storage.player.get<PlayerData>(address, STORAGE_KEY) }
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  console.log('[Server] Storage load failed (after retries) for', address, lastErr)
+  return { ok: false, data: null }
+}
+
 export async function loadPlayer(address: string): Promise<PlayerData> {
   if (players.has(address)) {
     const cached = players.get(address)!
@@ -442,11 +464,17 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
   if (C.DEBUG_FORCE_FIRST_SESSION) {
     ephemeralPlayers.add(address) // skip the real save entirely, both ways
   } else {
-    try {
-      data = await Storage.player.get<PlayerData>(address, STORAGE_KEY)
-    } catch (e) {
-      console.log('[Server] Storage load failed for', address, e)
+    const res = await readPlayer(address)
+    if (!res.ok) {
+      // Transient read failure (e.g. the runtime's concurrent-request cap under
+      // load). Do NOT treat it as a new player — the savePlayer() below would then
+      // OVERWRITE the player's real progress — and do NOT throw, which would freeze
+      // the client. Hand back a transient session that is NEVER cached and NEVER
+      // saved (an uncached address makes savePlayer a no-op); the next requestState
+      // re-reads and self-heals once storage recovers.
+      return newPlayer(address)
     }
+    data = res.data
   }
   if (!data || !data.address) {
     data = newPlayer(address)
