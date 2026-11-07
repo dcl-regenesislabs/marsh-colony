@@ -16,7 +16,6 @@ import * as S from './state'
 import * as Ark from './ark'
 import { trackEvent } from '../shared/analytics'
 import { refreshAnalyticsEnabled, analyticsEnabledNow, analyticsReady } from './analyticsConfig'
-import { refreshTutorialEnabled } from './tutorialConfig'
 
 const TICK_INTERVAL = 5 // seconds between decay/persist passes
 const SNAPSHOT_INTERVAL = 3 // seconds between owner snapshot pushes
@@ -57,7 +56,6 @@ function requestWearableClaims(address: string, p: PlayerData): void {
 function pushSnapshot(p: PlayerData): void {
   // Relay both live server switches with the owning player's snapshot.
   refreshAnalyticsEnabled()
-  refreshTutorialEnabled()
   const snap = {
     ...S.snapshotFor(p),
     happyHour: happyHourView(p, Date.now(), mushroomEvent.state(), [...mushroomPlacements.keys()]),
@@ -143,7 +141,6 @@ export function server(): void {
   void mushroomEvent.refresh()
   void Ark.ensureArkLoaded() // warm the Ark record so the first snapshots carry it
   refreshAnalyticsEnabled() // resolve the analytics switch from env before first events
-  refreshTutorialEnabled() // resolve the tutorial switch from env before the first new player
 
   // -- Message handlers -----------------------------------------------------
   room.onMessage('requestState', async (data, ctx) => {
@@ -658,10 +655,10 @@ export function server(): void {
       tickAcc = 0
       if (mushroomPlacements.size < HAPPY_HOUR.entityNames.length) resolveMushroomPositions()
       void mushroomEvent.refresh()
-      // Only ONLINE players — not every player ever cached. Combined with the
-      // evict-on-leave below, this bounds the per-tick save burst to who's
-      // actually here, instead of growing with every unique visitor and flooding
-      // the runtime's concurrent-request cap.
+      // Only ONLINE players — not every player ever cached. The players Map still
+      // holds every visitor until restart (cache-growth is a separate change), but
+      // we no longer re-save ALL of them every pass, which was the burst that
+      // flooded the runtime's concurrent-request cap.
       for (const addr of connected) {
         const p = S.getCached(addr)
         if (!p) continue
@@ -703,7 +700,6 @@ export function server(): void {
         S.setCarriedState(addr, false)
         S.setEggCarriedState(addr, false)
         S.endFirstSession(addr) // live marker only; saved progress resumes next visit
-        void S.evictPlayer(addr) // flush final state + drop from cache (bounds the tick burst)
       }
     }
 

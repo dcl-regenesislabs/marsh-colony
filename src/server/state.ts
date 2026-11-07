@@ -9,7 +9,6 @@ import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type F
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
 import { trackEvent, analyticsEnabledNow } from '../shared/analytics'
-import { tutorialEnabledNow } from './tutorialConfig'
 
 const STORAGE_KEY = 'petdata-v1'
 const STAT_KEYS: StatKey[] = ['hunger', 'hygiene', 'energy', 'happiness']
@@ -319,10 +318,7 @@ function newPlayer(address: string): PlayerData {
     collection: [],
     albumClaims: [],
     ark: { launchSeen: 0, grants: [] },
-    // Normally 'intro' (runs the guided first session). When the tutorial is
-    // disabled via TUTORIAL_ENABLED=false (test worlds), start at 'done' so the
-    // player drops straight into the normal game and adopts a pet themselves.
-    firstSessionStep: tutorialEnabledNow() ? 'intro' : 'done',
+    firstSessionStep: 'intro',
     firstSessionGifts: [],
     createdAt: t,
     lastUpdated: t
@@ -435,22 +431,26 @@ export function deriveMood(pet: PetData): number {
 // ---------------------------------------------------------------------------
 // Load / save
 // ---------------------------------------------------------------------------
-/** Read a player's save, retrying a few times on failure. Returns the stored data
- *  (or null when the player genuinely has no save). Rethrows if EVERY attempt
- *  fails, so a transient error (the runtime's concurrent-request cap) is never
- *  mistaken for "new player". No timed backoff — the runtime has no server-side
- *  setTimeout; each attempt already awaits, which serialises the retry. */
-async function readPlayerWithRetry(address: string): Promise<PlayerData | null> {
+/** Read a player's save, retrying a few times. Returns { ok: true } with the data
+ *  (or null when the player genuinely has no save), or { ok: false } when EVERY
+ *  attempt failed. It NEVER throws: loadPlayer must stay a resolving call, because
+ *  the SDK's message dispatch neither awaits nor catches handlers — a rejection
+ *  would freeze the client (it stops retrying requestState after ~30s while still
+ *  holding the input lock). A failed read is handled as a transient, non-persisting
+ *  session instead (see loadPlayer), so a storage blip never clobbers real
+ *  progress. No timed backoff — the runtime has no server-side setTimeout; the real
+ *  spacing comes from the client re-issuing requestState. */
+async function readPlayer(address: string): Promise<{ ok: boolean; data: PlayerData | null }> {
   let lastErr: unknown
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await Storage.player.get<PlayerData>(address, STORAGE_KEY)
+      return { ok: true, data: await Storage.player.get<PlayerData>(address, STORAGE_KEY) }
     } catch (e) {
       lastErr = e
     }
   }
   console.log('[Server] Storage load failed (after retries) for', address, lastErr)
-  throw lastErr instanceof Error ? lastErr : new Error(`Storage load failed for ${address}`)
+  return { ok: false, data: null }
 }
 
 export async function loadPlayer(address: string): Promise<PlayerData> {
@@ -464,21 +464,22 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
   if (C.DEBUG_FORCE_FIRST_SESSION) {
     ephemeralPlayers.add(address) // skip the real save entirely, both ways
   } else {
-    // A THROWN read is a TRANSIENT failure (e.g. the runtime's concurrent-request
-    // cap under load), NOT "no save". readPlayerWithRetry rethrows after a few
-    // attempts instead of returning null, so we never fabricate a fresh player
-    // from a failed read — which would make the savePlayer() below OVERWRITE the
-    // player's real progress. Only a successful read returning no data is a new
-    // player. On a rethrow the caller simply retries the load (no clobber).
-    data = await readPlayerWithRetry(address)
+    const res = await readPlayer(address)
+    if (!res.ok) {
+      // Transient read failure (e.g. the runtime's concurrent-request cap under
+      // load). Do NOT treat it as a new player — the savePlayer() below would then
+      // OVERWRITE the player's real progress — and do NOT throw, which would freeze
+      // the client. Hand back a transient session that is NEVER cached and NEVER
+      // saved (an uncached address makes savePlayer a no-op); the next requestState
+      // re-reads and self-heals once storage recovers.
+      return newPlayer(address)
+    }
+    data = res.data
   }
   if (!data || !data.address) {
     data = newPlayer(address)
     freshPlayers.add(address) // no prior saved state -> new user (for analytics)
-    // ...and this visit is their first session — UNLESS the tutorial is disabled
-    // (TUTORIAL_ENABLED=false), in which case newPlayer() starts at 'done' and the
-    // player drops straight into the normal game with no guided onboarding.
-    if (isIncompleteFirstSessionStep(data.firstSessionStep)) firstSessionPlayers.add(address)
+    firstSessionPlayers.add(address) // ...and this visit is their first session
   } else {
     // Migrate/sanitize loaded data, then apply offline decay.
     data = sanitize(address, data)
@@ -646,17 +647,6 @@ export function getCached(address: string): PlayerData | undefined {
 
 export function allCached(): PlayerData[] {
   return [...players.values()]
-}
-
-/** Flush a player's final state to storage, then drop them from the in-memory
- *  cache. Called when a player leaves so the cache tracks ONLY online players —
- *  otherwise it grows unbounded (every unique visitor stays forever) and the tick
- *  loop re-saves all of them every pass, which floods the runtime's concurrent-
- *  request cap. Also means a reconnect re-reads from storage (no stale cache). */
-export async function evictPlayer(address: string): Promise<void> {
-  if (!players.has(address)) return
-  await savePlayer(address)
-  players.delete(address)
 }
 
 // ---------------------------------------------------------------------------
