@@ -5,8 +5,7 @@ import { resolveMushroomPositions, mushroomPlacements } from '../shared/mushroom
 import { engine, PlayerIdentityData, Transform } from '@dcl/sdk/ecs'
 import { room } from '../shared/messages'
 import type { CareAction, PlayerData, PresenceEntry } from '../shared/types'
-import { SICKNESS_CARE_CENTER_RADIUS, SICKNESS_TABLE_POSITION } from '../shared/sickness'
-import { ARK_CAPTAIN_POSITION, ARK_DONATE_RADIUS, ARK_FIRST_DONATION_WEARABLE, DEBUG_DELIVER_WEARABLE } from '../shared/config'
+import { ARK_FIRST_DONATION_WEARABLE, DEBUG_DELIVER_WEARABLE } from '../shared/config'
 import type { ArkDonateResult } from '../shared/types'
 import { mushroomRewards } from './mushroomRewards'
 import { mushroomEvent } from './mushroomEvent'
@@ -25,8 +24,6 @@ const DEPART_GRACE_MS = 10000 // don't call a departure until the session is thi
 
 // Matches the composite's tree.glb transform. The server keeps its own anchor
 // so it can validate the start of a Feed round without trusting the client.
-const FEED_TREE_POSITION = { x: 193, z: 274.75 }
-const FEED_TREE_RADIUS = 12
 
 // Track which addresses are currently connected (seen via PlayerIdentityData).
 const connected = new Set<string>()
@@ -65,19 +62,6 @@ function pushSnapshot(p: PlayerData): void {
   room.send('stateSnapshot', { json: JSON.stringify(snap) }, { to: [p.address] })
 }
 
-/** Donations happen at the Captain, by the Ark's ramp — same server-side
- *  position check as the Feed tree / Care Center. */
-function isNearCaptain(address: string): boolean {
-  const wanted = address.toLowerCase()
-  for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
-    if (identity.address.toLowerCase() !== wanted) continue
-    const transform = Transform.getOrNull(entity)
-    if (!transform) return false
-    return Math.hypot(transform.position.x - ARK_CAPTAIN_POSITION.x, transform.position.z - ARK_CAPTAIN_POSITION.z) <= ARK_DONATE_RADIUS
-  }
-  return false
-}
-
 function broadcastArk(): void {
   room.send('ark', { json: JSON.stringify(Ark.arkStatus()) })
 }
@@ -100,35 +84,16 @@ async function announceArkLaunch(launch: Ark.ArkLaunchRecord): Promise<void> {
   }
 }
 
-/** Read the authoritative player transform instead of accepting a client claim
- * that it reached the Care Center. The runtime Potion Table is the stable
- * shared anchor for this encounter. */
-function isAtSicknessCareCenter(address: string): boolean {
-  const wanted = address.toLowerCase()
-  for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
-    if (identity.address.toLowerCase() !== wanted) continue
-    const transform = Transform.getOrNull(entity)
-    if (!transform) return false
-    return Math.hypot(transform.position.x - SICKNESS_TABLE_POSITION.x, transform.position.z - SICKNESS_TABLE_POSITION.z) <= SICKNESS_CARE_CENTER_RADIUS
-  }
-  return false
-}
-
-/** A Feed result is accepted only after a player has actually reached the tree. */
-function isAtFeedTree(address: string): boolean {
-  const wanted = address.toLowerCase()
-  for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
-    if (identity.address.toLowerCase() !== wanted) continue
-    const transform = Transform.getOrNull(entity)
-    if (!transform) return false
-    return Math.hypot(transform.position.x - FEED_TREE_POSITION.x, transform.position.z - FEED_TREE_POSITION.z) <= FEED_TREE_RADIUS
-  }
-  return false
-}
-
 function broadcastPresence(): void {
+  // Only ONLINE players, not every player ever cached. The players Map is never
+  // pruned, so walking allCached() here made the presence message grow with every
+  // distinct visitor — past ~200 it hits the scene-message size cap and presence
+  // stops going out for EVERYONE. Scoping to `connected` bounds it to who's here
+  // and also stops departed players being broadcast as present (ghost pets).
   const entries: PresenceEntry[] = []
-  for (const p of S.allCached()) {
+  for (const addr of connected) {
+    const p = S.getCached(addr)
+    if (!p) continue
     const e = S.presenceFor(p)
     if (e) entries.push(e)
   }
@@ -192,7 +157,7 @@ export function server(): void {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
     await Ark.ensureArkLoaded()
-    const out = S.donatePet(p, data.petId, isNearCaptain(ctx.from))
+    const out = S.donatePet(p, data.petId)
     const pet = out.pet
     const result: ArkDonateResult = {
       ok: !!pet,
@@ -338,7 +303,7 @@ export function server(): void {
   room.onMessage('beginFeedMinigame', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
-    const notes = S.beginFeedMinigame(p, isAtFeedTree(ctx.from))
+    const notes = S.beginFeedMinigame(p)
     await S.savePlayer(ctx.from)
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)
@@ -365,7 +330,7 @@ export function server(): void {
   room.onMessage('beginSicknessCure', async (_data, ctx) => {
     if (!ctx) return
     const p = await S.loadPlayer(ctx.from)
-    const notes = S.beginSicknessCure(p, isAtSicknessCareCenter(ctx.from))
+    const notes = S.beginSicknessCure(p)
     await S.savePlayer(ctx.from)
     forwardNotes(ctx.from, notes)
     pushSnapshot(p)
@@ -468,23 +433,15 @@ export function server(): void {
         pushSnapshot(p)
         return
       }
-      const position = mushroomPlacements.get(data.slot)?.position
-      if (!position) {
+      if (!mushroomPlacements.has(data.slot)) {
         forwardNotes(ctx.from, [{ kind: 'shop', message: 'This mushroom is unavailable. Please try again.' }])
         pushSnapshot(p)
         return
       }
-      let near = false
-      for (const [entity, identity] of engine.getEntitiesWith(PlayerIdentityData)) {
-        if (identity.address.toLowerCase() !== ctx.from.toLowerCase()) continue
-        const transform = Transform.getOrNull(entity)
-        if (transform) near = Math.hypot(transform.position.x - position.x, transform.position.y - position.y, transform.position.z - position.z) <= 4
-      }
+      // No server distance check: the click itself (maxDistance 4 on the client)
+      // is the proximity gate. The server's view of the player position lagged
+      // or differed enough to reject every legit pick.
       const pet = S.slottedActivePet(p)
-      if (!near) {
-        forwardNotes(ctx.from, [{ kind: 'shop', message: 'Move closer to the mushroom.' }])
-        return
-      }
       if (!pet || pet.id !== data.petId) {
         forwardNotes(ctx.from, [{ kind: 'shop', message: 'Select a pet from My Pets first.' }])
         return
@@ -655,9 +612,15 @@ export function server(): void {
       tickAcc = 0
       if (mushroomPlacements.size < HAPPY_HOUR.entityNames.length) resolveMushroomPositions()
       void mushroomEvent.refresh()
-      for (const p of S.allCached()) {
+      // Only ONLINE players — not every player ever cached. The players Map still
+      // holds every visitor until restart (cache-growth is a separate change), but
+      // we no longer re-save ALL of them every pass, which was the burst that
+      // flooded the runtime's concurrent-request cap.
+      for (const addr of connected) {
+        const p = S.getCached(addr)
+        if (!p) continue
         S.tickPlayer(p)
-        void S.savePlayer(p.address)
+        void S.savePlayer(addr)
       }
       broadcastPresence()
 

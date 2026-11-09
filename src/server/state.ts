@@ -61,13 +61,12 @@ export function setEggCarriedState(address: string, carried: boolean): void {
   carriedEggState.set(address.toLowerCase(), carried)
 }
 
-/** Arm a cure only after server-side position validation at the Care Center. */
-export function beginSicknessCure(p: PlayerData, atCareCenter: boolean): Notify[] {
+/** Arm a cure for the active sick pet. */
+export function beginSicknessCure(p: PlayerData): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
   if (!pet.sick) return [{ kind: 'error', message: `${pet.name} is not sick.` }]
-  if (!atCareCenter) return [{ kind: 'error', message: 'Go to the Caretaker to begin the cure.' }]
 
   const key = p.address.toLowerCase()
   const existing = sicknessCureAuthorizations.get(key)
@@ -85,12 +84,11 @@ export function beginSicknessCure(p: PlayerData, atCareCenter: boolean): Notify[
   return []
 }
 
-/** Record a position-validated Feed round before its client-side result arrives. */
-export function beginFeedMinigame(p: PlayerData, atFeedTree: boolean): Notify[] {
+/** Record a Feed round before its client-side result arrives. */
+export function beginFeedMinigame(p: PlayerData): Notify[] {
   const pet = activePet(p)
   if (!pet) return [{ kind: 'error', message: 'No active pet' }]
   tickPlayer(p)
-  if (!atFeedTree) return [{ kind: 'error', message: 'Go to the tree to start feeding.' }]
 
   const key = p.address.toLowerCase()
   const existing = feedRoundAuthorizations.get(key)
@@ -431,6 +429,28 @@ export function deriveMood(pet: PetData): number {
 // ---------------------------------------------------------------------------
 // Load / save
 // ---------------------------------------------------------------------------
+/** Read a player's save, retrying a few times. Returns { ok: true } with the data
+ *  (or null when the player genuinely has no save), or { ok: false } when EVERY
+ *  attempt failed. It NEVER throws: loadPlayer must stay a resolving call, because
+ *  the SDK's message dispatch neither awaits nor catches handlers — a rejection
+ *  would freeze the client (it stops retrying requestState after ~30s while still
+ *  holding the input lock). A failed read is handled as a transient, non-persisting
+ *  session instead (see loadPlayer), so a storage blip never clobbers real
+ *  progress. No timed backoff — the runtime has no server-side setTimeout; the real
+ *  spacing comes from the client re-issuing requestState. */
+async function readPlayer(address: string): Promise<{ ok: boolean; data: PlayerData | null }> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return { ok: true, data: await Storage.player.get<PlayerData>(address, STORAGE_KEY) }
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  console.log('[Server] Storage load failed (after retries) for', address, lastErr)
+  return { ok: false, data: null }
+}
+
 export async function loadPlayer(address: string): Promise<PlayerData> {
   if (players.has(address)) {
     const cached = players.get(address)!
@@ -442,11 +462,17 @@ export async function loadPlayer(address: string): Promise<PlayerData> {
   if (C.DEBUG_FORCE_FIRST_SESSION) {
     ephemeralPlayers.add(address) // skip the real save entirely, both ways
   } else {
-    try {
-      data = await Storage.player.get<PlayerData>(address, STORAGE_KEY)
-    } catch (e) {
-      console.log('[Server] Storage load failed for', address, e)
+    const res = await readPlayer(address)
+    if (!res.ok) {
+      // Transient read failure (e.g. the runtime's concurrent-request cap under
+      // load). Do NOT treat it as a new player — the savePlayer() below would then
+      // OVERWRITE the player's real progress — and do NOT throw, which would freeze
+      // the client. Hand back a transient session that is NEVER cached and NEVER
+      // saved (an uncached address makes savePlayer a no-op); the next requestState
+      // re-reads and self-heals once storage recovers.
+      return newPlayer(address)
     }
+    data = res.data
   }
   if (!data || !data.address) {
     data = newPlayer(address)
@@ -1290,14 +1316,13 @@ export function switchPet(p: PlayerData, petId: string): Notify[] {
 // ---------------------------------------------------------------------------
 export type DonateOutcome = { notes: Notify[]; pet: PetData | null; xp: number; coins: number; firstDonation: boolean }
 
-export function donatePet(p: PlayerData, petId: string, nearCaptain: boolean): DonateOutcome {
+export function donatePet(p: PlayerData, petId: string): DonateOutcome {
   const fail = (message: string): DonateOutcome => ({ notes: [{ kind: 'error', message }], pet: null, xp: 0, coins: 0, firstDonation: false })
   if (p.hatchling) return fail('Finish with your new pet first.')
   const idx = p.pets.findIndex((x) => x.id === petId)
   if (idx === -1) return fail('That pet is no longer in your roster.')
   tickPlayer(p) // decay first, so sleep/sickness are judged on CURRENT state
   const pet = p.pets[idx]
-  if (!nearCaptain) return fail('Talk to the Captain at the Ark to donate a pet.')
   if (C.petStage(pet.size) !== 'ADULT') return fail('Only Adult pets can board the Ark.')
   if (pet.sleeping) return fail(`${pet.name} is asleep — let it wake up first.`)
   if (pet.sick) return fail(`${pet.name} is sick — cure it at the Care Center first.`)
