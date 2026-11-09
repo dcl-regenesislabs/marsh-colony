@@ -68,18 +68,62 @@ test('individual cooldown survives reconnect and lasts ten minutes from collecti
   assert.equal(view(p, start + 1199999, event).available.length, 5)
 })
 
-function controllerFixture() {
+function controllerFixture(opts = {}) {
   let now = start, value = '', reads = 0, fail = false
+  let flag = '', stored = opts.stored ?? null, storageReads = 0, writes = 0
   const { createMushroomEventController: create } = load('src/server/mushroomEvent.ts', {
-    '@dcl/sdk/server': { EnvVar: {} }
+    '@dcl/sdk/server': { EnvVar: {}, Storage: {} }
   })
-  const c = create({ now: () => now,
-    schedule: async () => { reads++; if (fail) throw new Error('env unavailable'); return value } })
+  const deps = { now: () => now,
+    schedule: async () => { reads++; if (fail) throw new Error('env unavailable'); return value },
+    manualFlag: async () => flag,
+    readManual: async () => { storageReads++; return stored },
+    writeManual: async next => { writes++; stored = next; return true } }
+  let c = create(deps)
   return { refresh: () => c.refresh(), reads: () => reads,
     state: () => c.state() && Array.from(c.state()),
     set: async next => { value = next; fail = false; now += 5001; await c.refresh() },
-    fail: async () => { fail = true; now += 5001; await c.refresh() } }
+    fail: async () => { fail = true; now += 5001; await c.refresh() },
+    flag: async next => { flag = next; now += 5001; await c.refresh() },
+    tick: async ms => { now += ms; await c.refresh() },
+    now: () => now, stored: () => stored, storageReads: () => storageReads, writes: () => writes,
+    restart: async () => { c = create(deps); now += 5001; await c.refresh() } }
 }
+
+test('START_MUSHROOM_EVENT=true opens one hour now as a manual fallback next to the schedule', async () => {
+  const { happyHourWindow: window } = shared()
+  const f = controllerFixture()
+  await f.set('2026-11-10T18:00Z')
+  await f.flag('true')
+  const manualStart = f.now()
+  assert.deepEqual(f.state(), [manualStart, Date.parse('2026-11-10T18:00Z')])
+  assert.equal(window(manualStart + 1000, f.state()).wave, manualStart)
+  // Leaving the flag on does not re-arm it, and storage is not re-read every poll.
+  await f.tick(5001); await f.tick(5001)
+  assert.equal(f.writes(), 1)
+  assert.equal(f.storageReads(), 1)
+  assert.equal(f.state()[0], manualStart)
+  // A restart keeps the same manual hour instead of starting a new one.
+  await f.restart()
+  assert.equal(f.state()[0], manualStart)
+  assert.equal(f.writes(), 1)
+  // false clears it and the schedule stays; true again opens a fresh hour.
+  await f.flag('false')
+  assert.deepEqual(f.state(), [Date.parse('2026-11-10T18:00Z')])
+  await f.flag('true')
+  assert.equal(f.state()[0], f.now())
+  // An empty / failed flag read never cancels or re-arms the manual hour.
+  const again = f.state()[0]
+  await f.flag('')
+  assert.equal(f.state()[0], again)
+})
+
+test('a manual hour started by the old flag-only version keeps running after deploy', async () => {
+  const f = controllerFixture({ stored: { enabled: true, startedAt: start } })
+  await f.flag('true')
+  assert.deepEqual(f.state(), [start])
+  assert.equal(f.writes(), 0)
+})
 
 test('schedule lists several date-times; offsets are honoured and a bare time is UTC', async () => {
   const f = controllerFixture()

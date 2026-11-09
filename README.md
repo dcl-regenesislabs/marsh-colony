@@ -107,7 +107,7 @@ To test social features locally, open the preview in two separate player session
 - Shared player and pet data contracts are defined in [`src/shared/types.ts`](src/shared/types.ts), while client/server messages live in [`src/shared/messages.ts`](src/shared/messages.ts).
 - The server is the source of truth for stats, currency, inventory, breeding, swaps, rewards, and persistence. Keep client-side changes responsive, but do not move authoritative rules out of `src/server/`.
 - Before a production release, set `DEBUG_GROW_ENABLED` to `false` in `src/shared/config.ts` to disable the development growth shortcut. `DEV_SKIP_SERVER_GATE` is also intended only for visual scene work without a live server.
-- The mushroom event runs for one hour from each date-time in the `MUSHROOM_EVENT_SCHEDULE` server env var, with no redeploy: `npx sdk-commands storage env set MUSHROOM_EVENT_SCHEDULE --value "2026-11-07T18:00Z,2026-11-08T15:00-03:00"`. Times without an offset are UTC; set the value to `off` to cancel all scheduled events.
+- The mushroom event runs for one hour from each date-time in the `MUSHROOM_EVENT_SCHEDULE` server env var, with no redeploy: `npx sdk-commands storage env set MUSHROOM_EVENT_SCHEDULE --value "2026-11-07T18:00Z,2026-11-08T15:00-03:00"`. Times without an offset are UTC; set the value to `off` to cancel all scheduled events. Manual fallback: `npx sdk-commands storage env set START_MUSHROOM_EVENT --value true` opens one hour right away (set it to `false` and back to `true` to start another).
 - To view server logs in the Explorer, add the appropriate wallet address to `logsPermissions` in `scene.json`.
 
 ## Project status
