@@ -26,7 +26,7 @@ test('blocks offensive names in English, Spanish and Portuguese', () => {
 
 test('blocks common tricks: case, accents, look-alikes, separators, stretching, glued words', () => {
   for (const name of ['fUcK', 'F.U.C.K', 'f u c k', 'fuuuuck', 'xFuckx', 'N1gg4', 'a$$', 'Pelotüdo',
-    'B1tch', 'Hij0 de puta', 'iamawhore', '🖕']) {
+    'B1tch', 'Niga', 'nigah', 'Nigguh', 'Hij0 de puta', 'iamawhore', '🖕']) {
     assert.equal(filter.isBlockedName(name), true, name)
   }
 })

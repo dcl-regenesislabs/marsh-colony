@@ -5,6 +5,8 @@
 
 /** Blocked as a whole word or phrase ("Ass" is blocked, "Cassie" is not). */
 export const BLOCKED_WORDS: readonly string[] = [
+  "niga",
+  "nibba",
   "2 girls 1 cup",
   "2g1c",
   "acrotomophilia",
@@ -454,6 +456,8 @@ export const BLOCKED_WORDS: readonly string[] = [
 
 /** Blocked anywhere in the name, even glued to other words ("xfuckx"). */
 export const BLOCKED_ANYWHERE: readonly string[] = [
+  "nigah",
+  "niggu",
   "arromba",
   "asshole",
   "bitch",
