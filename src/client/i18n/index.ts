@@ -109,6 +109,8 @@ type Dictionary = Record<string, string>
 // the gameplay code is migrated incrementally to t('namespace.key'). New copy
 // should always use t() below.
 const ES: Dictionary = {
+  'That name is not allowed. Try another one.': 'Ese nombre no está permitido. Prueba con otro.',
+  'Pet names can have up to 12 characters.': 'Los nombres pueden tener hasta 12 caracteres.',
   'Your pet is already an adult.': 'Tu mascota ya es adulta.',
   'Select a pet from My Pets first.': 'Selecciona primero una mascota de Mis Mascotas.',
   'This mushroom is unavailable. Please try again.': 'Este hongo no está disponible. Inténtalo de nuevo.',
@@ -294,6 +296,8 @@ const ES: Dictionary = {
 }
 
 const PT: Dictionary = {
+  'That name is not allowed. Try another one.': 'Esse nome não é permitido. Tente outro.',
+  'Pet names can have up to 12 characters.': 'Os nomes podem ter até 12 caracteres.',
   'Your pet is already an adult.': 'Seu pet já é adulto.',
   'Select a pet from My Pets first.': 'Selecione primeiro um pet em Meus Pets.',
   'This mushroom is unavailable. Please try again.': 'Este cogumelo não está disponível. Tente novamente.',
@@ -644,6 +648,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'input.name.placeholder': 'Type a name...',
     'input.name.limit': 'Max {max} characters',
     'input.name.required': 'Give your pet a name to continue.',
+    'input.name.blocked': 'That name is not allowed',
     'breed.name.required': 'Give your offspring a name to continue.',
     'breed.potion.price': '{price} coins each',
     'breed.potion.add': 'Add',
@@ -752,6 +757,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'input.name.placeholder': 'Escribe un nombre...',
     'input.name.limit': 'Máx. {max} caracteres',
     'input.name.required': 'Nombra a tu mascota para continuar.',
+    'input.name.blocked': 'Ese nombre no está permitido',
     'breed.name.required': 'Nombra a tu cría para continuar.',
     'breed.potion.price': '{price} monedas c/u',
     'breed.potion.add': 'Añadir',
@@ -860,6 +866,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'input.name.placeholder': 'Digite um nome...',
     'input.name.limit': 'Máx. {max} caracteres',
     'input.name.required': 'Dê um nome ao seu pet para continuar.',
+    'input.name.blocked': 'Esse nome não é permitido',
     'breed.name.required': 'Dê um nome à sua cria para continuar.',
     'breed.potion.price': '{price} moedas cada',
     'breed.potion.add': 'Adicionar',
