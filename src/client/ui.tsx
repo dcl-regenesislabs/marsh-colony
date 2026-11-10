@@ -11,6 +11,7 @@ import { HappyHourCard } from './ui/happyHourCard'
 import ReactEcs, { InteractableArea, ReactEcsRenderer, Label as EcsLabel, ScreenInsetArea, UiEntity, Input } from '@dcl/sdk/react-ecs'
 import { engine, InputAction, inputSystem, PointerEventType, UiCanvasInformation } from '@dcl/sdk/ecs'
 import * as Cfg from '../shared/config'
+import { isBlockedName, petNameProblem, PET_NAME_MAX } from '../shared/nameFilter'
 import { cancelArkRedeem, confirmArkRedeem, openArkConfirm, startArkRedeem } from './arkRedeem'
 import type { CareAction, PetData, Rarity } from '../shared/types'
 import { actions, clientState, petActivityActive, discardHatchling, keepHatchling, pushToast, switchActivePet, hasPendingHatchling } from './state'
@@ -696,9 +697,17 @@ const PILL_CHIP_ASPECT = (PILL_BOX.chip_orange.x1 - PILL_BOX.chip_orange.x0) / (
 const PILL_HALF_ASPECT = (PILL_BOX.half_green.x1 - PILL_BOX.half_green.x0) / (PILL_BOX.half_green.y1 - PILL_BOX.half_green.y0)
 // Soft tan edge for the name field on the revamp panels' cream background.
 const ADOPT_INPUT_BORDER: Color = { r: 0.87, g: 0.8, b: 0.71, a: 1 }
-const PET_NAME_CHARACTER_LIMIT = 12
+const PET_NAME_CHARACTER_LIMIT = PET_NAME_MAX
 function petNameLimitMessage(): string {
   return t('input.name.limit', { max: PET_NAME_CHARACTER_LIMIT })
+}
+/** Red warning under the name field, or '' when the name is fine. */
+function petNameWarning(name: string): string {
+  // Trimmed, like petNameProblem and the server, so all three agree.
+  const trimmed = name.trim()
+  if (trimmed.length >= PET_NAME_CHARACTER_LIMIT) return petNameLimitMessage()
+  if (isBlockedName(trimmed)) return t('input.name.blocked')
+  return ''
 }
 
 function PillButton(props: {
@@ -1452,8 +1461,9 @@ function AdoptPanel() {
   // players can't skip past the input (many missed it and got stuck wondering why
   // nothing happened).
   const named = uiState.adoptName.trim().length > 0
-  const nameAtLimit = uiState.adoptName.length >= PET_NAME_CHARACTER_LIMIT
-  const nameTooLong = uiState.adoptName.length > PET_NAME_CHARACTER_LIMIT
+  const nameWarning = petNameWarning(uiState.adoptName)
+  const nameAtLimit = nameWarning !== ''
+  const nameInvalid = petNameProblem(uiState.adoptName) !== null
   const halfW = S(165)
   const halfH = Math.round(halfW / PILL_HALF_ASPECT)
   return (
@@ -1493,8 +1503,8 @@ function AdoptPanel() {
         />
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(6) }, alignItems: 'center', justifyContent: 'center' }}>
-        {!slotsFree && !nameAtLimit && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {nameAtLimit && <Label value={petNameLimitMessage()} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {slotsFree && nameAtLimit && <Label value={nameWarning} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
         {slotsFree && !named && !nameAtLimit && <Label value={t('input.name.required')} fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(4) } }}>
@@ -1509,7 +1519,7 @@ function AdoptPanel() {
             height={halfH}
             fontSize={S(21)}
             pulse
-            disabled={!named || nameTooLong}
+            disabled={!named || nameInvalid}
             onClick={() => {
               // Adoption gives an egg — but you collect it FROM the Caretaker
               // (an arrow guides you there), not spawned into your hand from
@@ -1546,7 +1556,8 @@ function AdoptPanel() {
  * modal underneath, preserving native keyboard focus without intercepting taps. */
 function MobileNameMagnifier(props: { target: MobileNameInput }) {
   const value = props.target === 'adopt' ? uiState.adoptName : uiState.breedName
-  const nameAtLimit = value.length >= PET_NAME_CHARACTER_LIMIT
+  const nameWarning = petNameWarning(value)
+  const nameAtLimit = nameWarning !== ''
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
   // The mobile virtual canvas grows with DPR. Use canvas fractions so the lens
   // starts on top of the actual input on any density, rather than at a fixed px.
@@ -1568,7 +1579,7 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
     >
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: nameAtLimit ? LOC.red : LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
         <Label value={value.trim() ? value : t('input.name.placeholder')} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
-        {nameAtLimit && <Label value={`${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${petNameLimitMessage()}`} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
+        {nameAtLimit && <Label value={value.trim().length >= PET_NAME_CHARACTER_LIMIT ? `${value.trim().length}/${PET_NAME_CHARACTER_LIMIT} - ${petNameLimitMessage()}` : nameWarning} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
       </UiEntity>
     </UiEntity>
   )
@@ -1603,8 +1614,9 @@ function BreedNoticePill(props: { marginTop: number }) {
 function BreedNamePanel() {
   if (uiState.panel !== 'breedName') return <UiEntity />
   const named = uiState.breedName.trim().length > 0
-  const nameAtLimit = uiState.breedName.length >= PET_NAME_CHARACTER_LIMIT
-  const nameTooLong = uiState.breedName.length > PET_NAME_CHARACTER_LIMIT
+  const nameWarning = petNameWarning(uiState.breedName)
+  const nameAtLimit = nameWarning !== ''
+  const nameInvalid = petNameProblem(uiState.breedName) !== null
   const potions = clientState.player?.inventory.rarityPotions ?? 0
   const coins = clientState.player?.currency ?? 0
   const hasPotion = potions > 0
@@ -1707,7 +1719,7 @@ function BreedNamePanel() {
           whether a potion is on this breed and the breeding fee. */}
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(8) }, alignItems: 'center', justifyContent: 'center' }}>
         <Label
-          value={nameAtLimit ? petNameLimitMessage() : noticeOn ? breedNotice.text : !named ? t('breed.name.required') : `${usingPotion ? `${t('breed.potion.added')}  ·  ` : ''}${lent ? t('breed.cost.free') : t('breed.cost.standard', { coins: Cfg.BREED_COST })}`}
+          value={nameAtLimit ? nameWarning : noticeOn ? breedNotice.text : !named ? t('breed.name.required') : `${usingPotion ? `${t('breed.potion.added')}  ·  ` : ''}${lent ? t('breed.cost.free') : t('breed.cost.standard', { coins: Cfg.BREED_COST })}`}
           fontSize={S(15)}
           color={nameAtLimit ? LOC.red : noticeOn || !named ? LOC.orange : PET_UI.muted}
           textAlign="middle-center"
@@ -1725,7 +1737,7 @@ function BreedNamePanel() {
           height={breedH}
           fontSize={S(21)}
           pulse
-          disabled={!named || nameTooLong}
+          disabled={!named || nameInvalid}
           onClick={() => {
             const name = uiState.breedName.trim()
             if (!name) return
