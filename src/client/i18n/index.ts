@@ -110,7 +110,7 @@ type Dictionary = Record<string, string>
 // should always use t() below.
 const ES: Dictionary = {
   'That name is not allowed. Try another one.': 'Ese nombre no está permitido. Prueba con otro.',
-  'Pet names can have up to 12 characters.': 'Los nombres pueden tener hasta 12 caracteres.',
+  'That name is too long.': 'Ese nombre es demasiado largo.',
   'Your pet is already an adult.': 'Tu mascota ya es adulta.',
   'Select a pet from My Pets first.': 'Selecciona primero una mascota de Mis Mascotas.',
   'This mushroom is unavailable. Please try again.': 'Este hongo no está disponible. Inténtalo de nuevo.',
@@ -297,7 +297,7 @@ const ES: Dictionary = {
 
 const PT: Dictionary = {
   'That name is not allowed. Try another one.': 'Esse nome não é permitido. Tente outro.',
-  'Pet names can have up to 12 characters.': 'Os nomes podem ter até 12 caracteres.',
+  'That name is too long.': 'Esse nome é longo demais.',
   'Your pet is already an adult.': 'Seu pet já é adulto.',
   'Select a pet from My Pets first.': 'Selecione primeiro um pet em Meus Pets.',
   'This mushroom is unavailable. Please try again.': 'Este cogumelo não está disponível. Tente novamente.',

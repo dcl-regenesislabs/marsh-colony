@@ -8,7 +8,7 @@ import { Storage } from '@dcl/sdk/server'
 import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
-import { isBlockedName, petNameProblem, PET_NAME_MAX } from '../shared/nameFilter'
+import { isBlockedName, petNameProblem } from '../shared/nameFilter'
 import { trackEvent, analyticsEnabledNow } from '../shared/analytics'
 
 const STORAGE_KEY = 'petdata-v1'
@@ -528,7 +528,7 @@ function migratePet<T extends PetData>(pet: T): T {
 /** Server gate for a typed pet name (the client checks too, but can be bypassed). */
 function petNameError(name: string): Notify[] | null {
   const problem = petNameProblem(name)
-  if (problem === 'tooLong') return [{ kind: 'error', message: `Pet names can have up to ${PET_NAME_MAX} characters.` }]
+  if (problem === 'tooLong') return [{ kind: 'error', message: 'That name is too long.' }]
   if (problem === 'blocked') return [{ kind: 'error', message: 'That name is not allowed. Try another one.' }]
   return null
 }

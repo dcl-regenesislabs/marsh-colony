@@ -26,7 +26,7 @@ test('blocks offensive names in English, Spanish and Portuguese', () => {
 
 test('blocks common tricks: case, accents, look-alikes, separators, stretching, glued words', () => {
   for (const name of ['fUcK', 'F.U.C.K', 'f u c k', 'fuuuuck', 'xFuckx', 'N1gg4', 'a$$', 'Pelotüdo',
-    'B1tch', 'Niga', 'nigah', 'Nigguh', 'Hij0 de puta', 'iamawhore', '🖕']) {
+    'B1tch', 'S&M', 'g-spot', 'Niga', 'nigah', 'Nigguh', 'Hij0 de puta', 'iamawhore', '🖕']) {
     assert.equal(filter.isBlockedName(name), true, name)
   }
 })
@@ -34,7 +34,9 @@ test('blocks common tricks: case, accents, look-alikes, separators, stretching, 
 test('keeps innocent names that look like blocked words', () => {
   for (const name of ['Sprout', 'Pepito', 'Cassie', 'Assistant', 'Classic', 'Bobbi', 'Bobs', 'Peacock',
     'Dickens', 'Ignazio', 'Computadora', 'Burro', 'Pinto', 'Negro', 'Concha', 'Grape', 'Pussycat',
-    'Gen-2 Sprout', 'Luna 3', 'Mr. Fluffy', '']) {
+    'Gen-2 Sprout', 'Luna 3', 'Mr. Fluffy', '',
+    // Matched the 2-letter phrase "s&m" before short phrases became whole-word only.
+    'Smokey', 'Smudge', 'Cosmo', 'Jasmine', 'Smol', 'Osmo', 'Erasmo', 'Rasmus', 'Luis Max', 'Boots Mia', 'Lolita']) {
     assert.equal(filter.isBlockedName(name), false, name)
   }
 })

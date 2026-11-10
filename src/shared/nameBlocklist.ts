@@ -249,7 +249,6 @@ export const BLOCKED_WORDS: readonly string[] = [
   "leather straight jacket",
   "lemon party",
   "livesex",
-  "lolita",
   "make me come",
   "male squirting",
   "malparida",

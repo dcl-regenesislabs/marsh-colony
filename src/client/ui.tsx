@@ -703,8 +703,10 @@ function petNameLimitMessage(): string {
 }
 /** Red warning under the name field, or '' when the name is fine. */
 function petNameWarning(name: string): string {
-  if (name.length >= PET_NAME_CHARACTER_LIMIT) return petNameLimitMessage()
-  if (isBlockedName(name.trim())) return t('input.name.blocked')
+  // Trimmed, like petNameProblem and the server, so all three agree.
+  const trimmed = name.trim()
+  if (trimmed.length >= PET_NAME_CHARACTER_LIMIT) return petNameLimitMessage()
+  if (isBlockedName(trimmed)) return t('input.name.blocked')
   return ''
 }
 
@@ -1501,8 +1503,8 @@ function AdoptPanel() {
         />
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', height: S(30), margin: { top: S(6) }, alignItems: 'center', justifyContent: 'center' }}>
-        {!slotsFree && !nameAtLimit && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
-        {nameAtLimit && <Label value={nameWarning} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {!slotsFree && <Label value="No free pet slots. Buy one first." fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
+        {slotsFree && nameAtLimit && <Label value={nameWarning} fontSize={S(15)} color={LOC.red} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
         {slotsFree && !named && !nameAtLimit && <Label value={t('input.name.required')} fontSize={S(15)} color={LOC.orange} textAlign="middle-center" uiTransform={{ width: '100%', height: S(24) }} />}
       </UiEntity>
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', justifyContent: 'center', margin: { top: S(4) } }}>
@@ -1577,7 +1579,7 @@ function MobileNameMagnifier(props: { target: MobileNameInput }) {
     >
       <UiEntity uiTransform={{ positionType: 'absolute', position: { top, left: '50%' }, margin: { left: -width / 2 }, width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: { left: padding, right: padding }, borderRadius: Math.round(canvasH * 0.025), borderWidth: border, borderColor: nameAtLimit ? LOC.red : LOC.violet, opacity: zoom, pointerFilter: 'none' }} uiBackground={{ color: LOC.white }}>
         <Label value={value.trim() ? value : t('input.name.placeholder')} fontSize={fontSize} color={nameAtLimit ? LOC.red : value.trim() ? PET_UI.ink : PET_UI.muted} textAlign="middle-center" uiTransform={{ width: '100%', height: nameAtLimit ? '60%' : '100%' }} />
-        {nameAtLimit && <Label value={value.length >= PET_NAME_CHARACTER_LIMIT ? `${value.length}/${PET_NAME_CHARACTER_LIMIT} - ${petNameLimitMessage()}` : nameWarning} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
+        {nameAtLimit && <Label value={value.trim().length >= PET_NAME_CHARACTER_LIMIT ? `${value.trim().length}/${PET_NAME_CHARACTER_LIMIT} - ${petNameLimitMessage()}` : nameWarning} fontSize={Math.round(fontSize * 0.6)} color={LOC.red} textAlign="middle-center" textWrap="nowrap" uiTransform={{ width: '100%', height: '35%' }} />}
       </UiEntity>
     </UiEntity>
   )

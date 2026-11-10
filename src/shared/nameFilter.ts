@@ -22,6 +22,8 @@ function words(text: string): string[] {
   return folded.split(/[^a-z]+/).filter(Boolean)
 }
 
+const MIN_PHRASE_LETTERS = 5
+
 const collapse = (s: string): string => s.replace(/(.)\1+/g, '$1')
 // Only collapse when someone stretched a word ("fuuuuck"), so real double
 // letters ("Bobbi" vs "boobs") are never folded together.
@@ -34,9 +36,12 @@ const phrases: string[] = []
 const symbols: string[] = []
 for (const entry of BLOCKED_WORDS) {
   const parts = words(entry)
+  const joined = parts.join('')
   if (parts.length === 0) symbols.push(entry) // e.g. an emoji
-  else if (parts.length === 1) singles.add(parts[0])
-  else phrases.push(parts.join(''))
+  // Short phrases ("s&m" -> "sm") would match inside innocent names
+  // ("Smokey", "Jasmine"), so they only count as a whole word.
+  else if (parts.length === 1 || joined.length < MIN_PHRASE_LETTERS) singles.add(joined)
+  else phrases.push(joined)
 }
 const singlesCollapsed = new Set([...singles].map(collapse))
 
