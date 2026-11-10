@@ -8,6 +8,7 @@ import { Storage } from '@dcl/sdk/server'
 import { FIRST_SESSION_STEPS, type CareAction, type FirstSessionEggState, type FirstSessionStep, type LanguagePreference, type PetData, type PlayerData, type PresenceEntry, type Rarity, type StatKey } from '../shared/types'
 import * as C from '../shared/config'
 import { rollRarity } from '../shared/breeding'
+import { isBlockedName, petNameProblem } from '../shared/nameFilter'
 import { trackEvent, analyticsEnabledNow } from '../shared/analytics'
 
 const STORAGE_KEY = 'petdata-v1'
@@ -517,7 +518,19 @@ function migratePet<T extends PetData>(pet: T): T {
   const migratingNap = pet.sleeping && pet.sleepUntil <= 0 && pet.sleepStartEnergy <= 0
   const sleepUntil = migratingNap ? now() + C.SLEEP_DURATION_MS : pet.sleepUntil
   const sleepStartEnergy = migratingNap ? pet.energy : pet.sleepStartEnergy
-  return { ...pet, species, head: parts.head, body: parts.body, rarity: normalizeRarity(pet.rarity), sleepUntil, sleepStartEnergy }
+  // Names saved before the blocklist: replace a blocked one with the species
+  // name, keeping the "Gen-N" prefix of bred pets.
+  const gen = /^Gen-\d+ /.exec(pet.name ?? '')?.[0] ?? ''
+  const name = isBlockedName(pet.name ?? '') ? `${gen}${C.speciesLabel(species)}` : pet.name
+  return { ...pet, name, species, head: parts.head, body: parts.body, rarity: normalizeRarity(pet.rarity), sleepUntil, sleepStartEnergy }
+}
+
+/** Server gate for a typed pet name (the client checks too, but can be bypassed). */
+function petNameError(name: string): Notify[] | null {
+  const problem = petNameProblem(name)
+  if (problem === 'tooLong') return [{ kind: 'error', message: 'That name is too long.' }]
+  if (problem === 'blocked') return [{ kind: 'error', message: 'That name is not allowed. Try another one.' }]
+  return null
 }
 
 function sanitize(address: string, d: PlayerData): PlayerData {
@@ -765,6 +778,9 @@ export function adopt(p: PlayerData, species: string, name: string): Notify[] {
   if (C.SPECIES.indexOf(species) === -1) {
     return [{ kind: 'error', message: 'Unknown species' }]
   }
+  name = (name ?? '').replace(/[\r\n\t]/g, ' ').trim()
+  const nameError = petNameError(name)
+  if (nameError) return nameError
   if (p.hatchling) {
     return [{ kind: 'error', message: 'Place or discard your current pet first' }]
   }
@@ -815,6 +831,10 @@ export function discardPet(p: PlayerData): Notify[] {
 // genetics later) and starts fresh.
 // ---------------------------------------------------------------------------
 export function breed(p: PlayerData, partnerId: string, name = '', usePotion = false): { notes: Notify[]; rarity: Rarity | null; species?: string; name?: string } {
+  // Checked first, so a rejected name never costs coins or a potion.
+  name = (name ?? '').replace(/[\r\n\t]/g, ' ').trim()
+  const nameError = petNameError(name)
+  if (nameError) return { notes: nameError, rarity: null }
   tickPlayer(p)
   const a = activePet(p)
   if (!a) return { notes: [{ kind: 'error', message: 'No active pet' }], rarity: null }
