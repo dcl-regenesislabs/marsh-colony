@@ -20,12 +20,17 @@ export function mushroomEventEligible(p: Pick<PlayerData, 'firstSessionStep'>): 
 }
 export function happyHourWindow(now: number, schedule: MushroomEventSchedule | null): { wave: number; endsAt: number } | null {
   const duration = HAPPY_HOUR.durationMinutes * 60000
-  let wave = 0
-  // Overlapping entries: the latest start wins and opens a fresh hour.
-  for (const start of schedule ?? []) {
-    if (start > wave && start <= now && now < start + duration) wave = start
+  // A start inside an hour that is already running is ignored. Otherwise it
+  // would open a fresh hour and reset every pick cooldown (each pick is an
+  // instant Adult), e.g. the manual flag used during a scheduled event.
+  let end = -Infinity
+  for (const start of [...(schedule ?? [])].sort((a, b) => a - b)) {
+    if (start > now) break
+    if (start < end) continue
+    end = start + duration
+    if (now < end) return { wave: start, endsAt: end }
   }
-  return wave ? { wave, endsAt: wave + duration } : null
+  return null
 }
 export function happyHourView(p: PlayerData, now: number, schedule: MushroomEventSchedule | null,
   slots: number[] = HAPPY_HOUR.entityNames.map((_, i) => i)): HappyHourView | null {

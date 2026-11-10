@@ -19,7 +19,7 @@ const shared = () => load('src/shared/happyHour.ts', {
 })
 const start = Date.parse('2026-11-03T18:00:00Z')
 
-test('each scheduled start opens its own hour: boundaries, stable activation ID, latest start wins an overlap', () => {
+test('each scheduled start opens its own hour; a start inside a running hour never restarts it', () => {
   const { happyHourWindow: window } = shared()
   const nextDay = start + 86400000, overlap = nextDay + 1800000
   const event = [start, nextDay, overlap]
@@ -32,10 +32,14 @@ test('each scheduled start opens its own hour: boundaries, stable activation ID,
   assert.equal(window(start + 3600000, event), null)
   assert.equal(window(nextDay - 1, event), null)
   assert.equal(window(nextDay, event).wave, nextDay)
+  // The overlapping start is ignored: same hour, same activation ID, so pick
+  // cooldowns are not reset, and the event ends with the first hour.
   assert.equal(window(overlap - 1, event).wave, nextDay)
-  assert.equal(window(overlap, event).wave, overlap)
-  assert.equal(window(nextDay + 3600000, event).endsAt, overlap + 3600000)
-  assert.equal(window(overlap + 3600000, event), null)
+  assert.equal(window(overlap, event).wave, nextDay)
+  assert.equal(window(nextDay + 3599999, event).endsAt, nextDay + 3600000)
+  assert.equal(window(nextDay + 3600000, event), null)
+  // Input order does not matter.
+  assert.equal(window(overlap, [overlap, nextDay]).wave, nextDay)
 })
 
 test('every incomplete tutorial checkpoint hides the event; done immediately sees remaining global time', () => {
@@ -72,7 +76,8 @@ function controllerFixture(opts = {}) {
   let now = start, value = '', reads = 0, fail = false
   let flag = '', stored = opts.stored ?? null, storageReads = 0, writes = 0
   const { createMushroomEventController: create } = load('src/server/mushroomEvent.ts', {
-    '@dcl/sdk/server': { EnvVar: {}, Storage: {} }
+    '@dcl/sdk/server': { EnvVar: {}, Storage: {} },
+    '../shared/happyHour': shared()
   })
   const deps = { now: () => now,
     schedule: async () => { reads++; if (fail) throw new Error('env unavailable'); return value },
@@ -84,10 +89,11 @@ function controllerFixture(opts = {}) {
     state: () => c.state() && Array.from(c.state()),
     set: async next => { value = next; fail = false; now += 5001; await c.refresh() },
     fail: async () => { fail = true; now += 5001; await c.refresh() },
-    flag: async next => { flag = next; now += 5001; await c.refresh() },
+    // The manual flag is polled every 30 s.
+    flag: async next => { flag = next; now += 30001; await c.refresh() },
     tick: async ms => { now += ms; await c.refresh() },
     now: () => now, stored: () => stored, storageReads: () => storageReads, writes: () => writes,
-    restart: async () => { c = create(deps); now += 5001; await c.refresh() } }
+    restart: async () => { c = create(deps); now += 30001; await c.refresh() } }
 }
 
 test('START_MUSHROOM_EVENT=true opens one hour now as a manual fallback next to the schedule', async () => {
@@ -116,6 +122,80 @@ test('START_MUSHROOM_EVENT=true opens one hour now as a manual fallback next to 
   const again = f.state()[0]
   await f.flag('')
   assert.equal(f.state()[0], again)
+})
+
+test('the manual flag is read every 30 s, not on every 5 s schedule poll', async () => {
+  let flagReads = 0
+  const { createMushroomEventController: create } = load('src/server/mushroomEvent.ts', {
+    '@dcl/sdk/server': { EnvVar: {}, Storage: {} }, '../shared/happyHour': shared()
+  })
+  let now = start
+  const c = create({ now: () => now, schedule: async () => '', manualFlag: async () => { flagReads++; return '' },
+    readManual: async () => null, writeManual: async () => true })
+  for (let i = 0; i < 12; i++) { await c.refresh(); now += 5001 }
+  assert.equal(flagReads, 2)
+})
+
+test('"off" stops only the schedule; a manual hour runs until START_MUSHROOM_EVENT is false', async () => {
+  const f = controllerFixture()
+  await f.set('2026-11-10T18:00Z')
+  await f.flag('true')
+  const manualStart = f.now()
+  await f.set('off')
+  assert.deepEqual(f.state(), [manualStart])
+  await f.flag('')
+  assert.deepEqual(f.state(), [manualStart]) // a deleted / empty flag keeps it running
+  await f.flag('false')
+  assert.deepEqual(f.state(), [])
+})
+
+test('"off" mixed with other tokens still cancels the schedule', async () => {
+  for (const value of ['off,', 'off, off', 'OFF 2026-11-10T18:00Z', ' off ']) {
+    const f = controllerFixture()
+    await f.set('2026-11-10T18:00Z')
+    await f.set(value)
+    assert.deepEqual(f.state(), [], value)
+  }
+})
+
+test('the manual flag during a running scheduled hour joins it instead of restarting it', async () => {
+  const { happyHourView: view } = shared()
+  const f = controllerFixture()
+  await f.set('2026-11-03T18:00Z') // now is inside this hour
+  const p = { firstSessionStep: 'done', counters: { 'happyHour:2': start + 1000 } }
+  assert.equal(view(p, f.now(), f.state()).available.includes(2), false)
+  await f.flag('true')
+  assert.deepEqual(f.state(), [start, start])
+  assert.equal(f.stored().startedAt, start)
+  const v = view(p, f.now(), f.state())
+  assert.equal(v.wave, start)
+  assert.equal(v.endsAt, start + 3600000)
+  assert.equal(v.available.includes(2), false) // the cooldown is not reset
+})
+
+test('a scheduled start inside a manual hour does not restart it', async () => {
+  const { happyHourWindow: window } = shared()
+  const f = controllerFixture()
+  await f.flag('true')
+  const manualStart = f.now()
+  await f.set(new Date(manualStart + 1800000).toISOString().slice(0, 16) + 'Z')
+  assert.equal(window(manualStart + 1800000, f.state()).wave, manualStart)
+  assert.equal(window(manualStart + 3600000, f.state()), null)
+})
+
+test('schedule entries less than an hour apart keep only the first one', async () => {
+  const f = controllerFixture()
+  // Same hour typed twice in two time zones, plus one 30 minutes later.
+  await f.set('2026-11-10T18:00Z, 2026-11-10T15:00-03:00, 2026-11-10T18:30Z, 2026-11-10T19:00Z')
+  assert.deepEqual(f.state(), [Date.parse('2026-11-10T18:00Z'), Date.parse('2026-11-10T19:00Z')])
+})
+
+test('starts older than a day are dropped from the schedule', async () => {
+  const f = controllerFixture()
+  await f.set('2026-11-01T18:00Z, 2026-11-03T12:00Z, 2026-11-04T18:00Z')
+  assert.deepEqual(f.state(), [Date.parse('2026-11-03T12:00Z'), Date.parse('2026-11-04T18:00Z')])
+  await f.tick(86400000)
+  assert.deepEqual(f.state(), [Date.parse('2026-11-04T18:00Z')])
 })
 
 test('a manual hour started by the old flag-only version keeps running after deploy', async () => {
