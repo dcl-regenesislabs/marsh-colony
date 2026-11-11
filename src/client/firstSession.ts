@@ -52,7 +52,7 @@ import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 import { HAPPY_HOUR } from '../shared/happyHour'
 import { showMushroomGlow } from './mushroomGlow'
 import { translateText } from './i18n'
-import { objectPosition } from './objects'
+import { guideArrowGoal } from './tutorialArrow'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
@@ -704,15 +704,35 @@ function markSaid(): void {
   repeated = false
 }
 
+let captainEntity: Entity | null = null
+
+/** The Captain's live position, or null until his entity is in the scene.
+ *  Resolved once, then kept: no per-frame name scan. */
+function captainPosition(): Vector3 | null {
+  if (captainEntity === null) {
+    const e = engine.getEntityOrNullByName(EntityNames.Captain_glb)
+    if (!e || !Transform.has(e)) return null
+    captainEntity = e
+  }
+  return Transform.get(captainEntity).position
+}
+
 /** Where the tutorial's green arrow points right now, or null for no arrow. */
 function guideArrowTarget(): Vector3 | null {
-  if (!firstSessionActive()) return null
-  if (step === 'grow' && growIntroDone && !mushroomEaten && mushroomPop < 0) {
+  const goal = guideArrowGoal({
+    active: firstSessionActive(),
+    step,
+    growIntroDone,
+    mushroomEaten,
+    mushroomPopping: mushroomPop >= 0,
+    captainHeard,
+    dialogOpen: clientState.dialog.open
+  })
+  if (goal === 'mushroom') {
     const e = findMushroom()
     return e === null ? null : Transform.get(e).position
   }
-  // Last step: many players never found the Ark, so the tutorial never ended.
-  if (step === 'captain' && !captainHeard && !clientState.dialog.open) return objectPosition(EntityNames.Captain_glb)
+  if (goal === 'captain') return captainPosition()
   return null
 }
 
