@@ -52,6 +52,7 @@ import { DEBUG_FORCE_FIRST_SESSION } from '../shared/config'
 import { HAPPY_HOUR } from '../shared/happyHour'
 import { showMushroomGlow } from './mushroomGlow'
 import { translateText } from './i18n'
+import { guideArrowGoal } from './tutorialArrow'
 
 export function firstSessionActive(): boolean {
   return clientState.firstSession && step !== 'done'
@@ -287,10 +288,6 @@ function updateMushroom(dt: number): void {
     else return
   }
   const want = firstSessionActive() && step === 'grow' && !mushroomEaten
-  const guideToMushroom = want && growIntroDone
-  clientState.firstSessionArrow = guideToMushroom
-  if (guideToMushroom) showArrowTo(Transform.get(e).position, 'firstSession')
-  else hideArrow('firstSession')
   if (want && growIntroDone && playerDistanceTo(Transform.get(e).position) <= MUSHROOM_PICK_REACH) eatMushroom()
   if (want === mushroomShown) return
   mushroomShown = want
@@ -707,8 +704,48 @@ function markSaid(): void {
   repeated = false
 }
 
+let captainEntity: Entity | null = null
+
+/** The Captain's live position, or null until his entity is in the scene.
+ *  Resolved once, then kept: no per-frame name scan. */
+function captainPosition(): Vector3 | null {
+  if (captainEntity === null) {
+    const e = engine.getEntityOrNullByName(EntityNames.Captain_glb)
+    if (!e || !Transform.has(e)) return null
+    captainEntity = e
+  }
+  return Transform.get(captainEntity).position
+}
+
+/** Where the tutorial's green arrow points right now, or null for no arrow. */
+function guideArrowTarget(): Vector3 | null {
+  const goal = guideArrowGoal({
+    active: firstSessionActive(),
+    step,
+    growIntroDone,
+    mushroomEaten,
+    mushroomPopping: mushroomPop >= 0,
+    captainHeard,
+    dialogOpen: clientState.dialog.open
+  })
+  if (goal === 'mushroom') {
+    const e = findMushroom()
+    return e === null ? null : Transform.get(e).position
+  }
+  if (goal === 'captain') return captainPosition()
+  return null
+}
+
+function updateGuideArrow(): void {
+  const target = guideArrowTarget()
+  clientState.firstSessionArrow = target !== null
+  if (target) showArrowTo(target, 'firstSession')
+  else hideArrow('firstSession')
+}
+
 function firstSessionSystem(dt: number): void {
   updateMushroom(dt) // also hides it for everyone who is not on the 'grow' step
+  updateGuideArrow()
   if (!firstSessionActive()) {
     firstSessionHud.pulse = null
     firstSessionHud.task = ''

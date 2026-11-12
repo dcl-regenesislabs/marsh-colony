@@ -5,6 +5,7 @@
 //  - NATIVE MOBILE: Whistle/Stay + active pet actions
 // Reads the client mirror of authoritative server state.
 
+import { tutorialCardText } from './tutorialArrow'
 import { REVAMP_PANEL_W, REVAMP_PANEL_H, REVAMP_PANEL_BG, REVAMP_CLOSE } from './ui/revampLayout'
 import { canPresentHappyHour } from './ui/happyHourPresentation'
 import { HappyHourCard } from './ui/happyHourCard'
@@ -3092,8 +3093,7 @@ let taskShownAt = 0
 function firstSessionTaskText(): string {
   if (firstSessionActive()) {
     if (clientState.carryEgg.active && clientState.carryEgg.atHome) return 'You are home! Press Hatch to hatch your egg.'
-    const route = getArrowInstruction()
-    if (route) return route
+    return tutorialCardText(firstSessionHud.task, getArrowInstruction(), clientState.firstSessionArrow)
   }
   return firstSessionHud.task
 }
