@@ -19,23 +19,32 @@ const shared = () => load('src/shared/happyHour.ts', {
 })
 const start = Date.parse('2026-11-03T18:00:00Z')
 
-test('one global hour: boundaries, stable activation ID, no daily repetition', () => {
+test('each scheduled start opens its own hour; a start inside a running hour never restarts it', () => {
   const { happyHourWindow: window } = shared()
-  const event = { enabled: true, startedAt: start }
+  const nextDay = start + 86400000, overlap = nextDay + 1800000
+  const event = [start, nextDay, overlap]
   assert.equal(window(start, null), null)
-  assert.equal(window(start, { ...event, enabled: false }), null)
+  assert.equal(window(start, []), null)
   assert.equal(window(start - 1, event), null)
   assert.equal(window(start, event).wave, start)
-  assert.equal(window(start + 599999, event).wave, start)
   assert.equal(window(start + 600000, event).wave, start)
   assert.equal(window(start + 3599999, event).endsAt, start + 3600000)
   assert.equal(window(start + 3600000, event), null)
-  assert.equal(window(start + 86400000, event), null)
+  assert.equal(window(nextDay - 1, event), null)
+  assert.equal(window(nextDay, event).wave, nextDay)
+  // The overlapping start is ignored: same hour, same activation ID, so pick
+  // cooldowns are not reset, and the event ends with the first hour.
+  assert.equal(window(overlap - 1, event).wave, nextDay)
+  assert.equal(window(overlap, event).wave, nextDay)
+  assert.equal(window(nextDay + 3599999, event).endsAt, nextDay + 3600000)
+  assert.equal(window(nextDay + 3600000, event), null)
+  // Input order does not matter.
+  assert.equal(window(overlap, [overlap, nextDay]).wave, nextDay)
 })
 
 test('every incomplete tutorial checkpoint hides the event; done immediately sees remaining global time', () => {
   const { happyHourView: view } = shared()
-  const event = { enabled: true, startedAt: start }
+  const event = [start]
   const steps = fs.readFileSync('src/shared/types.ts', 'utf8')
   const block = steps.match(/export const FIRST_SESSION_STEPS[^=]*=\s*\[([\s\S]*?)\]/)[1]
   const checkpoints = [...block.matchAll(/'([^']+)'/g)].map(m => m[1])
@@ -55,7 +64,7 @@ test('every incomplete tutorial checkpoint hides the event; done immediately see
 
 test('individual cooldown survives reconnect and lasts ten minutes from collection', () => {
   const { happyHourView: view } = shared()
-  const event = { enabled: true, startedAt: start }
+  const event = [start]
   const p = { firstSessionStep: 'done', counters: { 'happyHour:2': start + 599999 } }
   assert.equal(view(p, start + 599999, event).available.includes(2), false)
   assert.equal(view(JSON.parse(JSON.stringify(p)), start + 600000, event).available.includes(2), false)
@@ -63,49 +72,161 @@ test('individual cooldown survives reconnect and lasts ten minutes from collecti
   assert.equal(view(p, start + 1199999, event).available.length, 5)
 })
 
-function controllerFixture() {
-  let now = start, flag = 'false', stored = null, reads = 0, writes = 0, fail = false
+function controllerFixture(opts = {}) {
+  let now = start, value = '', reads = 0, fail = false
+  let flag = '', stored = opts.stored ?? null, storageReads = 0, writes = 0
   const { createMushroomEventController: create } = load('src/server/mushroomEvent.ts', {
-    '@dcl/sdk/server': { EnvVar: {}, Storage: {} }
+    '@dcl/sdk/server': { EnvVar: {}, Storage: {} },
+    '../shared/happyHour': shared()
   })
-  const deps = { now: () => now, flag: async () => flag,
-    read: async () => { reads++; if (fail) throw new Error('storage unavailable'); return stored },
-    write: async value => { writes++; stored = value; return true } }
-  return { create: () => create(deps), step: () => { now += 5001 },
-    flag: value => { flag = value }, fail: () => { fail = true },
-    stored: () => stored, reads: () => reads, writes: () => writes }
+  const deps = { now: () => now,
+    schedule: async () => { reads++; if (fail) throw new Error('env unavailable'); return value },
+    manualFlag: async () => flag,
+    readManual: async () => { storageReads++; return stored },
+    writeManual: async next => { writes++; stored = next; return true } }
+  let c = create(deps)
+  return { refresh: () => c.refresh(), reads: () => reads,
+    state: () => c.state() && Array.from(c.state()),
+    set: async next => { value = next; fail = false; now += 5001; await c.refresh() },
+    fail: async () => { fail = true; now += 5001; await c.refresh() },
+    // The manual flag is polled every 30 s.
+    flag: async next => { flag = next; now += 30001; await c.refresh() },
+    tick: async ms => { now += ms; await c.refresh() },
+    now: () => now, stored: () => stored, storageReads: () => storageReads, writes: () => writes,
+    restart: async () => { c = create(deps); now += 30001; await c.refresh() } }
 }
 
-test('live flag starts one persisted hour for everyone, survives restarts and only rearms after false', async () => {
-  const f = controllerFixture(), c = f.create()
-  await c.refresh()
-  assert.equal(c.state().enabled, false)
-  f.flag('true'); f.step()
-  await Promise.all([c.refresh(), c.refresh(), c.refresh()])
-  const startedAt = c.state().startedAt
-  assert.equal(c.state().enabled, true)
-  assert.equal(f.writes(), 2) // initial off + one activation
-  f.step(); await c.refresh()
-  assert.equal(c.state().startedAt, startedAt)
-  const restarted = f.create()
-  await restarted.refresh()
-  assert.equal(restarted.state().startedAt, startedAt)
-  assert.equal(f.writes(), 2)
-  f.flag('false'); f.step(); await restarted.refresh()
-  assert.equal(restarted.state().enabled, false)
-  f.flag('true'); f.step(); await restarted.refresh()
-  assert.ok(restarted.state().startedAt > startedAt)
+test('START_MUSHROOM_EVENT=true opens one hour now as a manual fallback next to the schedule', async () => {
+  const { happyHourWindow: window } = shared()
+  const f = controllerFixture()
+  await f.set('2026-11-10T18:00Z')
+  await f.flag('true')
+  const manualStart = f.now()
+  assert.deepEqual(f.state(), [manualStart, Date.parse('2026-11-10T18:00Z')])
+  assert.equal(window(manualStart + 1000, f.state()).wave, manualStart)
+  // Leaving the flag on does not re-arm it, and storage is not re-read every poll.
+  await f.tick(5001); await f.tick(5001)
+  assert.equal(f.writes(), 1)
+  assert.equal(f.storageReads(), 1)
+  assert.equal(f.state()[0], manualStart)
+  // A restart keeps the same manual hour instead of starting a new one.
+  await f.restart()
+  assert.equal(f.state()[0], manualStart)
+  assert.equal(f.writes(), 1)
+  // false clears it and the schedule stays; true again opens a fresh hour.
+  await f.flag('false')
+  assert.deepEqual(f.state(), [Date.parse('2026-11-10T18:00Z')])
+  await f.flag('true')
+  assert.equal(f.state()[0], f.now())
+  // An empty / failed flag read never cancels or re-arms the manual hour.
+  const again = f.state()[0]
+  await f.flag('')
+  assert.equal(f.state()[0], again)
 })
 
-test('poll is throttled and read failures cannot manufacture/restart an event', async () => {
-  const f = controllerFixture(), c = f.create()
-  f.flag('true'); await c.refresh()
-  const startedAt = c.state().startedAt
-  await c.refresh(); assert.equal(f.reads(), 1)
-  f.fail(); f.step(); await c.refresh()
-  assert.equal(c.state().startedAt, startedAt)
-  const restart = f.create(); await restart.refresh()
-  assert.equal(restart.state(), null)
+test('the manual flag is read every 30 s, not on every 5 s schedule poll', async () => {
+  let flagReads = 0
+  const { createMushroomEventController: create } = load('src/server/mushroomEvent.ts', {
+    '@dcl/sdk/server': { EnvVar: {}, Storage: {} }, '../shared/happyHour': shared()
+  })
+  let now = start
+  const c = create({ now: () => now, schedule: async () => '', manualFlag: async () => { flagReads++; return '' },
+    readManual: async () => null, writeManual: async () => true })
+  for (let i = 0; i < 12; i++) { await c.refresh(); now += 5001 }
+  assert.equal(flagReads, 2)
+})
+
+test('"off" stops only the schedule; a manual hour runs until START_MUSHROOM_EVENT is false', async () => {
+  const f = controllerFixture()
+  await f.set('2026-11-10T18:00Z')
+  await f.flag('true')
+  const manualStart = f.now()
+  await f.set('off')
+  assert.deepEqual(f.state(), [manualStart])
+  await f.flag('')
+  assert.deepEqual(f.state(), [manualStart]) // a deleted / empty flag keeps it running
+  await f.flag('false')
+  assert.deepEqual(f.state(), [])
+})
+
+test('"off" mixed with other tokens still cancels the schedule', async () => {
+  for (const value of ['off,', 'off, off', 'OFF 2026-11-10T18:00Z', ' off ']) {
+    const f = controllerFixture()
+    await f.set('2026-11-10T18:00Z')
+    await f.set(value)
+    assert.deepEqual(f.state(), [], value)
+  }
+})
+
+test('the manual flag during a running scheduled hour joins it instead of restarting it', async () => {
+  const { happyHourView: view } = shared()
+  const f = controllerFixture()
+  await f.set('2026-11-03T18:00Z') // now is inside this hour
+  const p = { firstSessionStep: 'done', counters: { 'happyHour:2': start + 1000 } }
+  assert.equal(view(p, f.now(), f.state()).available.includes(2), false)
+  await f.flag('true')
+  assert.deepEqual(f.state(), [start, start])
+  assert.equal(f.stored().startedAt, start)
+  const v = view(p, f.now(), f.state())
+  assert.equal(v.wave, start)
+  assert.equal(v.endsAt, start + 3600000)
+  assert.equal(v.available.includes(2), false) // the cooldown is not reset
+})
+
+test('a scheduled start inside a manual hour does not restart it', async () => {
+  const { happyHourWindow: window } = shared()
+  const f = controllerFixture()
+  await f.flag('true')
+  const manualStart = f.now()
+  await f.set(new Date(manualStart + 1800000).toISOString().slice(0, 16) + 'Z')
+  assert.equal(window(manualStart + 1800000, f.state()).wave, manualStart)
+  assert.equal(window(manualStart + 3600000, f.state()), null)
+})
+
+test('schedule entries less than an hour apart keep only the first one', async () => {
+  const f = controllerFixture()
+  // Same hour typed twice in two time zones, plus one 30 minutes later.
+  await f.set('2026-11-10T18:00Z, 2026-11-10T15:00-03:00, 2026-11-10T18:30Z, 2026-11-10T19:00Z')
+  assert.deepEqual(f.state(), [Date.parse('2026-11-10T18:00Z'), Date.parse('2026-11-10T19:00Z')])
+})
+
+test('starts older than a day are dropped from the schedule', async () => {
+  const f = controllerFixture()
+  await f.set('2026-11-01T18:00Z, 2026-11-03T12:00Z, 2026-11-04T18:00Z')
+  assert.deepEqual(f.state(), [Date.parse('2026-11-03T12:00Z'), Date.parse('2026-11-04T18:00Z')])
+  await f.tick(86400000)
+  assert.deepEqual(f.state(), [Date.parse('2026-11-04T18:00Z')])
+})
+
+test('a manual hour started by the old flag-only version keeps running after deploy', async () => {
+  const f = controllerFixture({ stored: { enabled: true, startedAt: start } })
+  await f.flag('true')
+  assert.deepEqual(f.state(), [start])
+  assert.equal(f.writes(), 0)
+})
+
+test('schedule lists several date-times; offsets are honoured and a bare time is UTC', async () => {
+  const f = controllerFixture()
+  assert.equal(f.state(), null)
+  await f.set('2026-11-04T15:00-03:00, 2026-11-03T18:00Z 2026-11-05T18:00:30')
+  assert.deepEqual(f.state(), [start, start + 86400000, start + 2 * 86400000 + 30000])
+})
+
+test('poll is throttled; empty, failed or unparseable reads keep the schedule and only "off" clears it', async () => {
+  const f = controllerFixture()
+  await f.set('2026-11-03T18:00Z')
+  await Promise.all([f.refresh(), f.refresh()])
+  assert.equal(f.reads(), 1)
+  await f.set('')
+  assert.deepEqual(f.state(), [start])
+  await f.fail()
+  assert.deepEqual(f.state(), [start])
+  await f.set('tomorrow at six')
+  assert.deepEqual(f.state(), [start])
+  await f.set('2026-13-40T18:00Z,2026-11-04T18:00Z')
+  assert.deepEqual(f.state(), [start + 86400000])
+  await f.set('OFF')
+  assert.deepEqual(f.state(), [])
 })
 
 test('tutorial and event model are self-contained GLBs, not the broken external-texture asset', () => {
@@ -118,18 +239,6 @@ test('tutorial and event model are self-contained GLBs, not the broken external-
   const names = scene.components.find(c => c.name === 'core-schema::Name').data
   const [id] = Object.entries(names).find(([, v]) => v.json.value === 'Gypsy mushroom')
   assert.equal(scene.components.find(c => c.name === 'core::GltfContainer').data[id].json.src, HAPPY_HOUR.model)
-})
-
-test('an empty environment response cannot stop and then silently restart a running hour', async () => {
-  const f = controllerFixture(), c = f.create()
-  f.flag('true'); await c.refresh()
-  const startedAt = c.state().startedAt
-  f.flag(''); f.step(); await c.refresh()
-  assert.equal(c.state().startedAt, startedAt)
-  assert.equal(c.state().enabled, true)
-  f.flag('true'); f.step(); await c.refresh()
-  assert.equal(c.state().startedAt, startedAt)
-  assert.equal(f.writes(), 1)
 })
 
 test('the five actual Creator Hub mushrooms resolve in stable slot order without fallback positions', () => {
@@ -222,11 +331,11 @@ test('placed models, tap targets and effects hide during tutorial/off/cooldown a
 test('missing mushrooms do not inflate availability; previous events do not carry a cooldown', () => {
   const { happyHourView: view } = shared()
   const p = { firstSessionStep: 'done', counters: { 'happyHour:0': start - 1000 } }
-  const result = view(p, start, { enabled: true, startedAt: start }, [0, 3])
+  const result = view(p, start, [start], [0, 3])
   assert.deepEqual(Array.from(result.available), [0, 3])
   assert.equal(Object.keys(result.respawnsAt).length, 0)
   p.counters['happyHour:3'] = start
-  const cooling = view(p, start, { enabled: true, startedAt: start }, [0, 3])
+  const cooling = view(p, start, [start], [0, 3])
   assert.equal(cooling.available.length, 1)
   assert.equal(cooling.respawnsAt[3], start + 600000)
 })
@@ -378,7 +487,7 @@ test('missing composite entities are retried and recover; no absent-model event 
   assert.equal(resolve(), false)
   assert.equal(mushroomPlacements.size, 0)
   assert.equal(happyHourView({ firstSessionStep: 'done', counters: {} }, start,
-    { enabled: true, startedAt: start }, [...mushroomPlacements.keys()]), null)
+    [start], [...mushroomPlacements.keys()]), null)
   present = true
   assert.equal(resolve(), true)
   assert.equal(mushroomPlacements.size, 5)
