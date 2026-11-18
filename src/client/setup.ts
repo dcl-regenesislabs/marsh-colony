@@ -339,7 +339,7 @@ export function setupClient(): void {
   setupArkCinematics() // pet boarding the Ark + the launch everyone sees
   setupPenDoor() // Pen fence door opens/closes as the player walks up to / away from it
   setupLeaderboardHeads() // spinning face-heads of the top 6 players on the LeaderBoard01 model
-  setupScoreboard() // physical XP scoreboard text rows on LeaderBoard01 (top-5 by XP)
+  setupScoreboard() // physical XP scoreboard on LeaderBoard01 (title + top 10 by XP)
   evaluateStreak() // advance / reset the 7-day login streak
   registerHandlers()
   setupUi()

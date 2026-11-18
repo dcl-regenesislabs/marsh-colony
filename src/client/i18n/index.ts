@@ -723,7 +723,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'rarity.rare': 'Rare',
     'rarity.legendary': 'Legendary',
     'pet.wakeIn': 'Wake in {time}',
-    'leaderboard.soon': 'soon'
+    'leaderboard.title': 'Top Caretakers'
   },
   es: {
     'happyHour.busy': 'Termina primero la actividad de tu mascota.',
@@ -832,7 +832,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'rarity.rare': 'Raro',
     'rarity.legendary': 'Legendario',
     'pet.wakeIn': 'Despierta en {time}',
-    'leaderboard.soon': 'próximamente'
+    'leaderboard.title': 'Mejores Cuidadores'
   },
   pt: {
     'happyHour.busy': 'Termine primeiro a atividade do seu pet.',
@@ -941,7 +941,7 @@ const COPY: Record<AppLanguage, Dictionary> = {
     'rarity.rare': 'Raro',
     'rarity.legendary': 'Lendário',
     'pet.wakeIn': 'Acorda em {time}',
-    'leaderboard.soon': 'em breve'
+    'leaderboard.title': 'Melhores Cuidadores'
   }
 }
 

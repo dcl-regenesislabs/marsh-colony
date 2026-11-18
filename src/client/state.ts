@@ -183,7 +183,7 @@ export const clientState: {
   arkRedeem: { active: boolean; phase: 'toCaptain' | 'confirm'; petId: string }
   // Coins leaderboard, refreshed each time the panel opens (requestLeaderboard).
   leaderboard: LeaderboardEntry[]
-  // XP leaderboard (top 5), polled by the physical scoreboard (requestLeaderboardXp).
+  // XP leaderboard (top 10), polled by the physical scoreboard (requestLeaderboardXp).
   leaderboardXp: LeaderboardEntry[]
   // The Ark community goal (arkCinematics.ts). `status` is the shared counter;
   // `pendingDonation` is the pet we asked the server to take (waiting on its

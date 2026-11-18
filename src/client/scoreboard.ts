@@ -1,8 +1,8 @@
-// Physical scoreboards on LeaderBoard01.glb — two side-by-side blocks of top-5
-// rows, each row: [avatar face] [name] ----- [value].
-//   • LEFT block  = top-5 players by caretaker XP (clientState.leaderboardXp).
-//   • RIGHT block = top-5 ark contributors — PLACEHOLDER for now (that data, ark
-//     redemptions, doesn't exist yet). Same orientation as the left block.
+// Physical XP scoreboard on LeaderBoard01.glb: a title on top and the top 10
+// players by caretaker XP (clientState.leaderboardXp) split over the two
+// panels, #1-5 on the left and #6-10 on the right. Each row is
+// [avatar face] [#rank] [name] ... [XP], laid out symmetric around the centre
+// of its panel.
 //
 // Each row element is an UNPARENTED entity at an absolute world position, computed
 // as anchor + rotate(localOffset, anchorRot) — offsets are in metres in the block's
@@ -31,18 +31,10 @@ import { actions, clientState } from './state'
 import { t } from './i18n'
 import { mobile } from './ui/theme'
 import { requestPlayerFace, getPlayerFaceUrl } from './snapshots'
-
-// Cap the name so it can't grow into the centred dashes column. Mobile is tighter.
-const NAME_MAX_MOBILE = 6
-const NAME_MAX_DESKTOP = 7
-function displayName(n: string): string {
-  return n.slice(0, mobile() ? NAME_MAX_MOBILE : NAME_MAX_DESKTOP)
-}
-
-const ROWS = 5 // top-5
+import { SCOREBOARD_ROWS, SCOREBOARD_TOP, scoreboardName, scoreboardPage, scoreboardXp } from './scoreboardLayout'
 
 // Anchors = the CENTRE of each panel's text area + its facing yaw, dialled in-world
-// with the placement tuner. LEFT is done; RIGHT is an estimate to be tuned.
+// with the placement tuner.
 const ANCHOR_L_POS = Vector3.create(151.21, 3.81, 224.1)
 const ANCHOR_L_YAW = 225
 const ANCHOR_R_POS = Vector3.create(147.28, 3.75, 228.12)
@@ -51,42 +43,58 @@ const ANCHOR_R_YAW = 225
 // ---- Layout tunables (metres, in a block's local frame) ----------------------
 const ROW_STEP = 0.5 // vertical gap between rows (5 rows centred on the anchor)
 const FACE_OUT = 0.15 // how far every element floats off the panel surface (+Z)
-const FACE_X = -1.35 // avatar face column (left)
-const NAME_X = -1.05 // name starts here (left-aligned)
-const DASH_X = 0.45 // the "-----" filler, centred here (right of the name column)
-const XP_X = 1.35 // value ends here (right-aligned)
+// Columns, symmetric around the panel centre (content spans about -1.75..+1.75).
+const FACE_X = -1.55 // avatar face, centred here
+const RANK_X = -0.85 // "#10" ends here (right-aligned, so #1 and #10 line up)
+const NAME_X = -0.7 // name starts here (left-aligned)
+const XP_X = 1.75 // value ends here (right-aligned; at most "99999 XP")
 const FACE_SIZE = 0.4 // avatar face plane side length
 // In-world TextShape fontSize is ~2–3 (NOT metres / the UI's px scale) — small
 // values render invisibly tiny.
+const RANK_SIZE = 2.2
 const NAME_SIZE = 2.2
 const XP_SIZE = 2.2
-const DASH_SIZE = 1.8
-const DASHES = '------'
+
+// Title: one line centred over both panels, on the board's top frame.
+const TITLE_RISE = 1.55 // metres above the anchors' centre
+const TITLE_SIZE = 3.2
 
 const REFRESH_S = 30 // standings refresh cadence (server also rate-limits)
 const FIRST_REQUEST_S = 3
 
-// DEBUG: fill the XP block's 5 rows with the local player, to dial the layout in
-// without 5 real ranked players. Set false to ship.
-const DEBUG_ALL_FIRST_PLAYER = false
+// DEBUG: show 10 fake players (long names, very big XP) instead of the real
+// standings, to check the layout in-world. Faces use the local player's
+// avatar. Set false to ship.
+const DEBUG_FILL_ROWS = false
+const DEBUG_PLAYERS: { name: string; xp: number }[] = [
+  { name: 'Wwwwwwwwww', xp: 1_250_000_000 },
+  { name: 'MetaMonkey', xp: 25_400_000 },
+  { name: 'BitMan', xp: 1_250_000 },
+  { name: 'GiorgioMdz', xp: 999_999 },
+  { name: 'Fredar', xp: 123_456 },
+  { name: 'PeterPan', xp: 99_999 },
+  { name: '7color', xp: 14_944 },
+  { name: 'Gon', xp: 6458 },
+  { name: 'Agus mobile', xp: 2962 },
+  { name: 'Mmmmmmm', xp: 88_888 }
+]
 
+const TITLE_COLOR = Color4.create(1, 0.86, 0.3, 1) // gold
+const RANK_COLOR = Color4.create(1, 0.86, 0.3, 1)
 const NAME_COLOR = Color4.create(1, 1, 1, 1)
-const XP_COLOR = Color4.create(1, 0.86, 0.3, 1) // gold
-const DASH_COLOR = Color4.create(0.75, 0.78, 0.85, 1)
-const DIM_COLOR = Color4.create(0.7, 0.72, 0.78, 1) // placeholder text
+const XP_COLOR = Color4.create(1, 0.86, 0.3, 1)
 const OUTLINE = Color4.create(0, 0, 0, 1)
 
-type Row = { face: Entity; name: Entity; dash: Entity; xp: Entity; address: string; faceUrl: string }
+type Row = { face: Entity; rank: Entity; name: Entity; xp: Entity; address: string; faceUrl: string }
 const FACE_PLACEHOLDER = Color4.create(0.28, 0.3, 0.36, 1) // shown while the face loads
-type Kind = 'xp' | 'placeholder'
-type Block = { kind: Kind; rows: Row[]; pos: Vector3; rot: Quaternion; shownKey: string }
+type Block = { panel: number; rows: Row[]; pos: Vector3; rot: Quaternion; shownKey: string }
 
 // Absolute world position of a block-local point, and the block's content rotation.
 function worldOf(b: Block, x: number, y: number, z: number): Vector3 {
   return Vector3.add(b.pos, Vector3.rotate(Vector3.create(x, y, z), b.rot))
 }
 function rowY(i: number): number {
-  return ((ROWS - 1) / 2 - i) * ROW_STEP // centre the block on the anchor
+  return ((SCOREBOARD_ROWS - 1) / 2 - i) * ROW_STEP // centre the block on the anchor
 }
 
 function makeText(b: Block, x: number, y: number, size: number, color: Color4, align: TextAlignMode): Entity {
@@ -104,14 +112,14 @@ function makeFace(b: Block, x: number, y: number): Entity {
   return e
 }
 
-function buildBlock(kind: Kind, pos: Vector3, yaw: number): Block {
-  const b: Block = { kind, rows: [], pos, rot: Quaternion.fromEulerDegrees(0, yaw, 0), shownKey: '' }
-  for (let i = 0; i < ROWS; i++) {
+function buildBlock(panel: number, pos: Vector3, yaw: number): Block {
+  const b: Block = { panel, rows: [], pos, rot: Quaternion.fromEulerDegrees(0, yaw, 0), shownKey: '' }
+  for (let i = 0; i < SCOREBOARD_ROWS; i++) {
     const y = rowY(i)
     b.rows.push({
       face: makeFace(b, FACE_X, y),
+      rank: makeText(b, RANK_X, y, RANK_SIZE, RANK_COLOR, TextAlignMode.TAM_MIDDLE_RIGHT),
       name: makeText(b, NAME_X, y, NAME_SIZE, NAME_COLOR, TextAlignMode.TAM_MIDDLE_LEFT),
-      dash: makeText(b, DASH_X, y, DASH_SIZE, DASH_COLOR, TextAlignMode.TAM_MIDDLE_CENTER),
       xp: makeText(b, XP_X, y, XP_SIZE, XP_COLOR, TextAlignMode.TAM_MIDDLE_RIGHT),
       address: '',
       faceUrl: ''
@@ -120,66 +128,71 @@ function buildBlock(kind: Kind, pos: Vector3, yaw: number): Block {
   return b
 }
 
+let title: Entity | null = null
+function buildTitle(): Entity {
+  const e = engine.addEntity()
+  const mid = Vector3.lerp(ANCHOR_L_POS, ANCHOR_R_POS, 0.5)
+  const rot = Quaternion.fromEulerDegrees(0, ANCHOR_L_YAW, 0)
+  const position = Vector3.add(mid, Vector3.rotate(Vector3.create(0, TITLE_RISE, FACE_OUT), rot))
+  Transform.create(e, { position, rotation: rot })
+  TextShape.create(e, {
+    text: '', fontSize: TITLE_SIZE, textColor: TITLE_COLOR, outlineColor: OUTLINE, outlineWidth: 0.2, textAlign: TextAlignMode.TAM_MIDDLE_CENTER
+  })
+  return e
+}
+function refreshTitle(): void {
+  if (!title) return
+  const text = t('leaderboard.title') // follows the language picker
+  if (TextShape.get(title).text !== text) TextShape.getMutable(title).text = text
+}
+
 // Re-apply the block's current pos/rot to its row entities (used live by the tuner).
 function layoutBlock(b: Block): void {
   b.rows.forEach((row, i) => {
     const y = rowY(i)
-    Transform.getMutable(row.face).position = worldOf(b, FACE_X, y, FACE_OUT)
-    Transform.getMutable(row.face).rotation = b.rot
-    Transform.getMutable(row.name).position = worldOf(b, NAME_X, y, FACE_OUT)
-    Transform.getMutable(row.name).rotation = b.rot
-    Transform.getMutable(row.dash).position = worldOf(b, DASH_X, y, FACE_OUT)
-    Transform.getMutable(row.dash).rotation = b.rot
-    Transform.getMutable(row.xp).position = worldOf(b, XP_X, y, FACE_OUT)
-    Transform.getMutable(row.xp).rotation = b.rot
+    const place = (e: Entity, x: number): void => {
+      Transform.getMutable(e).position = worldOf(b, x, y, FACE_OUT)
+      Transform.getMutable(e).rotation = b.rot
+    }
+    place(row.face, FACE_X)
+    place(row.rank, RANK_X)
+    place(row.name, NAME_X)
+    place(row.xp, XP_X)
   })
 }
 
 function xpData(): { address: string; name: string; xp: number }[] {
-  if (DEBUG_ALL_FIRST_PLAYER) {
+  if (DEBUG_FILL_ROWS) {
     const me = getPlayer()
     if (!me) return []
-    const one = { address: me.userId, name: me.name, xp: clientState.player?.caretakerXp ?? 0 }
-    return Array.from({ length: ROWS }, () => one)
+    // Sorted like the server does, so the ranks read in order.
+    return [...DEBUG_PLAYERS].sort((a, b) => b.xp - a.xp).map((p) => ({ address: me.userId, name: p.name, xp: p.xp }))
   }
-  return clientState.leaderboardXp.slice(0, ROWS).map((e) => ({ address: e.address, name: e.name, xp: e.xp }))
+  return clientState.leaderboardXp.slice(0, SCOREBOARD_TOP).map((e) => ({ address: e.address, name: e.name, xp: e.xp }))
+}
+
+function clearRow(row: Row): void {
+  TextShape.getMutable(row.rank).text = ''
+  TextShape.getMutable(row.name).text = ''
+  TextShape.getMutable(row.xp).text = ''
+  VisibilityComponent.getMutable(row.face).visible = false
+  row.address = ''
+  row.faceUrl = ''
 }
 
 function refreshBlock(b: Block): void {
-  // PLACEHOLDER block: static "coming soon" rows, no avatars, no polling.
-  if (b.kind === 'placeholder') {
-    if (b.shownKey === 'ph') return
-    b.shownKey = 'ph'
-    b.rows.forEach((row, i) => {
-      TextShape.getMutable(row.name).text = `#${i + 1}`
-      TextShape.getMutable(row.name).textColor = DIM_COLOR
-      TextShape.getMutable(row.dash).text = DASHES
-      TextShape.getMutable(row.xp).text = t('leaderboard.soon')
-      TextShape.getMutable(row.xp).textColor = DIM_COLOR
-      VisibilityComponent.getMutable(row.face).visible = false
-    })
-    return
-  }
-
-  const data = xpData()
-  const key = data.map((r) => `${r.address}:${r.name}:${r.xp}`).join('|')
+  const data = scoreboardPage(xpData(), b.panel)
+  const small = mobile()
+  const key = `${small}|` + data.map((r) => `${r.address}:${r.name}:${r.xp}`).join('|')
   if (key === b.shownKey) return
   b.shownKey = key
 
   b.rows.forEach((row, i) => {
     const r = data[i]
-    if (!r) {
-      TextShape.getMutable(row.name).text = ''
-      TextShape.getMutable(row.dash).text = ''
-      TextShape.getMutable(row.xp).text = ''
-      VisibilityComponent.getMutable(row.face).visible = false
-      row.address = ''
-      row.faceUrl = ''
-      return
-    }
-    TextShape.getMutable(row.name).text = `#${i + 1}  ${displayName(r.name)}`
-    TextShape.getMutable(row.dash).text = DASHES
-    TextShape.getMutable(row.xp).text = `${r.xp} XP`
+    if (!r) return clearRow(row)
+    TextShape.getMutable(row.rank).text = `#${b.panel * SCOREBOARD_ROWS + i + 1}`
+    TextShape.getMutable(row.name).text = scoreboardName(r.name, small)
+    TextShape.getMutable(row.xp).text = `${scoreboardXp(r.xp)} XP`
     // Faces come from the profile snapshot (face256.png) over HTTP — works on all
     // clients. Kick off the fetch and show a placeholder tile until it resolves;
     // updateFaces() swaps in the texture once the URL is ready.
@@ -206,13 +219,13 @@ function updateFaces(b: Block): void {
 }
 
 // ---------------------------------------------------------------------------
-// DEBUG placement tuner. Drives ONE block (TUNE_BLOCK) so it can be dropped onto
+// DEBUG placement tuner. Drives ONE block (TUNE_PANEL) so it can be dropped onto
 // its panel, then LEFT-CLICK logs its anchor. Set DEBUG_TUNER false to ship.
 // Keys (hold): E/F = +X/-X · 1/2 = +Z/-Z · 3/4 = +Y/-Y · SPACE = rotate +15° ·
 //              LEFT-CLICK = log the anchor.
 // ---------------------------------------------------------------------------
 const DEBUG_TUNER = false
-const TUNE_BLOCK: Kind = 'placeholder' // which block the tuner drives
+const TUNE_PANEL = 1 // which block the tuner drives (0 = left, 1 = right)
 const TUNE_MOVE_SPEED = 1.2
 
 let tuneLabel: Entity | null = null
@@ -223,7 +236,7 @@ function beginTuner(b: Block): void {
   tunePos.x = b.pos.x
   tunePos.y = b.pos.y
   tunePos.z = b.pos.z
-  tuneYaw = ANCHOR_R_YAW
+  tuneYaw = b.panel === 0 ? ANCHOR_L_YAW : ANCHOR_R_YAW
   tuneLabel = engine.addEntity()
   Transform.create(tuneLabel, { position: Vector3.create(tunePos.x, tunePos.y + 1.5, tunePos.z) })
   TextShape.create(tuneLabel, { text: '', fontSize: 2, textColor: Color4.create(1, 1, 0, 1), outlineColor: OUTLINE, outlineWidth: 0.2 })
@@ -261,18 +274,19 @@ let requestedOnce = false
 export function setupScoreboard(): void {
   engine.addSystem((dt: number) => {
     if (!blocks) {
-      blocks = [buildBlock('xp', ANCHOR_L_POS, ANCHOR_L_YAW), buildBlock('placeholder', ANCHOR_R_POS, ANCHOR_R_YAW)]
-      if (DEBUG_TUNER) beginTuner(blocks.find((b) => b.kind === TUNE_BLOCK)!)
+      blocks = [buildBlock(0, ANCHOR_L_POS, ANCHOR_L_YAW), buildBlock(1, ANCHOR_R_POS, ANCHOR_R_YAW)]
+      title = buildTitle()
+      if (DEBUG_TUNER) beginTuner(blocks[TUNE_PANEL])
       return
     }
+    refreshTitle()
     for (const b of blocks) {
       refreshBlock(b)
-      if (b.kind === 'xp') updateFaces(b) // swap in profile faces as they resolve
+      updateFaces(b) // swap in profile faces as they resolve
     }
 
     if (DEBUG_TUNER) {
-      const target = blocks.find((b) => b.kind === TUNE_BLOCK)
-      if (target) updateTuner(dt, target)
+      updateTuner(dt, blocks[TUNE_PANEL])
       return
     }
 
