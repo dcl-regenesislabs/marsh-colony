@@ -259,7 +259,8 @@ export function server(): void {
     if (now - (lastLeaderXpReq.get(ctx.from) ?? 0) < 2000) return
     lastLeaderXpReq.set(ctx.from, now)
     await S.loadPlayer(ctx.from) // cache + tick the requester so their own row is current
-    room.send('leaderboardXp', { json: JSON.stringify(await S.leaderboard(5, 'xp')) }, { to: [ctx.from] })
+    // Top 10 = the scoreboard's two panels of 5 (SCOREBOARD_TOP in client/scoreboardLayout.ts).
+    room.send('leaderboardXp', { json: JSON.stringify(await S.leaderboard(10, 'xp')) }, { to: [ctx.from] })
   })
 
   room.onMessage('adopt', async (data, ctx) => {
