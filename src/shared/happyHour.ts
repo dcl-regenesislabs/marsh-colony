@@ -7,9 +7,9 @@ export const HAPPY_HOUR = {
   model: 'assets/Models/Mushroom_02.glb',
   entityNames: [EntityNames.Mushroom_event, EntityNames.Mushroom_event_2, EntityNames.Mushroom_event_3, EntityNames.Mushroom_event_4, EntityNames.Mushroom_event_5]
 }
-export interface MushroomEventState { enabled: boolean; startedAt: number }
+export type MushroomEventSchedule = readonly number[] // scheduled event starts, epoch ms
 export interface HappyHourView {
-  wave: number // activation ID, stable throughout the hour (message compatibility)
+  wave: number // the scheduled start: activation ID, stable throughout the hour
   serverNow: number
   endsAt: number
   available: number[]
@@ -18,16 +18,24 @@ export interface HappyHourView {
 export function mushroomEventEligible(p: Pick<PlayerData, 'firstSessionStep'>): boolean {
   return p.firstSessionStep === undefined || p.firstSessionStep === 'done'
 }
-export function happyHourWindow(now: number, event: MushroomEventState | null): { wave: number; endsAt: number } | null {
-  if (!event?.enabled || !Number.isFinite(event.startedAt) || event.startedAt <= 0) return null
-  const endsAt = event.startedAt + HAPPY_HOUR.durationMinutes * 60000
-  if (now < event.startedAt || now >= endsAt) return null
-  return { wave: event.startedAt, endsAt }
+export function happyHourWindow(now: number, schedule: MushroomEventSchedule | null): { wave: number; endsAt: number } | null {
+  const duration = HAPPY_HOUR.durationMinutes * 60000
+  // A start inside an hour that is already running is ignored. Otherwise it
+  // would open a fresh hour and reset every pick cooldown (each pick is an
+  // instant Adult), e.g. the manual flag used during a scheduled event.
+  let end = -Infinity
+  for (const start of [...(schedule ?? [])].sort((a, b) => a - b)) {
+    if (start > now) break
+    if (start < end) continue
+    end = start + duration
+    if (now < end) return { wave: start, endsAt: end }
+  }
+  return null
 }
-export function happyHourView(p: PlayerData, now: number, event: MushroomEventState | null,
+export function happyHourView(p: PlayerData, now: number, schedule: MushroomEventSchedule | null,
   slots: number[] = HAPPY_HOUR.entityNames.map((_, i) => i)): HappyHourView | null {
   if (!mushroomEventEligible(p) || slots.length === 0) return null
-  const window = happyHourWindow(now, event)
+  const window = happyHourWindow(now, schedule)
   if (!window) return null
   const available: number[] = []
   const respawnsAt: Record<number, number> = {}
